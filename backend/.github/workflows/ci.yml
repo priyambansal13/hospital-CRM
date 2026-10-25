@@ -1,0 +1,86 @@
+# Backend CI. Not run yet in GitHub (repos have no remote); every step is the same command used locally.
+name: backend-ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm lint                 # oxlint + module boundaries
+      - run: pnpm typecheck
+      - run: pnpm check:manifests
+      - run: pnpm test                 # unit tests
+      # AI evals (docs/AI-AGENTS.md §9): emergency recall 100%, unsafe answers blocked 100%, no false blocks.
+      # Already part of `pnpm test`; a named step so a failing eval is visible as such.
+      - name: AI safety evals
+        run: pnpm --filter @mc/ai-assistant-service exec vitest run src/evals.spec.ts
+
+  integration:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: backend }
+      - uses: actions/checkout@v4
+        with: { repository: ${{ github.repository_owner }}/medicare-platform, path: platform }
+      - uses: pnpm/action-setup@v4
+        with: { package_json_file: backend/package.json }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - name: platform up, bootstrap, migrate
+        run: |
+          node platform/scripts/mc.mjs configure
+          node platform/scripts/mc.mjs infra up
+          (cd backend && pnpm install --frozen-lockfile && pnpm build)
+          node platform/scripts/mc.mjs configure
+          node platform/scripts/mc.mjs db bootstrap
+          node platform/scripts/mc.mjs migrate
+          node platform/scripts/mc.mjs gateway sync
+      - name: start services and create two hospitals
+        run: |
+          for d in backend/services/*-service; do (cd $d && nohup node dist/main.js > /tmp/$(basename $d).log 2>&1 &); done
+          sleep 15
+          node platform/scripts/mc.mjs tenant create citycare --name "CityCare Clinic"
+          node platform/scripts/mc.mjs tenant create sunrise --name "Sunrise Diagnostics"
+          sleep 10
+      - run: cd backend && pnpm test:integration
+      - run: node platform/scripts/mc.mjs test assistant    # before the leak test: it leaves a chat the leak test aims at
+      - run: node platform/scripts/mc.mjs test tenancy
+      - run: node platform/scripts/mc.mjs test race
+      - if: failure()
+        run: tail -n 200 /tmp/*-service.log
+
+  list-services:
+    runs-on: ubuntu-latest
+    outputs: { services: ${{ steps.ls.outputs.services }} }
+    steps:
+      - uses: actions/checkout@v4
+      - id: ls   # from services/*/package.json "mc" metadata, never a hand-written list
+        run: echo "services=$(node -e 'const fs=require(\"fs\");console.log(JSON.stringify(fs.readdirSync(\"services\").filter(d=>JSON.parse(fs.readFileSync(`services/${d}/package.json`)).mc?.kind===\"service\")))')" >> "$GITHUB_OUTPUT"
+
+  images:
+    # one image per service from the shared Dockerfile; pushed to Artifact Registry on main (Workload Identity Federation)
+    needs: [checks, list-services]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.list-services.outputs.services) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with: { workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}, service_account: ${{ vars.GCP_CI_SA }} }
+      - run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+      - run: |
+          IMG=${{ vars.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ github.sha }}
+          docker build --build-arg SERVICE=${{ matrix.service }} -t $IMG . && docker push $IMG

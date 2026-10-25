@@ -1,0 +1,56 @@
+# Module manifest (docs/PRODUCT-MODULES-AND-PLANS.md §2.1). Developers own manifests; the business packages
+# modules into plans without code changes. Validated in CI by `pnpm check:manifests`.
+key: core
+name: Core
+version: 4
+alwaysOn: true
+dependsOn: []
+services: [tenant-service, iam-service, entitlement-service, patient-service, notification-service, audit-service]
+permissions:
+  - { code: admin:access:tenant, description: Open the admin portal }
+  - { code: branch:read:tenant, description: View branches }
+  - { code: branch:manage:tenant, description: Create and edit branches }
+  - { code: settings:manage:tenant, description: Edit hospital branding and settings }
+  - { code: staff:read:tenant, description: View staff accounts }
+  - { code: staff:invite:tenant, description: Invite staff }
+  - { code: role:read:tenant, description: View roles and assignments }
+  - { code: role:assign:tenant, description: Assign roles to staff }
+  - { code: role:manage:tenant, description: Create custom roles and change what roles may do (role editor) }
+  - { code: profile:manage:own, description: Manage own patient profile and family members }
+  - { code: notification:read:tenant, description: View the message delivery log }
+  - { code: notification:manage:tenant, description: Edit message templates }
+  - { code: notification:manage:own, description: Choose own message channels and language }
+  - { code: audit:read:tenant, description: View the audit log (who accessed which patient record) }
+  - { code: audit:read:own, description: See who opened own and family members' records }
+  - { code: plan:read:tenant, description: See the hospital's plan, modules and limits }
+  - { code: subscription:manage:tenant, description: Pay MediCare, change the hospital's plan, see invoices and usage (account owner) }
+features:
+  - { key: core.custom_roles, name: Custom roles, type: BOOLEAN }
+  - { key: core.branches, name: Branches, type: LIMIT, unit: branches }
+  - { key: core.sms, name: SMS messages, type: METERED, unit: SMS }
+  - { key: core.custom_domain, name: Custom domain, type: BOOLEAN, default: false }
+nav:
+  - { key: admin-home, label: Overview, zone: admin, href: /admin, permissions: [admin:access:tenant] }
+  - { key: branches, label: Branches, zone: admin, href: /admin/branches, permissions: [branch:read:tenant, admin:access:tenant] }
+  - { key: staff, label: Staff, zone: admin, href: /admin/staff, permissions: [staff:read:tenant, admin:access:tenant] }
+  - { key: messages, label: Messages, zone: admin, href: /admin/messages, permissions: [notification:read:tenant, admin:access:tenant] }
+  - { key: my-family, label: My family, zone: patient, href: /care/profile, permissions: [profile:manage:own], audience: patient }
+  - { key: audit-admin, label: Audit log, zone: admin, href: /admin/audit, permissions: [audit:read:tenant, admin:access:tenant] }
+  - { key: setup-admin, label: Setup, zone: admin, href: /admin/setup, permissions: [settings:manage:tenant, admin:access:tenant] }
+  - { key: settings-admin, label: Settings, zone: admin, href: /admin/settings, permissions: [settings:manage:tenant, admin:access:tenant] }
+  - { key: roles-admin, label: Roles, zone: admin, href: /admin/roles, permissions: [role:read:tenant, admin:access:tenant] }
+  - { key: plan-admin, label: Plan, zone: admin, href: /admin/plan, permissions: [plan:read:tenant, admin:access:tenant] }
+  - { key: account-home, label: Subscription, zone: account, href: /account, permissions: [subscription:manage:tenant], audience: staff }
+  - { key: account-plan, label: Change plan, zone: account, href: /account/plan, permissions: [subscription:manage:tenant], audience: staff }
+  - { key: account-usage, label: Usage, zone: account, href: /account/usage, permissions: [subscription:manage:tenant], audience: staff }
+  - { key: account-invoices, label: Invoices, zone: account, href: /account/invoices, permissions: [subscription:manage:tenant], audience: staff }
+  - { key: my-access-log, label: Record access, zone: patient, href: /care/access-log, permissions: [audit:read:own], audience: patient }
+defaultRoleGrants:
+  BRANCH_ADMIN: [admin:access:tenant, branch:read:tenant, staff:read:tenant, role:read:tenant, notification:read:tenant, audit:read:tenant]
+  DOCTOR: [branch:read:tenant]
+  NURSE: [branch:read:tenant]
+  RECEPTIONIST: [branch:read:tenant]
+  LAB_TECH: [branch:read:tenant]
+  PATHOLOGIST: [branch:read:tenant]
+  PHLEBOTOMIST: [branch:read:tenant]
+  PATIENT: [profile:manage:own, notification:manage:own, audit:read:own]

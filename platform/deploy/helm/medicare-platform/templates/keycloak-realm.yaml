@@ -1,0 +1,10 @@
+# Realm import for Keycloak (copied from infra/keycloak by `mc k8s render`). The mc-iam client secret is substituted
+# from the MC_IAM_CLIENT_SECRET env var in the Keycloak pod. Staging/production: sslRequired is forced to "external".
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-realm
+  namespace: {{ .Values.infraNamespace }}
+data:
+  realm-medicare.json: |
+{{ .Files.Get "files/realm-medicare.json" | replace "\"sslRequired\": \"none\"" "\"sslRequired\": \"external\"" | indent 4 }}

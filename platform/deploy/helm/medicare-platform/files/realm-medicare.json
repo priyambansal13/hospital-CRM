@@ -1,0 +1,60 @@
+{
+  "realm": "medicare",
+  "enabled": true,
+  "sslRequired": "none",
+  "displayName": "MediCare",
+  "organizationsEnabled": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 900,
+  "ssoSessionIdleTimeout": 28800,
+  "passwordPolicy": "length(10) and notUsername",
+  "otpPolicyType": "totp",
+  "otpPolicyAlgorithm": "HmacSHA1",
+  "otpPolicyDigits": 6,
+  "otpPolicyPeriod": 30,
+  "smtpServer": {
+    "host": "mailpit",
+    "port": "1025",
+    "from": "no-reply@medicare.local",
+    "fromDisplayName": "MediCare"
+  },
+  "clients": [
+    {
+      "clientId": "mc-web",
+      "name": "MediCare web zones",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["http://localhost:3400/*"],
+      "webOrigins": ["+"],
+      "attributes": { "pkce.code.challenge.method": "S256", "post.logout.redirect.uris": "+" }
+    },
+    {
+      "clientId": "mc-iam",
+      "name": "iam-service (admin API)",
+      "publicClient": false,
+      "secret": "${MC_IAM_CLIENT_SECRET}",
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false
+    },
+    {
+      "clientId": "mc-dev-cli",
+      "name": "DEV ONLY: password grant for scripted tests",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true
+    }
+  ],
+  "users": [
+    {
+      "username": "service-account-mc-iam",
+      "enabled": true,
+      "serviceAccountClientId": "mc-iam",
+      "clientRoles": { "realm-management": ["realm-admin"] }
+    }
+  ]
+}

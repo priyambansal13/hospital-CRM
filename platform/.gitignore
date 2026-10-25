@@ -1,0 +1,8 @@
+.env
+node_modules/
+test-results/
+playwright-report/
+infra/pgbouncer/generated/
+deploy/.rendered/
+.terraform/
+*.tfstate*

@@ -1,0 +1,62 @@
+{{- if .Values.services }}
+# Same as local `mc db bootstrap`: service roles (+ search_path), control DB, template DB, schemas, pg_trgm, pgvector,
+# for the template and every existing hospital DB. Idempotent; runs before every sync.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-bootstrap
+  annotations: { helm.sh/hook: pre-install,pre-upgrade, helm.sh/hook-weight: "-20", argocd.argoproj.io/hook: PreSync }
+data:
+  bootstrap.sh: |
+    set -euo pipefail
+    export PGHOST={{ .Values.postgres.host }} PGPORT={{ .Values.postgres.port }} PGUSER={{ .Values.postgres.adminUser }} PGPASSWORD="$PG_ADMIN_PASSWORD"
+    q() { psql -v ON_ERROR_STOP=1 -qAt -d "$1" -c "$2"; }
+    {{- range .Values.services }}{{ if .schema }}
+    pw="$DB_PASSWORD_SVC_{{ upper .schema }}"
+    q postgres "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'svc_{{ .schema }}') THEN CREATE ROLE svc_{{ .schema }} LOGIN; END IF; END \$\$;"
+    q postgres "ALTER ROLE svc_{{ .schema }} PASSWORD '${pw//\'/\'\'}'; ALTER ROLE svc_{{ .schema }} SET search_path TO {{ .schema }}, public;"
+    {{- end }}{{ end }}
+    q postgres "ALTER ROLE svc_tenant CREATEDB;"
+    for db in mc_control medicare_template; do
+      [ "$(q postgres "SELECT 1 FROM pg_database WHERE datname = '$db'")" = "1" ] || q postgres "CREATE DATABASE $db"
+    done
+    q mc_control "REVOKE CREATE ON SCHEMA public FROM PUBLIC;"
+    {{- range .Values.services }}{{ if .control }}
+    q mc_control "CREATE SCHEMA IF NOT EXISTS {{ .schema }} AUTHORIZATION svc_{{ .schema }};"
+    {{- end }}{{ end }}
+    for db in medicare_template $(q postgres "SELECT datname FROM pg_database WHERE datname LIKE 't\_%'"); do
+      q "$db" "REVOKE CREATE ON SCHEMA public FROM PUBLIC; CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public; CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
+        CREATE TABLE IF NOT EXISTS public.tenant_meta (tenant_id uuid PRIMARY KEY, slug text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now());
+        ALTER TABLE public.tenant_meta OWNER TO svc_tenant; GRANT SELECT ON public.tenant_meta TO PUBLIC;"
+      {{- range .Values.services }}{{ if .tenant }}
+      q "$db" "CREATE SCHEMA IF NOT EXISTS {{ .schema }} AUTHORIZATION svc_{{ .schema }};"
+      {{- end }}{{ end }}
+    done
+    q postgres "ALTER DATABASE medicare_template IS_TEMPLATE true;"
+    echo "bootstrap done"
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-bootstrap
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      containers:
+        - name: bootstrap
+          image: postgres:16-alpine
+          command: ["bash", "/scripts/bootstrap.sh"]
+          envFrom: [{ secretRef: { name: medicare-secrets } }]
+          volumeMounts: [{ name: scripts, mountPath: /scripts }]
+          resources: { requests: { cpu: 50m, memory: 64Mi }, limits: { memory: 128Mi } }
+      volumes: [{ name: scripts, configMap: { name: db-bootstrap } }]
+{{- end }}

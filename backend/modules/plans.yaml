@@ -1,0 +1,179 @@
+# Starting plan catalogue (docs/PRODUCT-MODULES-AND-PLANS.md §3–§4), loaded by subscription-service at startup.
+# Seed only: a plan version that already exists in the database is never changed from here (publish a new version
+# instead). From Phase 18 the platform console's plan builder is where the business edits plans.
+#
+# Plan versions list modules (dependencies must be included), feature switches and limits (a feature not listed is
+# on and unlimited), bounds for plan-bounded settings, and which add-ons may be bought with them.
+# listPrice: INR per month, the plan's base price (seats, branches, usage and GST come from backend/modules/pricebook.yaml).
+# A version may say `from: N` and list only what changes; seeding a newer version retires the older published one
+# (hospitals stay on it until moved).
+
+editions:
+  - { code: CLINIC, name: Clinic, description: 1–10 doctors at one or a few locations }
+  - { code: DIAGNOSTIC_CENTER, name: Diagnostic center, description: Pathology labs and collection centres, no consultations }
+  - { code: HOSPITAL, name: Multi-specialty hospital, description: Hospitals and chains }
+
+addons:
+  - { code: LAB, name: Diagnostics and lab, module: diagnostics, listPrice: 5999 }
+  - { code: HOME_COLLECTION, name: Home sample collection, module: home_collection, listPrice: 1999 }
+  - { code: BRANCHES_5, name: 5 more branches, feature: core.branches, extraLimit: 5, listPrice: 2999 }
+  # Phase 22: the patients' AI assistant (messages not capped when bought as an add-on yet)
+  - { code: AI_ASSISTANT, name: AI assistant for patients, module: ai, listPrice: 2999 }
+
+plans:
+  - code: CLINIC_STARTER
+    name: Clinic Starter
+    edition: CLINIC
+    tier: Starter
+    versions:
+      - version: 1
+        listPrice: 4999
+        trialDays: 30
+        modules: [core, directory, appointments, front_desk, emr, billing]
+        features:
+          core.branches: { limit: 1 }
+          core.custom_roles: { enabled: false }
+          directory.doctors: { limit: 10 }
+          appointments.waitlist: { enabled: false }
+          appointments.max_advance_days: { limit: 30 }
+        addons: [BRANCHES_5]
+      # Phase 19: SMS allowance per month; beyond it each SMS is billed (price book)
+      - version: 2
+        from: 1
+        features:
+          core.sms: { limit: 2000, overage: ALLOW_BILL }
+
+  - code: CLINIC_PRO
+    name: Clinic Professional
+    edition: CLINIC
+    tier: Professional
+    versions:
+      - version: 1
+        listPrice: 9999
+        trialDays: 30
+        modules: [core, directory, appointments, front_desk, emr, billing]
+        features:
+          core.branches: { limit: 3 }
+          directory.doctors: { limit: 50 }
+          appointments.max_advance_days: { limit: 60 }
+        addons: [LAB, HOME_COLLECTION, BRANCHES_5]
+      # Phase 19: SMS allowance per month; beyond it each SMS is billed (price book)
+      - version: 2
+        from: 1
+        features:
+          core.sms: { limit: 20000, overage: ALLOW_BILL }
+      # Phase 22: the AI assistant as an add-on
+      - version: 3
+        from: 2
+        addons: [LAB, HOME_COLLECTION, BRANCHES_5, AI_ASSISTANT]
+
+  - code: DIAGNOSTIC_STARTER
+    name: Diagnostic Center Starter
+    edition: DIAGNOSTIC_CENTER
+    tier: Starter
+    versions:
+      - version: 1
+        listPrice: 6999
+        trialDays: 30
+        modules: [core, diagnostics, billing]
+        features:
+          core.branches: { limit: 2 }
+          core.custom_roles: { enabled: false }
+          diagnostics.packages: { enabled: false }
+        settings:
+          diagnostics.max_advance_days: { min: 1, max: 14 }
+        addons: [HOME_COLLECTION, BRANCHES_5]
+      # Phase 19: SMS allowance per month; beyond it each SMS is billed (price book)
+      - version: 2
+        from: 1
+        features:
+          core.sms: { limit: 2000, overage: ALLOW_BILL }
+
+  - code: DIAGNOSTIC_PRO
+    name: Diagnostic Center Professional
+    edition: DIAGNOSTIC_CENTER
+    tier: Professional
+    versions:
+      - version: 1
+        listPrice: 12999
+        trialDays: 30
+        modules: [core, diagnostics, home_collection, billing]
+        features:
+          core.branches: { limit: 10 }
+        settings:
+          diagnostics.max_advance_days: { min: 1, max: 60 }
+        addons: [BRANCHES_5]
+      # Phase 19: SMS allowance per month; beyond it each SMS is billed (price book)
+      - version: 2
+        from: 1
+        features:
+          core.sms: { limit: 20000, overage: ALLOW_BILL }
+
+  - code: HOSPITAL_PRO
+    name: Hospital Professional
+    edition: HOSPITAL
+    tier: Professional
+    versions:
+      - version: 1
+        listPrice: 24999
+        trialDays: 30
+        modules: [core, directory, appointments, front_desk, emr, diagnostics, home_collection, billing]
+        features:
+          core.branches: { limit: 5 }
+          directory.doctors: { limit: 100 }
+          appointments.max_advance_days: { limit: 90 }
+        settings:
+          diagnostics.max_advance_days: { min: 1, max: 60 }
+        addons: [BRANCHES_5]
+      # Phase 19: SMS allowance per month; beyond it each SMS is billed (price book)
+      - version: 2
+        from: 1
+        features:
+          core.sms: { limit: 20000, overage: ALLOW_BILL }
+      # Phase 22: AI assistant included, 5,000 patient messages a month
+      - version: 3
+        from: 2
+        modules: [core, directory, appointments, front_desk, emr, diagnostics, home_collection, billing, ai]
+        features:
+          ai.concierge: { limit: 5000, overage: BLOCK }
+
+  - code: HOSPITAL_ENTERPRISE
+    name: Hospital Enterprise
+    edition: HOSPITAL
+    tier: Enterprise
+    versions:
+      - version: 1
+        listPrice: 59999
+        trialDays: 0
+        modules: [core, directory, appointments, front_desk, emr, diagnostics, home_collection, billing]
+        features:
+          appointments.max_advance_days: { limit: 180 }
+        addons: []
+      # Phase 19: SMS allowance per month; beyond it each SMS is billed (price book)
+      - version: 2
+        from: 1
+        features:
+          core.sms: { limit: 100000, overage: ALLOW_BILL }
+      # Phase 20: Enterprise may use its own domain (e.g. care.myhospital.in)
+      - version: 3
+        from: 2
+        features:
+          core.custom_domain: { enabled: true }
+      # Phase 22: AI assistant included, 20,000 patient messages a month
+      - version: 4
+        from: 3
+        modules: [core, directory, appointments, front_desk, emr, diagnostics, home_collection, billing, ai]
+        features:
+          ai.concierge: { limit: 20000, overage: BLOCK }
+
+  # MediCare's own account (the platform console). Internal: never listed, sold or offered; assigned by `mc seed demo`.
+  - code: MEDICARE_HQ
+    name: MediCare HQ
+    edition: HOSPITAL
+    tier: Internal
+    internal: true
+    versions:
+      - version: 1
+        listPrice: 0
+        modules: [core, platform]
+        addons: []

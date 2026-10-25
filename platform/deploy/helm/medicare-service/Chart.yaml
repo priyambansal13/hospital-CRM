@@ -1,0 +1,6 @@
+apiVersion: v2
+name: medicare-service
+description: One MediCare backend microservice (Deployment, Service, HPA, PDB, migration Job). Values come from the service's package.json "mc" metadata via `mc k8s render`.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

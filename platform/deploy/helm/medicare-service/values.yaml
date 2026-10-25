@@ -1,0 +1,23 @@
+# Filled per service by `mc k8s render <env>` (name, port, schema, migrations, extra secrets).
+name: ""
+port: 4400
+schema: ""
+migrations: true                 # run `node dist/migrate.js all` as a pre-install/pre-upgrade hook
+image:
+  registry: ""                   # e.g. asia-south1-docker.pkg.dev/<project>/medicare
+  tag: latest
+  pullPolicy: IfNotPresent
+replicas: 2
+autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 6, cpuPercent: 70 }
+resources:
+  requests: { cpu: 100m, memory: 192Mi }
+  limits: { memory: 512Mi }
+# shared, non-secret settings (ConfigMap from the medicare-platform chart)
+configMap: medicare-config
+# Secret holding INTERNAL_API_TOKEN, REDIS_URL, DB_PASSWORD_SVC_* ... (synced by External Secrets)
+secret: medicare-secrets
+# extra keys from that Secret this service needs (least privilege: each service only gets what it uses)
+extraSecretKeys: []
+serviceAccount:
+  annotations: {}                # e.g. iam.gke.io/gcp-service-account for Workload Identity
+podAnnotations: {}

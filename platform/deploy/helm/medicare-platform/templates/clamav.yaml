@@ -1,0 +1,32 @@
+# ClamAV daemon for document scanning (docs/LLD.md §10). Only records-service talks to it (port 3310).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clamav
+  labels: { app.kubernetes.io/name: clamav, app.kubernetes.io/part-of: medicare }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/name: clamav } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: clamav, app.kubernetes.io/part-of: medicare }
+    spec:
+      securityContext: { runAsNonRoot: false, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: clamd
+          image: {{ .Values.clamav.image }}
+          ports: [{ name: clamd, containerPort: 3310 }]
+          resources:
+            requests: { cpu: 250m, memory: {{ .Values.clamav.memory }} }
+            limits: { memory: {{ .Values.clamav.memory }} }
+          readinessProbe: { tcpSocket: { port: 3310 }, initialDelaySeconds: 60, periodSeconds: 15 }
+          livenessProbe: { tcpSocket: { port: 3310 }, initialDelaySeconds: 300, periodSeconds: 30 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: clamav
+  labels: { app.kubernetes.io/name: clamav, app.kubernetes.io/part-of: medicare }
+spec:
+  selector: { app.kubernetes.io/name: clamav }
+  ports: [{ name: clamd, port: 3310, targetPort: 3310 }]

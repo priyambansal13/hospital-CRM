@@ -1,0 +1,18 @@
+# Every hospital host (*.<domain>, and later custom domains) goes to the shell zone, which routes to the other
+# zones; Keycloak gets auth.<domain>. TLS: wildcard certificate via cert-manager (DNS-01).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: medicare-web
+  annotations:
+    cert-manager.io/cluster-issuer: {{ .Values.ingress.clusterIssuer }}
+spec:
+  ingressClassName: {{ .Values.ingress.className }}
+  tls:
+    - hosts: [{{ printf "*.%s" .Values.domain | quote }}, {{ .Values.domain | quote }}]
+      secretName: medicare-wildcard-tls
+  rules:
+    - host: {{ printf "*.%s" .Values.domain | quote }}
+      http:
+        paths:
+          - { path: /, pathType: Prefix, backend: { service: { name: zone-shell, port: { number: 3000 } } } }

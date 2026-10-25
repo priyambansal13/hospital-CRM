@@ -1,0 +1,12 @@
+zone: ""                       # shell, patient, doctor, admin ...
+image:
+  registry: ""
+  tag: latest
+  pullPolicy: IfNotPresent
+replicas: 2
+autoscaling: { enabled: true, minReplicas: 2, maxReplicas: 5, cpuPercent: 70 }
+resources:
+  requests: { cpu: 100m, memory: 192Mi }
+  limits: { memory: 512Mi }
+configMap: medicare-zone-config   # GATEWAY_URL, KEYCLOAK_ISSUER, KEYCLOAK_CLIENT_ID
+secret: medicare-secrets          # SESSION_SECRET

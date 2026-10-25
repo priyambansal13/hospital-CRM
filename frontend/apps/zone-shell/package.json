@@ -1,0 +1,32 @@
+{
+  "name": "@mc/zone-shell",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "mc": { "kind": "zone", "port": 3400, "basePath": "", "owner": "team-web-platform" },
+  "scripts": {
+    "dev": "next dev -p 3400",
+    "build": "next build",
+    "start": "next start -p 3400",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint src",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@mc/auth": "workspace:^",
+    "@mc/bff": "workspace:^",
+    "@mc/features": "workspace:^",
+    "@mc/ui": "workspace:^",
+    "next": "16.4.2",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "oxlint": "^1.89.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  }
+}

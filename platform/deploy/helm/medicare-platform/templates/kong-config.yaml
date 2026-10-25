@@ -1,0 +1,27 @@
+# Kong declarative config (DB-less), mounted by the Kong release (dblessConfig.configMap: kong-declarative).
+# Same routes as local `mc gateway sync`, with in-cluster service URLs; /internal/* is never exposed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kong-declarative
+  namespace: {{ .Values.infraNamespace }}
+data:
+  kong.yml: |
+    _format_version: "3.0"
+    _transform: true
+    plugins:
+      - name: correlation-id
+        config: { header_name: X-Request-Id, generator: uuid, echo_downstream: true }
+    services:
+    {{- range .Values.services }}
+      - name: {{ .name }}
+        url: {{ printf "http://%s.%s.svc.cluster.local:%v" .name $.Release.Namespace .port }}
+        routes:
+          - { name: {{ .route }}, paths: ["/api/{{ .route }}/"], strip_path: true }
+          - name: {{ .route }}-internal-blocked
+            paths: ["/api/{{ .route }}/internal"]
+            plugins: [{ name: request-termination, config: { status_code: 404, message: "not found" } }]
+        plugins:
+          - name: rate-limiting
+            config: { minute: 1200, policy: local, limit_by: header, header_name: X-Tenant-Host }
+    {{- end }}

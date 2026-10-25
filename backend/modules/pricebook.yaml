@@ -1,0 +1,30 @@
+# Price books (docs/PRODUCT-MODULES-AND-PLANS.md §5), loaded by subscription-service at startup (insert/update by code;
+# the platform console shows them). One book per currency/region; INR first.
+#
+# Per plan (all its versions) and per add-on, a list of price components:
+#   FLAT        amount per month (a plan's FLAT defaults to its version's list price when not given here)
+#   PER_SEAT    amount per active doctor per month beyond `included`
+#   PER_BRANCH  amount per active branch per month beyond `included`
+#   TIERED      per doctor, by volume: each doctor is charged at the rate of the tier it falls in
+#   USAGE       per unit of a metered feature beyond the plan's allowance (when the plan's overage is ALLOW_BILL)
+# GST is added on the total after discounts.
+
+priceBooks:
+  - code: IN_INR_2026
+    name: India (INR) 2026
+    currency: INR
+    gstPercent: 18
+    default: true
+    plans:
+      CLINIC_PRO:
+        - { model: PER_SEAT, unit: doctor, amount: 499, included: 5 }
+      HOSPITAL_PRO:
+        - { model: PER_BRANCH, unit: branch, amount: 2500, included: 2 }
+        - { model: TIERED, unit: doctor, tiers: [{ upTo: 25, amount: 0 }, { upTo: 100, amount: 399 }, { upTo: null, amount: 299 }] }
+      HOSPITAL_ENTERPRISE:
+        - { model: TIERED, unit: doctor, tiers: [{ upTo: 50, amount: 0 }, { upTo: 200, amount: 299 }, { upTo: null, amount: 199 }] }
+    usage:
+      core.sms: { amount: 0.20 }
+    coupons:
+      - { code: WELCOME20, description: 20% off the first 3 months, percentOff: 20, months: 3, maxRedemptions: 1000 }
+      - { code: LAUNCH1000, description: ₹1,000 off the first invoice, amountOff: 1000, months: 1, maxRedemptions: 500 }

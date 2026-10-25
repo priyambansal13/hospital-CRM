@@ -1,0 +1,23 @@
+{
+  "name": "medicare-backend",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.11.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --concurrency=30",
+    "lint": "turbo run lint && node scripts/check-boundaries.mjs",
+    "test": "turbo run test",
+    "test:integration": "turbo run test:integration --concurrency=1",
+    "typecheck": "turbo run typecheck",
+    "check:manifests": "pnpm --filter @mc/entitlement-service check:manifests",
+    "gen": "node scripts/gen.mjs"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.9",
+    "typescript": "^6.0.2"
+  }
+}

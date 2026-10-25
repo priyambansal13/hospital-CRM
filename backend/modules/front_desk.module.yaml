@@ -1,0 +1,19 @@
+key: front_desk
+name: Front desk and queue
+version: 3
+dependsOn: [appointments]
+services: [scheduling-service, patient-service, realtime-service, billing-service]
+permissions:
+  - { code: appointment:checkin:branch, description: Check patients in and manage the queue }
+  - { code: walkin:create:branch, description: Book walk-in patients }
+  - { code: patient:register:branch, description: Look up and register patients at the desk }
+features:
+  - { key: front_desk.queue_tokens, name: Queue tokens, type: BOOLEAN }
+nav:
+  - { key: desk, label: Front desk, zone: desk, href: /desk, permissions: [appointment:checkin:branch], audience: staff }
+  - { key: desk-patients, label: Patients, zone: desk, href: /desk/patients, permissions: [patient:register:branch], audience: staff }
+  - { key: doctor-queue, label: Today's queue, zone: doctor, href: /doctor/queue, permissions: [schedule:manage:own], audience: staff }
+defaultRoleGrants:
+  RECEPTIONIST: [appointment:checkin:branch, walkin:create:branch, patient:register:branch]
+  NURSE: [appointment:checkin:branch]
+  BRANCH_ADMIN: [appointment:checkin:branch, walkin:create:branch, patient:register:branch]

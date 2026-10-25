@@ -1,0 +1,61 @@
+{
+  "$comment": "Micro-frontend zones (Next.js Multi-Zones, docs/MICROFRONTENDS.md). The shell owns '/' and rewrites each basePath to its zone. `pnpm gen zone` appends here. Module manifests' nav items point at these zones; nav items for zones not listed here are hidden.",
+  "zones": [
+    {
+      "name": "shell",
+      "port": 3400,
+      "basePath": "",
+      "owner": "team-web-platform",
+      "title": "Home"
+    },
+    {
+      "name": "admin",
+      "port": 3405,
+      "basePath": "/admin",
+      "owner": "team-web-platform",
+      "title": "Admin"
+    },
+    {
+      "name": "patient",
+      "port": 3401,
+      "basePath": "/care",
+      "owner": "team-unassigned",
+      "title": "patient"
+    },
+    {
+      "name": "doctor",
+      "port": 3402,
+      "basePath": "/doctor",
+      "owner": "team-unassigned",
+      "title": "doctor"
+    },
+    {
+      "name": "desk",
+      "port": 3403,
+      "basePath": "/desk",
+      "owner": "team-core-product",
+      "title": "Front desk"
+    },
+    {
+      "name": "lab",
+      "port": 3404,
+      "basePath": "/lab",
+      "owner": "team-clinical",
+      "title": "Lab"
+    },
+    {
+      "name": "platform",
+      "port": 3406,
+      "basePath": "/platform",
+      "owner": "team-platform",
+      "title": "Platform console"
+    },
+    {
+      "name": "account",
+      "port": 3407,
+      "basePath": "/account",
+      "owner": "team-platform",
+      "title": "Subscription"
+    }
+  ]
+}

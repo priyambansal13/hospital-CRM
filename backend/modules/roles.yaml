@@ -1,0 +1,16 @@
+# Default role templates copied into every new hospital (docs/FEATURES-AND-PLANS.md §7). Permissions come from the
+# modules' defaultRoleGrants; hospitals can edit their copies (custom roles arrive with the role editor, Phase 20).
+roles:
+  - { code: TENANT_ADMIN, name: Hospital admin, grantsAll: true, home: /admin }
+  - { code: BRANCH_ADMIN, name: Branch admin, home: /admin }
+  - { code: DOCTOR, name: Doctor, home: /doctor }
+  - { code: NURSE, name: Nurse, home: /desk }
+  - { code: RECEPTIONIST, name: Receptionist, home: /desk }
+  - { code: LAB_TECH, name: Lab technician, home: /lab }
+  - { code: PATHOLOGIST, name: Pathologist, home: /lab }
+  - { code: PHLEBOTOMIST, name: Phlebotomist (home collection), home: /lab/visits }
+  - { code: PATIENT, name: Patient, patient: true, home: /care }
+  # MediCare staff (only meaningful in the HQ "hospital", where the platform module is active)
+  - { code: PLATFORM_PRODUCT, name: MediCare product manager, home: /platform/plans }
+  - { code: PLATFORM_APPROVER, name: MediCare plan approver, home: /platform/plans }
+  - { code: PLATFORM_SUPPORT, name: MediCare support, home: /platform }

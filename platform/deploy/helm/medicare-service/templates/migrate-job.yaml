@@ -1,0 +1,35 @@
+{{- if and .Values.migrations .Values.schema }}
+# Applies this service's migrations before the new version rolls out: control schema, template DB, then every
+# hospital database (docs/MULTI-TENANCY.md §3.4). Connects to Postgres directly (PG_HOST_DIRECT), not PgBouncer.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Values.name }}-migrate-{{ .Values.image.tag | replace "." "-" | trunc 20 | trimSuffix "-" }}
+  labels: {{- include "svc.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels: {{- include "svc.labels" . | nindent 8 }}
+    spec:
+      # hooks run before the chart's ServiceAccount exists; migrations only need the DB password
+      serviceAccountName: default
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext: { fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: migrate
+          image: {{ include "svc.image" . }}
+          command: ["node", "dist/migrate.js", "all"]
+          envFrom: [{ configMapRef: { name: {{ .Values.configMap }} } }]
+          env: {{- include "svc.env" . | nindent 12 }}
+          resources: { requests: { cpu: 50m, memory: 128Mi }, limits: { memory: 256Mi } }
+          securityContext: {{- include "svc.securityContext" . | nindent 12 }}
+{{- end }}

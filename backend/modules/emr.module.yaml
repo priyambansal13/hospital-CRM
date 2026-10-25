@@ -1,0 +1,19 @@
+key: emr
+name: Clinical records (EMR)
+version: 2
+dependsOn: [appointments]
+services: [records-service, audit-service]
+permissions:
+  - { code: record:read:treating, description: Read records of patients you are treating }
+  - { code: record:write:treating, description: Write visits and prescriptions for patients you are treating }
+  - { code: record:break_glass:tenant, description: Emergency access to any patient's record (time-limited, audited) }
+  - { code: record:read:own, description: View own and family members' prescriptions }
+features: []
+nav:
+  - { key: doctor-patients, label: Patients, zone: doctor, href: /doctor/patients, permissions: [record:read:treating], audience: staff }
+  - { key: my-health-record, label: Health record, zone: patient, href: /care/timeline, permissions: [record:read:own], audience: patient }
+  - { key: my-prescriptions, label: Prescriptions, zone: patient, href: /care/prescriptions, permissions: [record:read:own], audience: patient }
+  - { key: my-sharing, label: Sharing, zone: patient, href: /care/sharing, permissions: [record:read:own, profile:manage:own], audience: patient }
+defaultRoleGrants:
+  DOCTOR: [record:read:treating, record:write:treating, record:break_glass:tenant]
+  PATIENT: [record:read:own]

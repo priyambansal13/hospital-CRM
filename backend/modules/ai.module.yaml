@@ -1,0 +1,23 @@
+# AI assistant (docs/AI-AGENTS.md; IMPLEMENTATION-PLAN.md Phase 22): the patients' Care Concierge, knowledge-only for
+# now (hospital FAQs, policies, test preparation), with the emergency check in code before any model call and a
+# human handoff to the front desk. Booking tools come in Phase 23.
+key: ai
+name: AI assistant
+version: 1
+dependsOn: [core]
+services: [ai-assistant-service]
+lifecycle: [assistant]
+permissions:
+  - { code: assistant:chat:own, description: Chat with the hospital's AI assistant }
+  - { code: knowledge:manage:tenant, description: Edit what the AI assistant knows (FAQs, policies, emergency information) }
+  - { code: assistant_handoff:manage:branch, description: See chats patients handed to a person and close them }
+features:
+  - { key: ai.concierge, name: AI assistant messages, type: METERED, unit: messages }
+nav:
+  - { key: assistant-chat, label: Ask us, zone: patient, href: /care/assistant, permissions: [assistant:chat:own], audience: patient }
+  - { key: assistant-handoffs, label: Chat requests, zone: desk, href: /desk/assistant, permissions: [assistant_handoff:manage:branch], audience: staff }
+  - { key: knowledge-admin, label: Assistant knowledge, zone: admin, href: /admin/knowledge, permissions: [knowledge:manage:tenant, admin:access:tenant] }
+defaultRoleGrants:
+  PATIENT: [assistant:chat:own]
+  RECEPTIONIST: [assistant_handoff:manage:branch]
+  BRANCH_ADMIN: [assistant_handoff:manage:branch, knowledge:manage:tenant]

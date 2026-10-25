@@ -1,0 +1,19 @@
+{
+  "name": "medicare-frontend",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.11.2",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev --concurrency=20",
+    "lint": "turbo run lint && node scripts/check-boundaries.mjs",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "gen": "node scripts/gen.mjs"
+  },
+  "devDependencies": {
+    "turbo": "^2.11.9",
+    "typescript": "^6.0.2"
+  }
+}

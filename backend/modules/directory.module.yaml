@@ -1,0 +1,20 @@
+key: directory
+name: Doctor directory
+version: 2
+dependsOn: [core]
+services: [provider-service]
+permissions:
+  - { code: doctor:read:tenant, description: Browse doctors and specialties }
+  - { code: doctor:manage:tenant, description: Add and edit doctors, specialties and fees }
+features:
+  - { key: directory.public_profiles, name: Public doctor profiles, type: BOOLEAN }
+  - { key: directory.doctors, name: Doctors, type: LIMIT, unit: doctors }
+nav:
+  - { key: doctors-admin, label: Doctors, zone: admin, href: /admin/doctors, permissions: [doctor:manage:tenant, admin:access:tenant] }
+  - { key: specialties-admin, label: Specialties, zone: admin, href: /admin/specialties, permissions: [doctor:manage:tenant, admin:access:tenant] }
+  - { key: find-doctor, label: Find a doctor, zone: patient, href: /care/doctors, permissions: [doctor:read:tenant] }
+defaultRoleGrants:
+  PATIENT: [doctor:read:tenant]
+  RECEPTIONIST: [doctor:read:tenant]
+  DOCTOR: [doctor:read:tenant]
+  BRANCH_ADMIN: [doctor:read:tenant, doctor:manage:tenant]

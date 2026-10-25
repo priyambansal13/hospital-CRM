@@ -1,0 +1,28 @@
+key: appointments
+name: Appointments
+version: 3
+dependsOn: [directory]
+services: [scheduling-service]
+permissions:
+  - { code: appointment:create:own, description: Book appointments for self and family }
+  - { code: appointment:read:own, description: View own appointments }
+  - { code: appointment:cancel:own, description: Cancel or reschedule own appointments }
+  - { code: schedule:manage:own, description: Manage own availability and leave }
+  - { code: schedule:manage:branch, description: Manage any doctor's schedule in the branch }
+  - { code: appointment:read:branch, description: View all appointments in the branch }
+  - { code: appointment:cancel:branch, description: Cancel any appointment in the branch }
+features:
+  - { key: appointments.waitlist, name: Waitlist, type: BOOLEAN }
+  - { key: appointments.max_advance_days, name: Advance booking window, type: LIMIT, unit: days }
+settings:
+  - { key: appointments.cancel_cutoff_hours, name: Patients can cancel or move online until (hours before), type: int, default: 2, min: 0, max: 72 }
+nav:
+  - { key: my-schedule, label: My schedule, zone: doctor, href: /doctor/schedule, permissions: [schedule:manage:own], audience: staff }
+  - { key: schedules-admin, label: Schedules, zone: admin, href: /admin/schedules, permissions: [schedule:manage:branch, admin:access:tenant] }
+  - { key: my-appointments, label: My appointments, zone: patient, href: /care/appointments, permissions: [appointment:read:own], audience: patient }
+  - { key: doctor-appointments, label: Appointments, zone: doctor, href: /doctor/appointments, permissions: [schedule:manage:own], audience: staff }
+defaultRoleGrants:
+  PATIENT: [appointment:create:own, appointment:read:own, appointment:cancel:own]
+  DOCTOR: [schedule:manage:own, appointment:read:own]
+  BRANCH_ADMIN: [schedule:manage:branch, appointment:read:branch, appointment:cancel:branch]
+  RECEPTIONIST: [appointment:read:branch, appointment:cancel:branch]

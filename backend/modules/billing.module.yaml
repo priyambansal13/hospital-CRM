@@ -1,0 +1,22 @@
+key: billing
+name: Billing and payments
+version: 2
+dependsOn: [core]
+services: [billing-service]
+permissions:
+  - { code: invoice:read:own, description: View own invoices and receipts }
+  - { code: payment:create:own, description: Pay own invoices online }
+  - { code: invoice:read:branch, description: View all invoices and the day's collections }
+  - { code: payment:collect:branch, description: Take payments at the counter (cash, UPI, card) }
+  - { code: refund:create:branch, description: Issue manual refunds }
+features:
+  - { key: billing.online_payments, name: Online payments, type: BOOLEAN }
+nav:
+  - { key: my-bills, label: My bills, zone: patient, href: /care/bills, permissions: [invoice:read:own], audience: patient }
+  - { key: billing-admin, label: Billing, zone: admin, href: /admin/billing, permissions: [invoice:read:branch, admin:access:tenant] }
+defaultRoleGrants:
+  PATIENT: [invoice:read:own, payment:create:own]
+  RECEPTIONIST: [invoice:read:branch, payment:collect:branch]
+  LAB_TECH: [payment:collect:branch]
+  PHLEBOTOMIST: [payment:collect:branch]
+  BRANCH_ADMIN: [invoice:read:branch, payment:collect:branch, refund:create:branch]

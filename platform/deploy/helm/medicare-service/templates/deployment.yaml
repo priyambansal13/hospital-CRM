@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.name }}
+  labels: {{- include "svc.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicas }}
+  {{- end }}
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels: { app.kubernetes.io/name: {{ .Values.name }} }
+  strategy: { type: RollingUpdate, rollingUpdate: { maxUnavailable: 0, maxSurge: 1 } }
+  template:
+    metadata:
+      labels: {{- include "svc.labels" . | nindent 8 }}
+      annotations:
+        checksum/values: {{ toJson .Values | sha256sum | trunc 16 }}
+        {{- with .Values.podAnnotations }}{{ toYaml . | nindent 8 }}{{ end }}
+    spec:
+      serviceAccountName: {{ .Values.name }}
+      terminationGracePeriodSeconds: 30
+      securityContext: { fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+      containers:
+        - name: app
+          image: {{ include "svc.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports: [{ name: http, containerPort: {{ .Values.port }} }]
+          envFrom: [{ configMapRef: { name: {{ .Values.configMap }} } }]
+          env: {{- include "svc.env" . | nindent 12 }}
+          readinessProbe: { httpGet: { path: /health, port: http }, periodSeconds: 5, failureThreshold: 3 }
+          livenessProbe: { httpGet: { path: /health, port: http }, initialDelaySeconds: 20, periodSeconds: 15, failureThreshold: 4 }
+          startupProbe: { httpGet: { path: /health, port: http }, periodSeconds: 3, failureThreshold: 40 }
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext: {{- include "svc.securityContext" . | nindent 12 }}
+          volumeMounts: [{ name: tmp, mountPath: /tmp }]
+      volumes: [{ name: tmp, emptyDir: {} }]
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: { matchLabels: { app.kubernetes.io/name: {{ .Values.name }} } }

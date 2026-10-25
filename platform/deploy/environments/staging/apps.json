@@ -1,0 +1,296 @@
+[
+  {
+    "name": "medicare-platform",
+    "chart": "medicare-platform",
+    "wave": "0",
+    "values": {},
+    "valuesJson": "{}"
+  },
+  {
+    "name": "ai-assistant-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "ai-assistant-service",
+      "port": 4415,
+      "schema": "assistant",
+      "migrations": true,
+      "extraSecretKeys": [
+        "MC_MASTER_KEY"
+      ],
+      "serviceAccount": {
+        "annotations": {
+          "iam.gke.io/gcp-service-account": "medicare-ai@<gcp-project>.iam.gserviceaccount.com"
+        }
+      }
+    },
+    "valuesJson": "{\"name\":\"ai-assistant-service\",\"port\":4415,\"schema\":\"assistant\",\"migrations\":true,\"extraSecretKeys\":[\"MC_MASTER_KEY\"],\"serviceAccount\":{\"annotations\":{\"iam.gke.io/gcp-service-account\":\"medicare-ai@<gcp-project>.iam.gserviceaccount.com\"}}}"
+  },
+  {
+    "name": "audit-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "audit-service",
+      "port": 4411,
+      "schema": "audit",
+      "migrations": true,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"audit-service\",\"port\":4411,\"schema\":\"audit\",\"migrations\":true,\"extraSecretKeys\":[]}"
+  },
+  {
+    "name": "billing-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "billing-service",
+      "port": 4409,
+      "schema": "billing",
+      "migrations": true,
+      "extraSecretKeys": [
+        "RAZORPAY_KEY_ID",
+        "RAZORPAY_KEY_SECRET",
+        "RAZORPAY_WEBHOOK_SECRET"
+      ]
+    },
+    "valuesJson": "{\"name\":\"billing-service\",\"port\":4409,\"schema\":\"billing\",\"migrations\":true,\"extraSecretKeys\":[\"RAZORPAY_KEY_ID\",\"RAZORPAY_KEY_SECRET\",\"RAZORPAY_WEBHOOK_SECRET\"]}"
+  },
+  {
+    "name": "diagnostics-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "diagnostics-service",
+      "port": 4412,
+      "schema": "diagnostics",
+      "migrations": true,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"diagnostics-service\",\"port\":4412,\"schema\":\"diagnostics\",\"migrations\":true,\"extraSecretKeys\":[]}"
+  },
+  {
+    "name": "entitlement-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "entitlement-service",
+      "port": 4403,
+      "schema": "entitlement",
+      "migrations": true,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"entitlement-service\",\"port\":4403,\"schema\":\"entitlement\",\"migrations\":true,\"extraSecretKeys\":[]}"
+  },
+  {
+    "name": "iam-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "iam-service",
+      "port": 4402,
+      "schema": "iam",
+      "migrations": true,
+      "extraSecretKeys": [
+        "MC_IAM_CLIENT_SECRET"
+      ]
+    },
+    "valuesJson": "{\"name\":\"iam-service\",\"port\":4402,\"schema\":\"iam\",\"migrations\":true,\"extraSecretKeys\":[\"MC_IAM_CLIENT_SECRET\"]}"
+  },
+  {
+    "name": "notification-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "notification-service",
+      "port": 4407,
+      "schema": "notification",
+      "migrations": true,
+      "extraSecretKeys": [
+        "SMTP_USER",
+        "SMTP_PASSWORD"
+      ]
+    },
+    "valuesJson": "{\"name\":\"notification-service\",\"port\":4407,\"schema\":\"notification\",\"migrations\":true,\"extraSecretKeys\":[\"SMTP_USER\",\"SMTP_PASSWORD\"]}"
+  },
+  {
+    "name": "patient-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "patient-service",
+      "port": 4406,
+      "schema": "patient",
+      "migrations": true,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"patient-service\",\"port\":4406,\"schema\":\"patient\",\"migrations\":true,\"extraSecretKeys\":[]}"
+  },
+  {
+    "name": "provider-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "provider-service",
+      "port": 4404,
+      "schema": "provider",
+      "migrations": true,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"provider-service\",\"port\":4404,\"schema\":\"provider\",\"migrations\":true,\"extraSecretKeys\":[]}"
+  },
+  {
+    "name": "realtime-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "realtime-service",
+      "port": 4408,
+      "schema": "realtime",
+      "migrations": false,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"realtime-service\",\"port\":4408,\"schema\":\"realtime\",\"migrations\":false,\"extraSecretKeys\":[]}"
+  },
+  {
+    "name": "records-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "records-service",
+      "port": 4410,
+      "schema": "records",
+      "migrations": true,
+      "extraSecretKeys": [
+        "MC_MASTER_KEY",
+        "S3_ACCESS_KEY",
+        "S3_SECRET_KEY"
+      ]
+    },
+    "valuesJson": "{\"name\":\"records-service\",\"port\":4410,\"schema\":\"records\",\"migrations\":true,\"extraSecretKeys\":[\"MC_MASTER_KEY\",\"S3_ACCESS_KEY\",\"S3_SECRET_KEY\"]}"
+  },
+  {
+    "name": "scheduling-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "scheduling-service",
+      "port": 4405,
+      "schema": "scheduling",
+      "migrations": true,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"scheduling-service\",\"port\":4405,\"schema\":\"scheduling\",\"migrations\":true,\"extraSecretKeys\":[]}"
+  },
+  {
+    "name": "search-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "search-service",
+      "port": 4414,
+      "schema": "search",
+      "migrations": true,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"search-service\",\"port\":4414,\"schema\":\"search\",\"migrations\":true,\"extraSecretKeys\":[]}"
+  },
+  {
+    "name": "subscription-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "subscription-service",
+      "port": 4413,
+      "schema": "subscription",
+      "migrations": true,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"subscription-service\",\"port\":4413,\"schema\":\"subscription\",\"migrations\":true,\"extraSecretKeys\":[]}"
+  },
+  {
+    "name": "tenant-service",
+    "chart": "medicare-service",
+    "wave": "1",
+    "values": {
+      "name": "tenant-service",
+      "port": 4401,
+      "schema": "tenant",
+      "migrations": true,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"tenant-service\",\"port\":4401,\"schema\":\"tenant\",\"migrations\":true,\"extraSecretKeys\":[]}"
+  },
+  {
+    "name": "zone-shell",
+    "chart": "medicare-zone",
+    "wave": "3",
+    "values": {
+      "zone": "shell"
+    },
+    "valuesJson": "{\"zone\":\"shell\"}"
+  },
+  {
+    "name": "zone-admin",
+    "chart": "medicare-zone",
+    "wave": "3",
+    "values": {
+      "zone": "admin"
+    },
+    "valuesJson": "{\"zone\":\"admin\"}"
+  },
+  {
+    "name": "zone-patient",
+    "chart": "medicare-zone",
+    "wave": "3",
+    "values": {
+      "zone": "patient"
+    },
+    "valuesJson": "{\"zone\":\"patient\"}"
+  },
+  {
+    "name": "zone-doctor",
+    "chart": "medicare-zone",
+    "wave": "3",
+    "values": {
+      "zone": "doctor"
+    },
+    "valuesJson": "{\"zone\":\"doctor\"}"
+  },
+  {
+    "name": "zone-desk",
+    "chart": "medicare-zone",
+    "wave": "3",
+    "values": {
+      "zone": "desk"
+    },
+    "valuesJson": "{\"zone\":\"desk\"}"
+  },
+  {
+    "name": "zone-lab",
+    "chart": "medicare-zone",
+    "wave": "3",
+    "values": {
+      "zone": "lab"
+    },
+    "valuesJson": "{\"zone\":\"lab\"}"
+  },
+  {
+    "name": "zone-platform",
+    "chart": "medicare-zone",
+    "wave": "3",
+    "values": {
+      "zone": "platform"
+    },
+    "valuesJson": "{\"zone\":\"platform\"}"
+  },
+  {
+    "name": "zone-account",
+    "chart": "medicare-zone",
+    "wave": "3",
+    "values": {
+      "zone": "account"
+    },
+    "valuesJson": "{\"zone\":\"account\"}"
+  }
+]

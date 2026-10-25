@@ -1,0 +1,14 @@
+{
+  "name": "medicare-platform",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.11.2",
+  "scripts": {
+    "mc": "node scripts/mc.mjs",
+    "test:e2e": "playwright test -c tests/e2e/playwright.config.ts",
+    "test:tenancy": "node tests/tenancy-leak.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0"
+  }
+}

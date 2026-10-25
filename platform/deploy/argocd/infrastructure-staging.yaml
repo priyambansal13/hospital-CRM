@@ -1,0 +1,78 @@
+# Third-party infrastructure for staging (namespace medicare-infra). Chart versions are pinned; check for updates
+# before first use. Postgres (Cloud SQL) and Redis (Memorystore) are managed services created by Terraform.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: { name: staging-external-secrets, namespace: argocd, annotations: { argocd.argoproj.io/sync-wave: "-3" } }
+spec:
+  project: medicare
+  source: { repoURL: https://charts.external-secrets.io, chart: external-secrets, targetRevision: 0.19.2, helm: { values: "installCRDs: true" } }
+  destination: { server: https://kubernetes.default.svc, namespace: medicare-infra }
+  syncPolicy: { automated: { prune: true, selfHeal: true }, syncOptions: [CreateNamespace=true, ServerSideApply=true] }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: { name: staging-cert-manager, namespace: argocd, annotations: { argocd.argoproj.io/sync-wave: "-3" } }
+spec:
+  project: medicare
+  source: { repoURL: https://charts.jetstack.io, chart: cert-manager, targetRevision: v1.18.2, helm: { values: "crds: { enabled: true }" } }
+  destination: { server: https://kubernetes.default.svc, namespace: medicare-infra }
+  syncPolicy: { automated: { prune: true, selfHeal: true }, syncOptions: [CreateNamespace=true, ServerSideApply=true] }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: { name: staging-redpanda, namespace: argocd, annotations: { argocd.argoproj.io/sync-wave: "-2" } }
+spec:
+  project: medicare
+  source:
+    repoURL: https://charts.redpanda.com
+    chart: redpanda
+    targetRevision: 25.1.1
+    helm:
+      values: |
+        statefulset: { replicas: 3 }
+        tls: { enabled: false }
+        external: { enabled: false }
+        resources: { cpu: { cores: 1 }, memory: { container: { max: 2Gi } } }
+        storage: { persistentVolume: { size: 50Gi } }
+  destination: { server: https://kubernetes.default.svc, namespace: medicare-infra }
+  syncPolicy: { automated: { prune: false, selfHeal: true }, syncOptions: [CreateNamespace=true] }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: { name: staging-keycloak, namespace: argocd, annotations: { argocd.argoproj.io/sync-wave: "-2" } }
+spec:
+  project: medicare
+  source:
+    repoURL: https://codecentric.github.io/helm-charts
+    chart: keycloakx
+    targetRevision: 7.1.1
+    helm:
+      values: |
+        command: ["/opt/keycloak/bin/kc.sh", "start", "--import-realm", "--hostname=https://auth.staging.medicare.app", "--http-enabled=true", "--proxy-headers=xforwarded"]
+        extraEnv: |
+          - name: MC_IAM_CLIENT_SECRET
+            valueFrom: { secretKeyRef: { name: keycloak-iam-client, key: MC_IAM_CLIENT_SECRET } }
+        database: { vendor: postgres, hostname: "<cloud_sql_private_ip>", database: keycloak, username: keycloak, existingSecret: keycloak-db }
+        extraVolumes: '[{ name: realm, configMap: { name: keycloak-realm } }]'
+        extraVolumeMounts: '[{ name: realm, mountPath: /opt/keycloak/data/import, readOnly: true }]'
+        ingress: { enabled: true, rules: [{ host: auth.staging.medicare.app, paths: [{ path: /, pathType: Prefix }] }], tls: [{ hosts: [auth.staging.medicare.app], secretName: keycloak-tls }] }
+  destination: { server: https://kubernetes.default.svc, namespace: medicare-infra }
+  syncPolicy: { automated: { prune: false, selfHeal: true }, syncOptions: [CreateNamespace=true] }
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: { name: staging-kong, namespace: argocd, annotations: { argocd.argoproj.io/sync-wave: "-1" } }
+spec:
+  project: medicare
+  source:
+    repoURL: https://charts.konghq.com
+    chart: kong
+    targetRevision: 2.51.0
+    helm:
+      values: |
+        ingressController: { enabled: false }
+        env: { database: "off" }
+        dblessConfig: { configMap: kong-declarative }
+        proxy: { type: ClusterIP }
+  destination: { server: https://kubernetes.default.svc, namespace: medicare-infra }
+  syncPolicy: { automated: { prune: true, selfHeal: true }, syncOptions: [CreateNamespace=true] }

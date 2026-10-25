@@ -1,0 +1,6 @@
+apiVersion: v2
+name: medicare-zone
+description: One MediCare micro-frontend zone (Next.js standalone). Service name zone-<name> on port 3000, which is what the shell's rewrites point at.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

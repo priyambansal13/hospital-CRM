@@ -1,0 +1,35 @@
+key: diagnostics
+name: Diagnostics and lab
+version: 3
+dependsOn: [core]
+services: [diagnostics-service, records-service, billing-service]
+# switched on: the test catalog and collection times are seeded; switched off: lab data stays readable, nothing new
+lifecycle: [diagnostics]
+permissions:
+  - { code: lab_order:create:own, description: Book lab tests for self and family }
+  - { code: lab_order:read:own, description: View own and family members' lab orders }
+  - { code: lab_order:create:treating, description: Order lab tests for patients you are treating }
+  - { code: lab_order:read:branch, description: See the lab worklist and lab orders }
+  - { code: sample:collect:branch, description: Collect, receive and reject samples }
+  - { code: lab_catalog:manage:tenant, description: Edit lab test prices, preparation and availability }
+  - { code: result:enter:branch, description: Enter lab results }
+  - { code: report:verify:branch, description: Verify, publish and amend lab reports (pathologist) }
+  - { code: lab_order:read:treating, description: See results of lab tests for patients you treat; receive critical values }
+features:
+  - { key: diagnostics.packages, name: Test packages, type: BOOLEAN }
+settings:
+  - { key: diagnostics.max_advance_days, name: How far ahead patients can book a test (days), type: int, default: 30, min: 1, max: 90, planBounded: true }
+nav:
+  - { key: lab-worklist, label: Worklist, zone: lab, href: /lab, permissions: [lab_order:read:branch], audience: staff }
+  - { key: book-tests, label: Lab tests, zone: patient, href: /care/tests, permissions: [lab_order:create:own], audience: patient }
+  - { key: my-lab-orders, label: My lab tests, zone: patient, href: /care/lab-orders, permissions: [lab_order:read:own], audience: patient }
+  - { key: lab-pending, label: Pending results, zone: lab, href: /lab/pending, permissions: [result:enter:branch], audience: staff }
+  - { key: doctor-lab-results, label: Lab results, zone: doctor, href: /doctor/lab-results, permissions: [lab_order:read:treating], audience: staff }
+  - { key: lab-catalog-admin, label: Lab catalog, zone: admin, href: /admin/lab-catalog, permissions: [lab_catalog:manage:tenant, admin:access:tenant] }
+defaultRoleGrants:
+  PATIENT: [lab_order:create:own, lab_order:read:own]
+  DOCTOR: [lab_order:create:treating, lab_order:read:treating]
+  LAB_TECH: [lab_order:read:branch, sample:collect:branch, result:enter:branch]
+  PATHOLOGIST: [lab_order:read:branch, result:enter:branch, report:verify:branch]
+  RECEPTIONIST: [lab_order:read:branch]
+  BRANCH_ADMIN: [lab_order:read:branch, lab_catalog:manage:tenant]

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: medicare-platform
+description: Shared MediCare platform pieces per environment - config, secrets (External Secrets), PgBouncer, Kong declarative config, ingress, DB bootstrap and demo seed jobs.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

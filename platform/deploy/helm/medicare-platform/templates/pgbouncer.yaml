@@ -1,0 +1,59 @@
+# PgBouncer in transaction-pooling mode in front of Cloud SQL (docs/MULTI-TENANCY.md §3.2). Service roles carry their
+# search_path (set by the bootstrap job), so no session state is needed. Same config as local infra/pgbouncer.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pgbouncer-config
+data:
+  pgbouncer.ini: |
+    [databases]
+    * = host={{ .Values.postgres.host }} port={{ .Values.postgres.port }}
+    [pgbouncer]
+    listen_addr = 0.0.0.0
+    listen_port = 6432
+    auth_type = scram-sha-256
+    auth_file = /etc/pgbouncer-secret/userlist.txt
+    pool_mode = transaction
+    default_pool_size = 10
+    max_client_conn = 4000
+    max_db_connections = 60
+    server_idle_timeout = 60
+    ignore_startup_parameters = extra_float_digits
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgbouncer
+  labels: { app.kubernetes.io/name: pgbouncer, app.kubernetes.io/part-of: medicare }
+spec:
+  replicas: {{ .Values.pgbouncer.replicas }}
+  selector: { matchLabels: { app.kubernetes.io/name: pgbouncer } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: pgbouncer }
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: pgbouncer
+          image: {{ .Values.pgbouncer.image }}
+          command: ["pgbouncer", "/etc/pgbouncer/pgbouncer.ini"]
+          ports: [{ name: pg, containerPort: 6432 }]
+          readinessProbe: { tcpSocket: { port: pg }, periodSeconds: 5 }
+          resources: { requests: { cpu: 50m, memory: 32Mi }, limits: { memory: 128Mi } }
+          securityContext: { allowPrivilegeEscalation: false, runAsNonRoot: true, runAsUser: 70, capabilities: { drop: ["ALL"] } }
+          volumeMounts:
+            - { name: config, mountPath: /etc/pgbouncer }
+            - { name: userlist, mountPath: /etc/pgbouncer-secret }
+      volumes:
+        - name: config
+          configMap: { name: pgbouncer-config }
+        - name: userlist
+          secret: { secretName: medicare-secrets, items: [{ key: PGBOUNCER_USERLIST, path: userlist.txt }] }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgbouncer
+spec:
+  selector: { app.kubernetes.io/name: pgbouncer }
+  ports: [{ name: pg, port: 6432, targetPort: pg }]

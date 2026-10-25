@@ -1,0 +1,21 @@
+# Argo CD project for MediCare: only our charts, only our namespaces.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: medicare
+  namespace: argocd
+spec:
+  description: MediCare hospital CRM
+  sourceRepos:
+    - https://github.com/<org>/medicare-platform.git
+    - https://charts.konghq.com
+    - https://codecentric.github.io/helm-charts
+    - https://charts.redpanda.com
+    - https://charts.external-secrets.io
+    - https://charts.jetstack.io
+  destinations:
+    - { server: https://kubernetes.default.svc, namespace: medicare-* }
+  clusterResourceWhitelist:
+    - { group: "", kind: Namespace }
+    - { group: external-secrets.io, kind: ClusterSecretStore }
+    - { group: cert-manager.io, kind: ClusterIssuer }

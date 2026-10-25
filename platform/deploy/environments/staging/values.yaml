@@ -1,0 +1,26 @@
+# Staging environment (GKE, asia-south1). Hand-written settings; the service/zone lists are in generated.yaml.
+# Values marked <…> come from `terraform output` (deploy/terraform/gke-staging).
+environment: staging
+domain: staging.medicare.app
+image:
+  registry: asia-south1-docker.pkg.dev/<gcp-project>/medicare
+  tag: "0.1.0"
+postgres:
+  host: <cloud_sql_private_ip>
+  port: 5432
+  adminUser: postgres
+kafka:
+  brokers: redpanda.medicare-infra.svc.cluster.local:9093
+keycloak:
+  publicUrl: https://auth.staging.medicare.app
+  internalUrl: http://keycloak-http.medicare-infra.svc.cluster.local
+gateway:
+  url: http://kong-kong-proxy.medicare-infra.svc.cluster.local
+externalSecrets:
+  enabled: true
+  store: gcp-secret-manager
+  prefix: medicare-staging
+seedDemo: true          # staging only: synthetic citycare + sunrise
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: medicare-workload@<gcp-project>.iam.gserviceaccount.com

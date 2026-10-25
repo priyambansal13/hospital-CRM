@@ -1,0 +1,10 @@
+packages:
+  - services/*
+  - libs/*
+
+# Native Kafka client builds are never served from pnpm's side-effects cache (a truncated binary cached
+# once would be reused by every later install).
+sideEffectsCache: false
+
+allowBuilds:
+  '@confluentinc/kafka-javascript': true

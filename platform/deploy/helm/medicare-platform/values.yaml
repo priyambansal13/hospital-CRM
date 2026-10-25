@@ -1,0 +1,38 @@
+environment: staging
+domain: staging.medicare.app          # hospitals get <slug>.<domain>; Keycloak at auth.<domain>
+postgres:
+  host: ""                            # Cloud SQL private IP (direct: migrations + bootstrap)
+  port: 5432
+  adminUser: postgres
+pgbouncer:
+  image: edoburu/pgbouncer:v1.26.1-p0
+  replicas: 2
+kafka:
+  brokers: redpanda.medicare-infra.svc.cluster.local:9093
+keycloak:
+  publicUrl: https://auth.staging.medicare.app
+  internalUrl: http://keycloak-http.medicare-infra.svc.cluster.local
+  realm: medicare
+gateway:
+  url: http://kong-kong-proxy.medicare-infra.svc.cluster.local
+smtp: { host: smtp.sendgrid.net, port: 587, secure: false }
+# documents: any S3-compatible endpoint (staging: GCS XML API with HMAC keys from Secret Manager)
+objectStore: { endpoint: https://storage.googleapis.com, region: asia-south1, bucketPrefix: medicare-stg-t- }
+# in-cluster ClamAV (clamd) that records-service streams uploads to before anything is shown
+clamav: { image: clamav/clamav:stable, memory: 2Gi }
+# in-cluster OpenSearch for search-service (indexes are rebuilt from the services, so small disk, no backups)
+# Gemini for ai-assistant-service: Vertex AI (no key) in the cluster's project and region; model ids are config
+ai: { project: "<gcp-project>", location: asia-south1, chatModel: gemini-3.8-flash, embedModel: gemini-embedding-2 }
+opensearch: { image: opensearchproject/opensearch:2.19.1, memory: 1536Mi, javaOpts: "-Xms768m -Xmx768m", storage: 10Gi }
+ingress:
+  className: gce
+  clusterIssuer: letsencrypt-dns
+externalSecrets:
+  enabled: true
+  store: gcp-secret-manager           # ClusterSecretStore name
+  prefix: medicare-staging            # GCP secret "<prefix>-<key in kebab-case>"
+infraNamespace: medicare-infra      # where Kong and Keycloak run (their config maps go there)
+seedDemo: false                       # create citycare + sunrise with synthetic data after install
+# Filled by `mc k8s render <env>` from service metadata (generated.yaml):
+services: []                          # [{ name, port, schema, route, control, tenant }]
+zones: []                             # [{ name, basePath }]

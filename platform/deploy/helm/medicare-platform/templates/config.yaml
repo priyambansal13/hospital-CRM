@@ -1,0 +1,61 @@
+# Non-secret settings shared by every service (docs/MICROSERVICES.md §8). Secrets live in medicare-secrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: medicare-config
+  labels: { app.kubernetes.io/part-of: medicare }
+data:
+  NODE_ENV: production
+  MC_DEV: "false"
+  LOG_FORMAT: json
+  PG_HOST: pgbouncer
+  PG_PORT: "6432"
+  PG_HOST_DIRECT: {{ .Values.postgres.host | quote }}
+  PG_PORT_DIRECT: {{ .Values.postgres.port | quote }}
+  CONTROL_DB: mc_control
+  TEMPLATE_DB: medicare_template
+  KAFKA_BROKERS: {{ .Values.kafka.brokers | quote }}
+  KEYCLOAK_URL: {{ .Values.keycloak.internalUrl | quote }}
+  KEYCLOAK_REALM: {{ .Values.keycloak.realm | quote }}
+  OIDC_STAFF_ISSUER: {{ printf "%s/realms/%s" .Values.keycloak.publicUrl .Values.keycloak.realm | quote }}
+  {{- $iam := dict }}{{- range .Values.services }}{{- if eq .schema "iam" }}{{- $iam = . }}{{- end }}{{- end }}
+  PATIENT_TOKEN_ISSUER: {{ printf "http://iam-service:%v/patient-auth" ($iam.port | default 4402) | quote }}
+  TENANT_BASE_DOMAIN: {{ .Values.domain | quote }}
+  PUBLIC_WEB_URL: "https://{host}"
+  SMTP_HOST: {{ .Values.smtp.host | quote }}
+  SMTP_PORT: {{ .Values.smtp.port | quote }}
+  SMTP_SECURE: {{ .Values.smtp.secure | quote }}
+  EMAIL_FROM: {{ printf "no-reply@%s" .Values.domain | quote }}
+  # payments: always the real Razorpay outside dev (test keys in staging); the simulator refuses to start here
+  PAYMENT_GATEWAY: razorpay
+  # documents: S3-compatible store (GCS XML API with HMAC keys in staging); scanning by the in-cluster clamd
+  S3_ENDPOINT: {{ .Values.objectStore.endpoint | quote }}
+  S3_PUBLIC_ENDPOINT: {{ .Values.objectStore.endpoint | quote }}
+  S3_REGION: {{ .Values.objectStore.region | quote }}
+  S3_FORCE_PATH_STYLE: "true"
+  S3_BUCKET_PREFIX: {{ .Values.objectStore.bucketPrefix | quote }}
+  VIRUS_SCANNER: clamav
+  CLAMD_HOST: clamav
+  CLAMD_PORT: "3310"
+  OPENSEARCH_URL: http://opensearch:9200
+  # AI assistant: always Vertex AI outside dev (the dev provider refuses to start without MC_DEV)
+  LLM_PROVIDER: gemini
+  GEMINI_USE_VERTEX: "true"
+  GOOGLE_CLOUD_PROJECT: {{ .Values.ai.project | quote }}
+  GOOGLE_CLOUD_LOCATION: {{ .Values.ai.location | quote }}
+  GEMINI_CHAT_MODEL: {{ .Values.ai.chatModel | quote }}
+  GEMINI_EMBED_MODEL: {{ .Values.ai.embedModel | quote }}
+  SEARCH_INDEX_PREFIX: {{ .Values.opensearch.indexPrefix | default "mc" | quote }}
+  {{- range .Values.services }}
+  SVC_URL_{{ upper .schema }}: {{ printf "http://%s:%v" .name .port | quote }}
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: medicare-zone-config
+  labels: { app.kubernetes.io/part-of: medicare }
+data:
+  GATEWAY_URL: {{ .Values.gateway.url | quote }}
+  KEYCLOAK_ISSUER: {{ printf "%s/realms/%s" .Values.keycloak.publicUrl .Values.keycloak.realm | quote }}
+  KEYCLOAK_CLIENT_ID: mc-web
