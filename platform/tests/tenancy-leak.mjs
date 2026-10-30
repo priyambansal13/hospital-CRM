@@ -266,6 +266,12 @@ const main = async () => {
     'subscription:POST /v1/platform/versions/:id/reject': { id: planVersionId, body: { note: 'pwned' } },
     'subscription:POST /v1/platform/versions/:id/retire': { id: planVersionId },
     'subscription:GET /v1/platform/hospitals/:id': { id: cityId },
+    // wave 4: console support actions and card sessions (harmless bodies: the guard must refuse them anyway)
+    'subscription:POST /v1/platform/hospitals/:id/trial': { id: cityId, body: { days: 1, reason: 'leak test' } },
+    'subscription:POST /v1/platform/hospitals/:id/credits': { id: cityId, body: { amount: 1, reason: 'leak test' } },
+    'subscription:POST /v1/platform/hospitals/:id/status': { id: cityId, body: { status: 'ACTIVE', reason: 'leak test' } },
+    'subscription:POST /v1/platform/hospitals/:id/reactivate': { id: cityId, body: { offline: true, reason: 'leak test' } },
+    'subscription:POST /v1/account/card-session/:id/complete': { id: crypto.randomUUID(), body: {} },
     'subscription:POST /v1/platform/hospitals/:id/simulate': { id: cityId, body: { versionId: planVersionId } },
     'subscription:PUT /v1/platform/hospitals/:id/contract': { id: cityId, body: { plan: 'CLINIC_STARTER', reason: 'pwned' } },
     'subscription:PUT /v1/platform/hospitals/:id/modules/:key': { id: cityId, key: 'emr', body: { state: 'off', reason: 'pwned' } },

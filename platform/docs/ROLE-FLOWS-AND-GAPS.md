@@ -51,8 +51,8 @@ Four kinds of problem stand out:
 
 | # | Gap | Sev | Section |
 |---|---|---|---|
-| 1 | subscription-service throws at start outside dev (`SimulatedCards` always wired) **[verified]** | H | 4.A |
-| 2 | No SMS provider: OTP login and all SMS go to Mailpit only **[verified]** | H | 4.A |
+| 1 | subscription-service throws at start outside dev (`SimulatedCards` always wired) **[verified]** | H · ✅ fixed (wave 4: manual mode) | 4.A |
+| 2 | No SMS provider: OTP login and all SMS go to Mailpit only **[verified]** | H · ✅ adapter built (wave 4; needs an MSG91 account) | 4.A |
 | 3 | Staff stay `INVITED` forever outside dev, so no staff e-mail and possibly no hospital membership lookup **[verified]** | H · ✅ fixed | 4.A |
 | 4 | `:branch` permissions ignore `user_roles.branch_id`, so staff of one branch act on all branches **[verified]** | H · ✅ fixed (wave 2) | 4.B |
 | 5 | Lab results with units or commas ("450 mg/dL", "1,200") are flagged NORMAL, so no critical alert fires **[verified]** | H · ✅ fixed | 4.C |
@@ -65,7 +65,7 @@ Four kinds of problem stand out:
 | 12 | Deactivating a branch or unpublishing a doctor leaves future appointments booked, with no notice | H · ✅ fixed | 4.D |
 | 13 | Prescribing ignores recorded allergies; no prescription void; unsigned visits can be completed | H · ✅ allergy check and unsigned-visit rule fixed; prescription void still open | 4.C |
 | 14 | No error or not-found pages in any zone; suspended hospitals show raw errors to the public | H · ✅ fixed | 4.F |
-| 15 | No offboarding (export, deletion, crypto-shredding); EXPIRED or CANCELLED hospitals cannot reactivate | H | 4.H |
+| 15 | No offboarding (export, deletion, crypto-shredding); EXPIRED or CANCELLED hospitals cannot reactivate | H · ✅ fixed (wave 4) | 4.H |
 
 ---
 
@@ -458,7 +458,7 @@ The review changes the order of work. Before Phase 23 (assistant booking tools),
 - E-6 to E-8: patient-side screens for existing APIs.
 - The missing notifications (4.G).
 
-**Wave 4: production readiness (alongside M7).**
+**Wave 4: production readiness (alongside M7).** ✅ Done 2026-10-30 for everything that needs no provider account (see §8); the real-provider runs wait for keys.
 - A-1: SaaS recurring adapter.
 - A-2: SMS provider with DLT templates.
 - B-5: payout account protection.
@@ -531,6 +531,25 @@ Verified by `mc test wave3` (31 checks), the tenancy leak test (1045 checks) and
 | E-5 home windows | Home visit times can be edited per branch (they were read-only). |
 | E-6 to E-8 patient | **Family:** edit a family member's name, date of birth and relation. **Waitlist:** leave it. **Timeline:** "Older entries" paging, and remove your own uploads. **Bills:** a bill page with payments and each refund's status, including "collect it at the hospital counter". |
 | 4.G notifications | **Patients:** lab tests cancelled or expired; appointment released because the payment was not completed; a preparation reminder 12 hours before a lab visit with fasting or preparation (replaced if the time changes, dropped if cancelled); a follow-up reminder the day before the date on the prescription. **Doctors:** the day's list each morning (7 AM at the branch, `AgendaJob`), and same-day bookings and cancellations by e-mail. **Lab:** turnaround breaches e-mailed to the branch's result-entry staff. |
+
+### Wave 4: done 2026-10-30 (everything that needs no provider account)
+
+Verified by `mc test wave4` (48 checks), unit tests for the adapters, the tenancy leak test (1086 checks), the full API regression and Playwright.
+
+| Gap | What changed | Still needs |
+|---|---|---|
+| A-1 SaaS payments | subscription-service chooses its gateway with `SAAS_PAYMENTS`. `simulated` in development; `manual` (bank transfer, support records payments) elsewhere, so it no longer crashes outside development. `razorpay` is refused with a clear message until it is built. | The Razorpay recurring adapter (live keys) |
+| B-6 hosted card capture | Cards are entered on the gateway's hosted page; locally, a simulated one at `/api/subscription/v1/sim-gateway`. The result is confirmed server to server. MediCare's API and the account zone never receive card numbers (`PUT account/card` is gone). The return address must be on the hospital's own site. | — |
+| B-5 payout account | Replacing the bank account needs a 6-digit code e-mailed to the person (iam step-up, valid 10 minutes, one use, rate-limited). Every change is kept in a history. All owners are e-mailed. Payouts to the new account are held for 48 hours (`PAYOUT_HOLD_HOURS`). | Live Route onboarding (Razorpay) |
+| D-7 reactivation | An EXPIRED or CANCELLED hospital resubscribes from `/account`: card on file, old invoices first, a new prorated period. Support can do the same from the console, also by bank transfer. | — |
+| H-1 offboarding | `mc tenant export <slug>`: a database dump plus every document, with a manifest; it works for deleted hospitals too. `mc tenant purge <slug> --confirm <slug>`: only DELETED hospitals, only after `PURGE_AFTER_DAYS` (30). Documents and search indexes are removed, data keys destroyed (crypto-shredding), and the database is dropped. Patients get "Download my data" (JSON) on their profile. | The purge has **not been run** (it was blocked as irreversible); its rules are unit-tested. Patient erasure requests (medical records have legal retention). |
+| KMS | Key wrapping is a port (`KEY_WRAPPER`). `local` uses MC_MASTER_KEY, with MC_MASTER_KEY_PREVIOUS for master key rotation; `gcp-kms` uses Cloud KMS via workload identity. `mc keys rotate <slug>` adds a new data key version (old ciphertexts keep decrypting). `mc keys rewrap` moves every data key to the current master key. | A run against real Cloud KMS. Other replicas pick up a rotated key version on restart. |
+| A-2 SMS | Shared SMS provider (`SMS_PROVIDER`): `mailpit` locally, or `msg91` (Flow API with DLT template ids and variables by name, tested against a fake). SMS templates carry their DLT and provider template ids (admin Messages page). Unregistered messages are skipped with a clear reason. Login codes use `MSG91_OTP_TEMPLATE_ID`. | An MSG91 account and DLT registration |
+| H-3 observability | `/health/live` and `/health/ready` (database and Redis; 503 takes the instance out of the load balancer) back the Kubernetes probes. Prometheus `/metrics` runs on its own port (service port + 5000; 9464 in the cluster), never through the gateway: request latency by route template, outbox backlog, published events, dead-lettered events, retention. A PrometheusRule (`monitoring.enabled`) holds five alerts. | Tracing (OpenTelemetry), dashboards |
+| H-4 DLQ | `mc events dlq` counts dead-lettered events per topic and groups them by consumer, type and error. `mc events replay <topic> [--consumer] [--since]` sends them back; consumers dedupe, so this is safe. An alert fires on new dead letters. | — |
+| H-5 retention | The relay removes published outbox rows after 7 days and dedupe records after 30, hourly. | Purging soft-deleted documents |
+| H-6 CI | A `security` workflow runs CodeQL, `pnpm audit` (high and above) for both apps, and a secret scan, weekly too. The manual integration job seeds the demo hospitals and runs all API suites. Upgrading nodemailer 7 → 10 cleared four high advisories. | Playwright in CI |
+| H-7 console | Support can extend a trial (to at most 60 days ahead), add credit notes (taken off the next invoice), take a hospital offline and back, delete it (the slug must be typed), and reactivate it. All of these are in the platform audit log with the reason. | Support access ("act as", Phase 31); approvals and expiry for overrides and coupons |
 
 Not in wave 3 and still open:
 - E-9: the doctor's form for amending diagnoses.
