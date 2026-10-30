@@ -1,8 +1,8 @@
-import { smtpOptions } from '@mc/nest-common';
+import { type SmsProvider, smsProviderFromEnv, type SmsTemplateRef, smtpOptions } from '@mc/nest-common';
 import { Injectable } from '@nestjs/common';
 import nodemailer from 'nodemailer';
 
-export interface OutgoingMessage { to: string; subject?: string; body: string; fromName: string; tenantSlug: string }
+export interface OutgoingMessage { to: string; subject?: string; body: string; fromName: string; tenantSlug: string; template?: SmsTemplateRef | null }
 export interface DeliveryResult { providerMessageId: string }
 
 /** Strategy per channel (docs/LLD.md §8): swap providers without touching the planner or dispatcher. */
@@ -26,17 +26,15 @@ export class EmailChannel implements NotificationChannel {
 }
 
 /**
- * SMS. Local/dev: delivered to Mailpit as <number>@sms.medicare.local (same as iam's OTPs). Production: an Indian SMS
- * provider with DLT-registered templates per hospital (MSG91 / Twilio); set SMS_PROVIDER. Not wired yet.
+ * SMS through the shared provider (review A-2): Mailpit locally (rendered text), MSG91 with DLT-registered templates
+ * when SMS_PROVIDER=msg91 (the message's template id and variables; a message without a registered template is not sent).
  */
 @Injectable()
 export class SmsChannel implements NotificationChannel {
   readonly name = 'SMS' as const;
-  private readonly mail = smtp();
+  private provider?: SmsProvider;
   async send(m: OutgoingMessage) {
-    const provider = process.env.SMS_PROVIDER ?? 'mailpit';
-    if (provider !== 'mailpit') throw new Error(`SMS provider ${provider} is not configured yet`);
-    const info = await this.mail.sendMail({ from: `${m.tenantSlug}@sms.medicare.local`, to: `${m.to.replace('+', '')}@sms.medicare.local`, subject: `SMS to ${m.to}`, text: m.body });
-    return { providerMessageId: info.messageId };
+    this.provider ??= smsProviderFromEnv();
+    return this.provider.send({ to: m.to, text: m.body, tenantSlug: m.tenantSlug, template: m.template ?? null });
   }
 }

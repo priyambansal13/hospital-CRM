@@ -46,7 +46,7 @@ export class PatientAuthController {
     if (sends > MAX_SENDS_PER_10_MIN) throw new DomainError(429, 'OTP_RATE_LIMITED', 'too many codes requested; try again later');
     const code = String(randomInt(100000, 1000000));
     await this.redis.set(`otp:${t.id}:${phone}`, JSON.stringify({ hash: hash(code).toString('hex'), attempts: 0 }), 'EX', OTP_TTL_S);
-    await this.sms.send(phone, `${code} is your ${t.name} login code. It expires in 5 minutes. Do not share it.`, t);
+    await this.sms.send(phone, `${code} is your ${t.name} login code. It expires in 5 minutes. Do not share it.`, t, code);
     return { sent: true, expiresIn: OTP_TTL_S };
   }
 

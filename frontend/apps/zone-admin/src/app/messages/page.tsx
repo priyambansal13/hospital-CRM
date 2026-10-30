@@ -9,7 +9,7 @@ import { saveTemplate } from './actions';
 export const dynamic = 'force-dynamic';
 
 interface Row { id: string; channel: string; template: string; status: string; sendAt: string; sentAt: string | null; to: string | null; error: string | null; appointmentNo: string | null; patientName: string | null }
-interface Template { id: string; key: string; channel: string; language: string; subject: string | null; body: string; active: boolean }
+interface Template { id: string; key: string; channel: string; language: string; subject: string | null; body: string; active: boolean; providerTemplateId?: string | null; dltTemplateId?: string | null }
 
 const LABEL: Record<string, string> = {
   appointment_confirmed: 'Booking confirmed', appointment_rescheduled: 'Rescheduled', appointment_cancelled: 'Cancelled',
@@ -60,6 +60,13 @@ export default async function Messages({ searchParams }: { searchParams: Promise
               ) : null}
               <TextArea label="Message" name="body" rows={t.channel === 'SMS' ? 3 : 8} defaultValue={t.body} maxLength={2000} />
               <p className="mc-meta" style={{ margin: 0 }}>Placeholders: {'{{hospital}} {{patientName}} {{doctorName}} {{when}} {{date}} {{time}} {{where}} {{appointmentNo}} {{fee}} {{link}}'}. SMS must not include medical details.</p>
+              {t.channel === 'SMS' ? (
+                // India's DLT rules (A-2): the SMS provider sends only templates registered on DLT, with the same wording
+                <div className="mc-inline">
+                  <label className="mc-field"><span>DLT template id</span><input name="dltTemplateId" defaultValue={t.dltTemplateId ?? ''} inputMode="numeric" pattern="\d{10,25}" /></label>
+                  <label className="mc-field"><span>SMS provider template id</span><input name="providerTemplateId" defaultValue={t.providerTemplateId ?? ''} maxLength={60} /></label>
+                </div>
+              ) : null}
               <label className="mc-check"><input type="checkbox" name="active" defaultChecked={t.active} /> <span>Send this message</span></label>
               <Button variant="ghost">Save</Button>
             </form>

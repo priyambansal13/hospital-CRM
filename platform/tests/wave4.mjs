@@ -110,5 +110,13 @@ else {
   await sub('/reset-trial', { days: 14 });
 }
 
+// ======== A-2 SMS with DLT templates ========
+const tpls = (await call('GET', '/api/notification/v1/notification-templates', admin)).list ?? [];
+const sms = tpls.find((t) => t.key === 'appointment_confirmed' && t.channel === 'SMS' && t.language === 'en');
+const saved = await call('PUT', `/api/notification/v1/notification-templates/${sms.id}`, admin, { body: sms.body, active: true, providerTemplateId: 'msg91_flow_test', dltTemplateId: '1107161234567890123' });
+check(saved.providerTemplateId === 'msg91_flow_test' && saved.dltTemplateId === '1107161234567890123', 'A-2 an SMS template carries its DLT and provider template ids');
+check((await call('PUT', `/api/notification/v1/notification-templates/${sms.id}`, admin, { body: sms.body, active: true, dltTemplateId: 'abc' })).http === 400, 'A-2 DLT template ids are digits');
+await call('PUT', `/api/notification/v1/notification-templates/${sms.id}`, admin, { body: sms.body, active: true, providerTemplateId: null, dltTemplateId: null });
+
 console.log(failures ? `\n\x1b[31m${failures} check(s) failed\x1b[0m` : '\n\x1b[32mwave 4: all checks passed\x1b[0m');
 process.exit(failures ? 1 : 0);

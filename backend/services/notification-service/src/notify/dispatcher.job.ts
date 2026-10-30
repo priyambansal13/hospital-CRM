@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
+import { SmsNotRegistered } from '@mc/nest-common';
 import { PLACEMENTS } from '@mc/nest-common';
 import { UsageMeter } from '@mc/entitlements-sdk';
 import { type PlacementSource, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
@@ -78,9 +79,15 @@ export class DispatcherJob implements OnApplicationBootstrap, OnApplicationShutd
         }
         let r: { providerMessageId: string | null };
         try {
-          r = await this.channels[n.channel].send({ to, subject: subject ?? undefined, body, fromName: hospital, tenantSlug: slug });
+          // SMS: the DLT-registered template and its variables (by name), for providers that need them (A-2)
+          const template = n.channel === 'SMS' && tpl.provider_template_id
+            ? { providerTemplateId: tpl.provider_template_id, vars: Object.fromEntries(Object.entries(n.vars ?? {}).map(([k, v]) => [k, v == null ? '' : String(v)])) }
+            : null;
+          r = await this.channels[n.channel].send({ to, subject: subject ?? undefined, body, fromName: hospital, tenantSlug: slug, template });
         } catch (e) {
           if (n.channel === 'SMS') await this.meter.release(tenantId, 'core.sms').catch(() => undefined);
+          // not registered on DLT: retrying cannot help (the admin adds the template id)
+          if (e instanceof SmsNotRegistered) { await skip('SMS template not registered (DLT): add its template id in Messages'); continue; }
           throw e;
         }
         await c.query(`UPDATE notifications SET status = 'SENT', sent_at = now(), attempts = attempts + 1, to_address = $2, rendered_subject = $3, rendered_body = $4, provider_message_id = $5, last_error = NULL WHERE id = $1`,
