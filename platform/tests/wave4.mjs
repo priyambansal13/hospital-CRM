@@ -81,5 +81,34 @@ check((await call('PUT', '/api/subscription/v1/account/card', admin, { number: '
 const sub = await call('GET', '/api/subscription/v1/account/subscription', admin);
 check(sub.cardPayments === true, 'A-1 dev: the simulated gateway takes cards (production without keys: bank transfer only, see unit tests)');
 
+// ======== D-7 an expired hospital comes back ========
+const ptid = execFileSync('curl', ['-s', '-H', `x-internal-token: ${env.INTERNAL_API_TOKEN}`, 'http://localhost:4401/internal/tenants'], { encoding: 'utf8' });
+const bs = JSON.parse(ptid).find((t) => t.slug === 'brightsmile');
+if (!bs) console.log('  (D-7: hospital brightsmile not found; run mc test billing once)');
+else {
+  const sub = (path, body) => fetch(`http://localhost:4413/internal/tenants/${bs.id}/billing${path}`, { method: 'POST', headers: { 'x-internal-token': env.INTERNAL_API_TOKEN, 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) }).then((r) => r.json());
+  await sub('/reset-trial', { days: 14 });
+  await sub('/advance', { to: 'trial-end' });
+  const owner = await staffToken('admin@brightsmile.test', 'brightsmile');
+  const S = (m, path, b) => call(m, `/api/subscription/v1/account${path}`, owner, b, 'brightsmile.localhost');
+  check((await S('GET', '/subscription')).status === 'EXPIRED', 'trial ended without a card: EXPIRED (read-only)');
+  check((await S('POST', '/reactivate', {})).code === 'NO_CARD', 'D-7 resubscribing needs a card first');
+  const st = await S('POST', '/card-session', { returnUrl: 'http://brightsmile.localhost:3400/account/card/return' });
+  await call('POST', `/api/subscription/v1/sim-gateway/mandate/${st.sessionId}`, null, { number: '4111 1111 1111 1111', expiry: '12/30', name: 'Dr Smile' }, 'brightsmile.localhost');
+  await S('POST', `/card-session/${st.sessionId}/complete`, {});
+  const back = await S('POST', '/reactivate', {});
+  check(back.status === 'ACTIVE' && back.invoice?.paid === true, `D-7 resubscribed: ACTIVE, invoice ${back.invoice?.number} paid`);
+  const caps = await waitFor(async () => { const c = await call('GET', '/api/entitlement/v1/me/capabilities', owner, undefined, 'brightsmile.localhost'); return c.billing?.status === 'ACTIVE' && c.readOnlyModules?.length === 0 && c; }, 30000, 1000);
+  check(!!caps, 'D-7 every module is in full use again');
+  check((await S('POST', '/reactivate', {})).code === 'NOT_ENDED', 'D-7 nothing to reactivate when active');
+  // support: by bank transfer
+  await sub('/reset-trial', { days: 14 });
+  await sub('/advance', { to: 'trial-end' });
+  const support = await staffToken('support@medicare.test', 'medicare');
+  const sup = await call('POST', `/api/subscription/v1/platform/hospitals/${bs.id}/reactivate`, support, { offline: true, reason: 'paid by bank transfer, ticket 42' }, 'medicare.localhost');
+  check(sup.status === 'ACTIVE' && sup.invoice?.paid === false, 'D-7 support reactivated it on bank transfer: the invoice waits for the payment');
+  await sub('/reset-trial', { days: 14 });
+}
+
 console.log(failures ? `\n\x1b[31m${failures} check(s) failed\x1b[0m` : '\n\x1b[32mwave 4: all checks passed\x1b[0m');
 process.exit(failures ? 1 : 0);

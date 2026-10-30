@@ -2,6 +2,7 @@ import { ZoneFrame, zoneCapabilities } from '@mc/features';
 import { Alert, Badge, Button, Card, PageHeader, Table } from '@mc/ui';
 import { applyCoupon, payNow, setCancel } from '@/lib/actions';
 import { startCard } from '@/lib/card-actions';
+import { resubscribe } from '@/lib/reactivate-actions';
 import { day, get, inr, lastDay, STATUS, type Summary } from '@/lib/account';
 import { Flash } from '@/lib/flash';
 import { ZONES } from '@/lib/zones';
@@ -28,6 +29,12 @@ export default async function Subscription({ searchParams }: { searchParams: Pro
       <PageHeader title="Subscription" subtitle="What your hospital pays MediCare." actions={<Badge tone={st.tone}>{st.label}</Badge>} />
       <Flash {...await searchParams} />
       {s.clockOffsetDays ? <Alert tone="info">Test clock: {s.clockOffsetDays} days ahead ({day(s.now)}).</Alert> : null}
+      {['EXPIRED', 'CANCELLED'].includes(s.status) ? (
+        <Card title="Come back">
+          <p style={{ marginTop: 0 }}>{s.status === 'EXPIRED' ? 'The free trial has ended.' : 'The subscription has ended.'} Everything you added is still here, read-only. {s.paymentMethod?.kind === 'CARD' ? 'Resubscribe to use it all again: this month is charged (prorated) to your card, plus any unpaid invoices.' : 'Add a card below, then resubscribe.'}</p>
+          {s.paymentMethod?.kind === 'CARD' ? <form action={resubscribe}><Button>Resubscribe</Button></form> : null}
+        </Card>
+      ) : null}
       {s.unpaid.invoices ? (
         <Card title="Payment due">
           <p style={{ marginTop: 0 }}>{s.unpaid.invoices} unpaid invoice{s.unpaid.invoices > 1 ? 's' : ''}: <strong>{inr(s.unpaid.total)}</strong>.

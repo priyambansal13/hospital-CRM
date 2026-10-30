@@ -1,4 +1,5 @@
 import { api, ApiError } from '@mc/bff';
+import { reactivateHospital } from '@/lib/reactivate-actions';
 import { can, ZoneFrame, zoneCapabilities } from '@mc/features';
 import { Alert, Badge, Button, Card, PageHeader, Table } from '@mc/ui';
 import { notFound } from 'next/navigation';
@@ -70,6 +71,15 @@ export default async function HospitalPage({ params, searchParams }: { params: P
             {billing.periodEnd ? <span className="mc-meta"> · renews {when(billing.periodEnd)}</span> : billing.trialEndsAt ? <span className="mc-meta"> · trial until {when(billing.trialEndsAt)}</span> : null}
             {billing.coupon ? <span className="mc-meta"> · coupon {billing.coupon.code}</span> : null}{billing.pendingChange ? <span className="mc-meta"> · moving to {billing.pendingChange.plan} at period end</span> : null}
             {billing.clockOffsetDays ? <span className="mc-meta"> · test clock +{billing.clockOffsetDays} days</span> : null}</p>
+          {manage && ['EXPIRED', 'CANCELLED'].includes(billing.status) ? (
+            // D-7: bring the hospital back (card on file, or bank transfer)
+            <form action={reactivateHospital} className="mc-inline" aria-label="Reactivate" style={{ marginBottom: 12 }}>
+              <input type="hidden" name="hospitalId" value={h.id} />
+              <input name="reason" required minLength={5} placeholder="Why (e.g. paid by transfer, ticket 1234)" aria-label="Reason" className="mc-input-sm" />
+              <label className="mc-check"><input type="checkbox" name="offline" defaultChecked={billing.paymentMethod?.kind !== 'CARD'} /> <span>by bank transfer</span></label>
+              <button className="mc-btn mc-btn-primary">Reactivate</button>
+            </form>
+          ) : null}
           <Table rows={billing.invoices.slice(0, 10)} empty="No invoices yet." columns={[
             { header: 'Invoice', cell: (i) => <>{i.number} <span className="mc-meta">{i.kind.toLowerCase()}</span></> },
             { header: 'Issued', cell: (i) => when(i.issuedAt) },

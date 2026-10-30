@@ -529,6 +529,43 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
     });
   }
 
+  /**
+   * Come back after the subscription ended (review D-7): EXPIRED (trial ended without a card) or CANCELLED (cancelled,
+   * or unpaid long enough). Old unpaid invoices are settled first, then a new period starts today with its own (prorated)
+   * invoice, and every module returns to full use. The owner needs a card on file; support may choose bank transfer
+   * (`offline`), in which case the invoices wait for the transfer.
+   */
+  async reactivate(tenantId: string, by: string, opts: { offline?: boolean; reason?: string } = {}) {
+    return withTx(this.db, async (c) => {
+      await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`billing:${tenantId}`]);
+      let s = await this.sub(c, tenantId, true);
+      if (!['EXPIRED', 'CANCELLED'].includes(s.status)) throw new DomainError(409, 'NOT_ENDED', `the subscription is ${s.status.toLowerCase().replace('_', ' ')}: nothing to reactivate`);
+      if (opts.offline) s = await this.update(c, s, { payment_method: { kind: 'OFFLINE' } });
+      else if (s.payment_method?.kind !== 'CARD') throw new DomainError(422, 'NO_CARD', 'add a card first, then resubscribe');
+      const card = s.payment_method?.kind === 'CARD';
+      // old debts first (a hospital cancelled for non-payment pays what it owed)
+      if (card) {
+        const { rows: old } = await c.query(`SELECT id, number, total FROM saas_invoices WHERE tenant_id = $1 AND status IN ('FAILED','OPEN') ORDER BY issued_at FOR UPDATE`, [tenantId]);
+        for (const inv of old) {
+          const r = await this.charge(c, s, { id: inv.id, number: inv.number, total: Number(inv.total) });
+          if (!r.ok) throw new DomainError(402, 'PAYMENT_DECLINED', 'the card was declined for the unpaid invoices: use another card');
+        }
+      }
+      const now = this.now(s);
+      const end = nextMonthStart(now);
+      s = await this.update(c, s, { current_period_start: now, current_period_end: end, ended_at: null, cancel_at_period_end: false, retry_count: 0, next_retry_at: null, past_due_since: null, grace_ends_at: null, suspended_at: null, pending_change: null });
+      const inv = await this.invoice(c, s, 'FIRST', now, end, remainingFraction(now, monthOf(now), end));
+      if (card) {
+        const paid = await this.charge(c, s, inv);
+        if (!paid.ok) throw new DomainError(402, 'PAYMENT_DECLINED', 'the card was declined: use another card');
+      }
+      const was = s.status;
+      s = await this.setStatus(c, s, 'ACTIVE', {}, card ? { kind: 'PAYMENT_RECEIVED', amount: inv.total, invoiceNo: inv.number } : undefined);
+      await this.plans.audit(c, by, 'REACTIVATED', 'TENANT', tenantId, await this.plans.slug(tenantId), { status: was }, { status: 'ACTIVE', offline: !card, reason: opts.reason ?? null });
+      return { status: 'ACTIVE', invoice: { number: inv.number, total: inv.total, paid: card } };
+    });
+  }
+
   /** The hospital was deleted: end the subscription now (no further invoices). */
   async close(tenantId: string) {
     await withTx(this.db, async (c) => {

@@ -40,6 +40,11 @@ export class AccountController {
   @HttpCode(200)
   completeCard(@Param('id') id: string, @CurrentActor() a: Actor) { return this.billing.completeCardSession(this.tid(), Uuid.parse(id), who(a)); }
 
+  /** Resubscribe after the trial ended or the subscription was cancelled (review D-7). */
+  @Post('reactivate')
+  @HttpCode(200)
+  reactivate(@CurrentActor() a: Actor) { return this.billing.reactivate(this.tid(), who(a)); }
+
   @Post('pay')
   pay(@CurrentActor() a: Actor) { return this.billing.payNow(this.tid(), who(a)); }
 

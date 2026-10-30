@@ -1,4 +1,4 @@
-import { Body, type CanActivate, Controller, Delete, Get, Injectable, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, type CanActivate, Controller, Delete, Get, HttpCode, Injectable, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { CurrentActor, notFound, parse } from '@mc/nest-common';
 import { type Actor, TenantContext } from '@mc/tenancy';
@@ -218,6 +218,15 @@ export class ConsoleController {
   async offlinePaid(@Param('id') id: string, @Param('invoiceId') invoiceId: string, @Body() body: unknown, @CurrentActor() a: Actor) {
     if (!Uuid.safeParse(invoiceId).success) throw notFound('invoice');
     return this.billing.recordOfflinePayment((await this.tenant(id)).id, invoiceId, parse(OfflinePayment, body).reference, who(a).label);
+  }
+
+  /** Support brings an expired or cancelled hospital back (review D-7): by card on file, or by bank transfer. */
+  @Post('hospitals/:id/reactivate')
+  @HttpCode(200)
+  @RequirePermission('customer:manage:tenant')
+  async reactivate(@Param('id') id: string, @Body() body: unknown, @CurrentActor() a: Actor) {
+    const q = parse(z.object({ offline: z.boolean().default(false), reason: z.string().trim().min(5).max(300) }), body);
+    return this.billing.reactivate((await this.tenant(id)).id, who(a).label, q);
   }
 
   @Get('pricebook')
