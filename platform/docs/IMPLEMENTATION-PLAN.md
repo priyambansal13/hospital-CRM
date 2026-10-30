@@ -26,7 +26,7 @@
 | **M5 AI (Gemini)** | Phase 22 ✅ done 2026-10-25 (AI foundation and knowledge-only concierge; verified with the offline dev provider: **no Gemini key yet**, the Gemini/Vertex adapter is built and typechecked but has not called the real API). Phases 23–25 remain |
 | M6–M7 | Not started |
 
-**Review 2026-10-25:** [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md) traces every role's flows through the code and lists the gaps: production blockers, branch scoping, clinical safety and dead ends. It recommends fixing waves 1–2 before Phase 23.
+**Review 2026-10-25:** [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md) traces every role's flows through the code and lists the gaps: production blockers, branch scoping, clinical safety and dead ends. It recommends fixing waves 1–2 before Phase 23. **Wave 1 done 2026-10-25; wave 2 (branch scoping, offboarding, split permissions, admin audit, nurse triage, critical-value escalation, desk chat alerts) done 2026-10-30** (fix log: §8 of that document; `mc test gaps`, `mc test wave2`).
 
 ### M1: what was built and how it was verified
 

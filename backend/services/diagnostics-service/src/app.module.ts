@@ -12,6 +12,7 @@ import { LabService } from './lab/lab.service.js';
 import { LabResultsController, ResultsAccessController } from './lab/results.controller.js';
 import { ResultsService } from './lab/results.service.js';
 import { TatJob } from './lab/tat.job.js';
+import { CriticalEscalationJob, InternalLabJobsController } from './lab/critical-escalation.job.js';
 
 @Injectable()
 class DiagnosticsConsumers implements OnModuleInit, OnApplicationBootstrap {
@@ -68,7 +69,7 @@ class DiagnosticsConsumers implements OnModuleInit, OnApplicationBootstrap {
 /** Lab: catalog, collection slots, orders, samples (docs/LLD.md §3.5, §6.5); results and reports (Phase 15); home collection (Phase 16). */
 @Module({
   imports: [CoreModule.forRoot({ schema: 'diagnostics', control: false, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [PublicLabController, PublicHomeController, HomeAdminController, HomeDispatchController, MyVisitsController, LabOrdersController, LabBenchController, LabCatalogAdminController, LabResultsController, ResultsAccessController],
-  providers: [LabService, ResultsService, HomeService, PatientsClient, CareAccessClient, AuditClient, BillingClient, LabHoldExpiryJob, TatJob, DiagnosticsConsumers],
+  controllers: [InternalLabJobsController, PublicLabController, PublicHomeController, HomeAdminController, HomeDispatchController, MyVisitsController, LabOrdersController, LabBenchController, LabCatalogAdminController, LabResultsController, ResultsAccessController],
+  providers: [LabService, ResultsService, HomeService, PatientsClient, CareAccessClient, AuditClient, BillingClient, LabHoldExpiryJob, TatJob, CriticalEscalationJob, DiagnosticsConsumers],
 })
 export class AppModule {}

@@ -10,7 +10,7 @@ interface Entry { id: string; occurredAt: string; source: string; actor: { id: s
 interface Page { items: Entry[]; nextBefore: number | null; breakGlassLast7Days: number }
 
 const when = (iso: string) => new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', second: '2-digit', timeZone: 'Asia/Kolkata' }).format(new Date(iso));
-const ACTIONS = ['READ', 'CREATE', 'UPDATE', 'SIGN', 'AMEND', 'EXPORT', 'BREAK_GLASS', 'LOOKUP', 'DENIED'];
+const ACTIONS = ['READ', 'CREATE', 'UPDATE', 'DELETE', 'SIGN', 'AMEND', 'EXPORT', 'BREAK_GLASS', 'LOOKUP', 'DENIED'];
 
 /** Who did what to which patient record; break-glass highlighted; tamper check of the whole log. */
 export default async function Audit({ searchParams }: { searchParams: Promise<{ mrn?: string; patientId?: string; action?: string; purpose?: string; before?: string; verify?: string }> }) {
@@ -30,7 +30,7 @@ export default async function Audit({ searchParams }: { searchParams: Promise<{ 
   const link = (q: Record<string, string | undefined>) => `/admin/audit?${new URLSearchParams(Object.entries({ mrn: sp.mrn, action: sp.action, purpose: sp.purpose, ...q }).filter(([, v]) => v) as [string, string][])}`;
   return (
     <ZoneFrame zone="admin" path="/admin/audit" zones={ZONES}>
-      <PageHeader title="Audit log" subtitle="Every read and change of patient records. Entries cannot be edited or deleted." actions={<a className="mc-btn mc-btn-ghost" href={link({ verify: '1' })}>Verify the chain</a>} />
+      <PageHeader title="Audit log" subtitle="Every read and change of patient records, and every change to the hospital's configuration. Entries cannot be edited or deleted." actions={<a className="mc-btn mc-btn-ghost" href={link({ verify: '1' })}>Verify the chain</a>} />
       {verify ? (verify.ok
         ? <Alert tone="success">Audit chain intact: {verify.checked} entries checked, none changed or missing.</Alert>
         : <Alert tone="error">Audit chain BROKEN at entry {verify.firstBrokenId}: {verify.problem}. Escalate to security.</Alert>) : null}
@@ -45,6 +45,11 @@ export default async function Audit({ searchParams }: { searchParams: Promise<{ 
         <div className="mc-chips" style={{ marginTop: 12 }}>
           <Chip href={link({ action: undefined })} active={!sp.action}>All</Chip>
           {ACTIONS.map((a) => <Chip key={a} href={link({ action: a })} active={sp.action === a}>{a.toLowerCase().replace('_', '-')}</Chip>)}
+        </div>
+        <div className="mc-chips" style={{ marginTop: 8 }}>
+          <Chip href={link({ purpose: undefined })} active={!sp.purpose}>Patient records and configuration</Chip>
+          {/* admin actions: staff, roles, settings, prices, templates, refunds, payout account (review B-8) */}
+          <Chip href={link({ purpose: 'ADMIN' })} active={sp.purpose === 'ADMIN'}>Configuration only</Chip>
         </div>
       </Card>
       <Card title="Entries">

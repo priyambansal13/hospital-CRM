@@ -10,6 +10,7 @@ const Uuid = z.uuid();
 const id = (v: string, what: string) => { if (!Uuid.safeParse(v ?? '').success) throw notFound(what); return v; };
 const Entries = z.array(z.object({ itemId: z.uuid(), parameter: z.string().min(1).max(80), value: z.string().max(120) })).min(1).max(200);
 const Enter = z.object({ results: Entries });
+const Communicated = z.object({ communicatedTo: z.string().trim().min(3, 'who did you speak to?').max(120), readBack: z.boolean() });
 const Amend = z.object({ reason: z.string().trim().min(5).max(300), results: Entries });
 const sendPdf = (reply: any, r: { pdf: Buffer; name: string }) => {
   reply.header('content-type', 'application/pdf').header('content-disposition', `inline; filename="${r.name}"`).header('cache-control', 'private, no-store');
@@ -55,7 +56,7 @@ export class LabResultsController {
   }
 
   @Get('orders/:id/report.pdf')
-  @RequirePermission('lab_order:read:branch')
+  @RequirePermission('report:read:branch')
   async pdf(@Param('id') o: string, @CurrentActor() actor: Actor, @Res({ passthrough: true }) reply: any) {
     return sendPdf(reply, await this.results.pdf(actor, id(o, 'lab order'), true));
   }
@@ -64,6 +65,14 @@ export class LabResultsController {
   @RequirePermission('report:verify:branch')
   alerts(@CurrentActor() actor: Actor) {
     return this.results.alerts(actor, true);
+  }
+
+  /** Phoned through and read back (review C-2): stops the escalation. */
+  @Post('critical-alerts/:id/communicated')
+  @HttpCode(200)
+  @RequirePermission('report:verify:branch')
+  communicated(@Param('id') a: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
+    return this.results.communicated(actor, id(a, 'alert'), parse(Communicated, body));
   }
 
   @Post('critical-alerts/:id/ack')

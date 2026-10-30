@@ -1,5 +1,5 @@
 import { Inject, Injectable, Module, type OnApplicationBootstrap, type OnModuleInit } from '@nestjs/common';
-import { AppointmentChanged, EventTypes, HomeVisitChanged, LabCriticalValue, LabOrderChanged, LabReportPublished, PatientRegistered, PaymentSucceeded, PrescriptionIssued, RefundProcessed, Topics, WaitlistSlotAvailable, BillingNotice } from '@mc/contracts';
+import { AppointmentChanged, EventTypes, HomeVisitChanged, LabCriticalEscalated, LabCriticalValue, LabOrderChanged, LabReportPublished, PatientRegistered, PaymentSucceeded, PrescriptionIssued, RefundProcessed, Topics, WaitlistSlotAvailable, BillingNotice } from '@mc/contracts';
 import { ConsumerRegistry, CoreModule, PLACEMENTS, retryInBackground } from '@mc/nest-common';
 import { EntitlementsModule } from '@mc/entitlements-sdk';
 import { type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
@@ -53,6 +53,7 @@ class NotificationConsumers implements OnModuleInit, OnApplicationBootstrap {
         ...Object.fromEntries([EventTypes.labOrderBooked, EventTypes.labOrderOrdered, EventTypes.labOrderSampleRejected].map((t) => [t, labMsg(t)])),
         [EventTypes.labReportPublished]: (e, db) => this.planner.onLabReport(db!, LabReportPublished.parse(e.data)),
         [EventTypes.labCriticalValue]: (e, db) => this.planner.onCriticalValue(db!, LabCriticalValue.parse(e.data)),
+        [EventTypes.labCriticalEscalated]: (e, db) => this.planner.onCriticalEscalated(db!, LabCriticalEscalated.parse(e.data)),
         ...Object.fromEntries([EventTypes.homeVisitAssigned, EventTypes.homeVisitEnRoute, EventTypes.homeVisitMissed].map((t) => [t, (e: any, db: any) => this.planner.onHomeVisit(db!, t, HomeVisitChanged.parse(e.data), e.time)])),
       },
     });

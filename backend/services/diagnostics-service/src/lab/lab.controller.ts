@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, Patch, Post, Query } from '@nestjs/common';
-import { CurrentActor, Idempotent, notFound, parse, TenantPublic } from '@mc/nest-common';
+import { AdminAudited, CurrentActor, Idempotent, notFound, parse, TenantPublic } from '@mc/nest-common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { type Actor, TenantDbRouter } from '@mc/tenancy';
 import { z } from 'zod';
@@ -144,6 +144,7 @@ export class LabBenchController {
 /** Hospital admin: prices, preparation, switching tests/packages on and off. */
 @Controller('v1/admin')
 @RequireModule('diagnostics')
+@AdminAudited('LAB_CATALOG')
 @RequirePermission('lab_catalog:manage:tenant')
 export class LabCatalogAdminController {
   constructor(private readonly db: TenantDbRouter) {}

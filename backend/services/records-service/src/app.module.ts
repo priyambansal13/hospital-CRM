@@ -1,4 +1,5 @@
 import { InternalEncounterStatusController, UnsignedEncountersController } from './records/encounter-status.controller.js';
+import { TriageController, TriageService } from './records/triage.js';
 import { Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { AppointmentChanged, ConsentChanged, LabOrderChanged, DoctorChanged, EventTypes, PatientRegistered, TenantProvisioned, Topics } from '@mc/contracts';
 import { ConsumerRegistry, CoreModule, isDev } from '@mc/nest-common';
@@ -108,9 +109,9 @@ class RecordsConsumers implements OnModuleInit {
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'records', control: true, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [UnsignedEncountersController, RecordsController, DocumentsController, InternalCareAccessController, InternalDocumentsController, InternalStorageController, InternalEncounterStatusController],
+  controllers: [TriageController, UnsignedEncountersController, RecordsController, DocumentsController, InternalCareAccessController, InternalDocumentsController, InternalStorageController, InternalEncounterStatusController],
   providers: [
-    FieldCrypto, AuditClient, RecordAccess, RecordsService, TimelineService, ObjectStorage, DocumentsService, ScanJob, RecordsConsumers,
+    FieldCrypto, AuditClient, RecordAccess, RecordsService, TriageService, TimelineService, ObjectStorage, DocumentsService, ScanJob, RecordsConsumers,
     { provide: VIRUS_SCANNER, useFactory: scannerFactory },
   ],
 })

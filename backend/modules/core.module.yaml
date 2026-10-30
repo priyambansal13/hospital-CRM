@@ -13,6 +13,7 @@ permissions:
   - { code: settings:manage:tenant, description: Edit hospital branding and settings }
   - { code: staff:read:tenant, description: View staff accounts }
   - { code: staff:invite:tenant, description: Invite staff }
+  - { code: staff:manage:tenant, description: Deactivate and reactivate staff, resend invites, reset passwords and authenticator apps }
   - { code: role:read:tenant, description: View roles and assignments }
   - { code: role:assign:tenant, description: Assign roles to staff }
   - { code: role:manage:tenant, description: Create custom roles and change what roles may do (role editor) }
@@ -46,7 +47,8 @@ nav:
   - { key: account-invoices, label: Invoices, zone: account, href: /account/invoices, permissions: [subscription:manage:tenant], audience: staff }
   - { key: my-access-log, label: Record access, zone: patient, href: /care/access-log, permissions: [audit:read:own], audience: patient }
 defaultRoleGrants:
-  BRANCH_ADMIN: [admin:access:tenant, branch:read:tenant, staff:read:tenant, role:read:tenant, notification:read:tenant, audit:read:tenant]
+  # the hospital-wide audit log is the hospital admin's (review B-4)
+  BRANCH_ADMIN: [admin:access:tenant, branch:read:tenant, staff:read:tenant, role:read:tenant, notification:read:tenant]
   DOCTOR: [branch:read:tenant]
   NURSE: [branch:read:tenant]
   RECEPTIONIST: [branch:read:tenant]

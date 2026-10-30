@@ -54,12 +54,12 @@ Four kinds of problem stand out:
 | 1 | subscription-service throws at start outside dev (`SimulatedCards` always wired) **[verified]** | H | 4.A |
 | 2 | No SMS provider: OTP login and all SMS go to Mailpit only **[verified]** | H | 4.A |
 | 3 | Staff stay `INVITED` forever outside dev, so no staff e-mail and possibly no hospital membership lookup **[verified]** | H · ✅ fixed | 4.A |
-| 4 | `:branch` permissions ignore `user_roles.branch_id`, so staff of one branch act on all branches **[verified]** | H | 4.B |
+| 4 | `:branch` permissions ignore `user_roles.branch_id`, so staff of one branch act on all branches **[verified]** | H · ✅ fixed (wave 2) | 4.B |
 | 5 | Lab results with units or commas ("450 mg/dL", "1,200") are flagged NORMAL, so no critical alert fires **[verified]** | H · ✅ fixed | 4.C |
-| 6 | Critical values: email only, no escalation, no in-app alert, wrong audience for self-booked tests | H | 4.C |
+| 6 | Critical values: email only, no escalation, no in-app alert, wrong audience for self-booked tests | H · ✅ fixed (wave 2) | 4.C |
 | 7 | Video consults bookable and payable, but no video exists **[verified]** | H · ✅ fixed (hidden until Phase 28) | 4.D |
 | 8 | X-ray/ECG-only orders can never reach IN_LAB, so they can never be reported **[verified]** | H · ✅ fixed | 4.D |
-| 9 | Staff cannot be deactivated, offboarded, re-invited or have credentials reset | H | 4.B |
+| 9 | Staff cannot be deactivated, offboarded, re-invited or have credentials reset | H · ✅ fixed (wave 2) | 4.B |
 | 10 | Doctor-ordered lab tests (and any lab walk-in) cannot be booked by staff | H | 4.D |
 | 11 | Home or later-day sample recollection is a dead end | H · ✅ fixed | 4.D |
 | 12 | Deactivating a branch or unpublishing a doctor leaves future appointments booked, with no notice | H · ✅ fixed | 4.D |
@@ -438,7 +438,7 @@ The review changes the order of work. Before Phase 23 (assistant booking tools),
 - F-3: real cancel window.
 - B-3: escalation guard on role grants.
 
-**Wave 2: access control and staff lifecycle.**
+**Wave 2: access control and staff lifecycle.** ✅ Done 2026-10-30 (see §8).
 - B-1: branch scoping end to end, plus Playwright and API tests for BRANCH_ADMIN and NURSE.
 - B-2: staff offboarding, resend and reset.
 - B-4: split permissions and trim default grants.
@@ -499,7 +499,21 @@ Verified by `mc test gaps`, with each fix checked the way a user meets it, plus 
 
 Also fixed during the review, before wave 1: staff sign-in failing once Keycloak tokens grew past the cookie limit (iam now removes the `web-origins` scope and sweeps old redirects).
 
-**Next: wave 2.** Branch scoping (B-1), staff offboarding (B-2), split permissions (B-4), audit of admin actions (B-8), nurse vitals, critical-value escalation (C-2), desk alerts for chat requests.
+### Wave 2: done 2026-10-30
+
+Verified by `mc test wave2` (45 checks), the tenancy leak test (now 1015 checks, with the new routes) and the full regression run.
+
+| Gap | What changed |
+|---|---|
+| B-1 branch scoping | Capabilities now say which branches each `:branch` permission was given for (`branchScopes`, and `branchIds` for the person). The SDK guard refuses a `branchId` outside them (`403 OUTSIDE_BRANCH`). Records found by id (appointments, invoices, lab orders, samples, results, reports, home visits, triage) answer "not found" at another branch. Lists are filtered: the billing day, the lab's critical values, a doctor's queue, and the doctors an admin may schedule. The desk, lab and billing screens offer only the person's own branches, theirs first. The staff page gives roles per branch, and someone who works at some branches can give roles only at those. |
+| B-2 offboarding | Staff page per person, with these actions. **Deactivate:** every role removed at once, the person leaves the hospital's Keycloak organization, their sessions end, and the login is disabled unless they work at another hospital. **Reactivate.** **Resend invite:** only before the first sign-in, at most once every 2 minutes. **Reset password and/or authenticator app:** an e-mail link; sessions end; the admin never sees the password. A new permission, `staff:manage:tenant`, is held by hospital admins. Nobody can act on their own account, and nobody can act on someone with roles they could not give themselves. The last hospital admin is kept. |
+| B-4 permissions | New permissions: `lab_order:cancel:branch`, `report:read:branch`, `visit:manage:branch`. Only the visit's doctor (or holders of `visit:manage`) can start or finish a visit, so the desk no longer causes `DOCTOR_BUSY`. Branch admins no longer get doctor editing, lab prices, home areas or the hospital-wide audit log. The desk no longer gets report PDFs or lab cancellation. Template changes now also remove grants from roles the hospital has not customised. |
+| B-8 admin audit | Admin changes are written to the audit log with purpose ADMIN; they appear under "Configuration only" on `/admin/audit`. Covered: staff invites, deactivation, reactivation and resets; role grants; settings; the role editor; branches; doctors; lab prices; home collection; message templates; refunds; the payout account; branding; domains; the subscription; the AI knowledge base. Staff actions are recorded in the same transaction as the change. The others use `@AdminAudited`, which records after success and retries if the audit log is down. |
+| Nurse vitals | After check-in, a nurse records vitals, a priority (routine / urgent / emergency) and the complaint (encrypted). This happens on the desk board ("Vitals"), only at the nurse's own branches. The doctor's queue shows the priority. When the doctor opens the note, it starts with the vitals and complaint. Once the visit has started, vitals go in the note. Permission `vitals:record:branch` is given to NURSE. |
+| C-2 critical values | Unacknowledged critical values escalate every 15 minutes (`CRITICAL_ESCALATE_MINUTES`): first the ordering doctor, then the branch's pathologists, then on-call at the branch (`critical:escalation:branch`, held by branch admins). Each level is e-mailed. Self-booked tests go straight to the pathologists; before, nobody was told. The new lab page "Critical values" lists outstanding ones. The lab can record "phoned through to X" with a read-back, which stops the escalation. The doctor's queue shows a red banner. Staff get e-mail only, because there is no staff SMS channel yet. |
+| Desk chat alerts | Every desk board shows a banner when patients are waiting for a call back. Emergencies are in red and listed first, and the browser tab shows the count. It refreshes every 20 seconds. The banner is in-app only: the assistant service has no event outbox yet. |
+
+**Next: wave 3** (front-desk and lab completeness), as listed in §6.
 
 ---
 

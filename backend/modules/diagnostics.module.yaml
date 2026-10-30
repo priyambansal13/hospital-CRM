@@ -10,10 +10,13 @@ permissions:
   - { code: lab_order:read:own, description: View own and family members' lab orders }
   - { code: lab_order:create:treating, description: Order lab tests for patients you are treating }
   - { code: lab_order:read:branch, description: See the lab worklist and lab orders }
+  - { code: lab_order:cancel:branch, description: Cancel lab orders that have no samples yet }
+  - { code: report:read:branch, description: Open and print lab report PDFs }
   - { code: sample:collect:branch, description: Collect, receive and reject samples }
   - { code: lab_catalog:manage:tenant, description: Edit lab test prices, preparation and availability }
   - { code: result:enter:branch, description: Enter lab results }
   - { code: report:verify:branch, description: Verify, publish and amend lab reports (pathologist) }
+  - { code: critical:escalation:branch, description: Receive critical lab values nobody has acknowledged (on-call / branch admin) }
   - { code: lab_order:read:treating, description: See results of lab tests for patients you treat; receive critical values }
 features:
   - { key: diagnostics.packages, name: Test packages, type: BOOLEAN }
@@ -24,12 +27,14 @@ nav:
   - { key: book-tests, label: Lab tests, zone: patient, href: /care/tests, permissions: [lab_order:create:own], audience: patient }
   - { key: my-lab-orders, label: My lab tests, zone: patient, href: /care/lab-orders, permissions: [lab_order:read:own], audience: patient }
   - { key: lab-pending, label: Pending results, zone: lab, href: /lab/pending, permissions: [result:enter:branch], audience: staff }
+  - { key: lab-critical, label: Critical values, zone: lab, href: /lab/critical, permissions: [report:verify:branch], audience: staff }
   - { key: doctor-lab-results, label: Lab results, zone: doctor, href: /doctor/lab-results, permissions: [lab_order:read:treating], audience: staff }
   - { key: lab-catalog-admin, label: Lab catalog, zone: admin, href: /admin/lab-catalog, permissions: [lab_catalog:manage:tenant, admin:access:tenant] }
 defaultRoleGrants:
   PATIENT: [lab_order:create:own, lab_order:read:own]
   DOCTOR: [lab_order:create:treating, lab_order:read:treating]
-  LAB_TECH: [lab_order:read:branch, sample:collect:branch, result:enter:branch]
-  PATHOLOGIST: [lab_order:read:branch, result:enter:branch, report:verify:branch]
+  LAB_TECH: [lab_order:read:branch, lab_order:cancel:branch, sample:collect:branch, result:enter:branch, report:read:branch]
+  PATHOLOGIST: [lab_order:read:branch, result:enter:branch, report:verify:branch, report:read:branch]
   RECEPTIONIST: [lab_order:read:branch]
-  BRANCH_ADMIN: [lab_order:read:branch, lab_catalog:manage:tenant]
+  # prices are hospital-wide: the hospital admin sets them (review B-4)
+  BRANCH_ADMIN: [lab_order:read:branch, lab_order:cancel:branch, report:read:branch, critical:escalation:branch]

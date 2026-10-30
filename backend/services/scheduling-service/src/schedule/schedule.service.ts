@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { type AvailabilityChanged, EventTypes, Topics } from '@mc/contracts';
 import { conflict, DomainError, forbidden, notFound } from '@mc/nest-common';
-import { EntitlementsClient } from '@mc/entitlements-sdk';
+import { assertInBranch, branchesFor, EntitlementsClient } from '@mc/entitlements-sdk';
 import { type Actor, addToOutbox, envelope, type Queryable, TenantContext } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { AppointmentsService } from './appointments.service.js';
@@ -39,9 +39,22 @@ export class ScheduleService {
   async assertCanManage(c: Queryable, actor: Actor, doctorId: string): Promise<DoctorRow> {
     const doctor = await this.doctor(c, doctorId);
     const caps = await this.entitlements.capabilities(TenantContext.require().id, actor);
-    if (caps.permissions.includes('schedule:manage:branch')) return doctor;
+    // admins: doctors working at one of their branches (review B-1)
+    const scope = branchesFor(caps, 'schedule:manage:branch'); // [] when not held
+    if (scope === null || doctor.branch_ids.some((b) => scope.includes(b))) return doctor;
     if (caps.permissions.includes('schedule:manage:own') && doctor.user_id === actor.id) return doctor;
     throw forbidden('PERMISSION_DENIED', "you can only manage your own schedule");
+  }
+
+  /** An admin limited to some branches adds hours only at those; the doctor manages their own anywhere (review B-1). */
+  async assertCanManageAt(actor: Actor, doctor: DoctorRow, branchId: string) {
+    if (doctor.user_id === actor.id) return;
+    assertInBranch(await this.entitlements.capabilities(TenantContext.require().id, actor), 'schedule:manage:branch', branchId, 'branch', false);
+  }
+
+  /** Doctors an admin may manage: everyone, or those working at the admin's branches. */
+  async manageableBranches(actor: Actor) {
+    return branchesFor(await this.entitlements.capabilities(TenantContext.require().id, actor), 'schedule:manage:branch');
   }
 
   async addHours(c: Queryable, doctor: DoctorRow, h: NewHours, actorId: string) {

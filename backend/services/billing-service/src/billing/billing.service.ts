@@ -46,10 +46,11 @@ export class BillingService {
   }
 
   /** Owner (patient account) or staff with invoice:read:branch; anyone else 404. */
-  async assertCanSee(c: Queryable, actor: Actor, id: string, staffAllowed: boolean) {
+  /** `staffAt(branchId)`: may this staff member see the branch's invoices (review B-1)? */
+  async assertCanSee(c: Queryable, actor: Actor, id: string, staffAt: (branchId: string) => boolean) {
     const r = await this.invoice(c, id);
     if (!r) throw notFound('invoice');
-    if (actor.kind === 'patient' ? r.account_person_id !== actor.id : !staffAllowed) throw notFound('invoice');
+    if (actor.kind === 'patient' ? r.account_person_id !== actor.id : !staffAt(r.branch_id)) throw notFound('invoice');
     return r;
   }
 
@@ -223,11 +224,11 @@ export class BillingService {
   }
 
   /** Front desk: cash / UPI QR / card machine at the counter. */
-  async collectAtCounter(actor: Actor, source: { sourceType: 'APPOINTMENT' | 'LAB_ORDER'; sourceId: string }, method: 'CASH' | 'UPI' | 'CARD', reference: string | null) {
+  async collectAtCounter(actor: Actor, source: { sourceType: 'APPOINTMENT' | 'LAB_ORDER'; sourceId: string }, method: 'CASH' | 'UPI' | 'CARD', reference: string | null, at: (branchId: string) => boolean = () => true) {
     return this.db.tx(async (c) => {
       const { rows } = await c.query(`SELECT * FROM invoices WHERE source_type = $1 AND source_id = $2 FOR UPDATE`, [source.sourceType, source.sourceId]);
       const inv = rows[0];
-      if (!inv) throw notFound('invoice');
+      if (!inv || !at(inv.branch_id)) throw notFound('invoice');
       if (inv.status !== 'ISSUED') throw conflict(inv.status === 'VOID' ? 'INVOICE_VOID' : 'ALREADY_PAID', `invoice ${inv.invoice_no} is ${inv.status.toLowerCase().replace('_', ' ')}`);
       if (method !== 'CASH' && !reference) throw new DomainError(422, 'REFERENCE_REQUIRED', `enter the ${method === 'UPI' ? 'UPI transaction' : 'card slip'} reference`);
       const pid = randomUUID();

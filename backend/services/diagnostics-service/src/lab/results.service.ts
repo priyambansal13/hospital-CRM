@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { EventTypes, type LabCriticalValue, type LabReportPublished, Topics } from '@mc/contracts';
+import { EventTypes, type LabCriticalEscalated, type LabCriticalValue, type LabReportPublished, Topics } from '@mc/contracts';
 import { conflict, DomainError, forbidden, notFound } from '@mc/nest-common';
 import { type Actor, addToOutbox, envelope, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
@@ -8,6 +8,9 @@ import type { RefRange } from './default-catalog.js';
 import { type Flag, flagValue, isAbnormal, isCritical, parametersOf, parseValue, rangeFor } from './flags.js';
 import { LabService } from './lab.service.js';
 import { reportPdf } from './report-pdf.js';
+
+/** Unacknowledged critical values move up a level this often (review C-2). */
+export const ESCALATE_AFTER_MINUTES = Number(process.env.CRITICAL_ESCALATE_MINUTES ?? 15);
 
 const age = (dob: Date | string | null) => {
   if (!dob) return null;
@@ -72,6 +75,7 @@ export class ResultsService {
   async getSheet(actor: Actor, orderId: string) {
     const c = await this.db.current();
     const s = await this.sheet(c, orderId);
+    await this.lab.atBranch(actor, 'lab_order:read:branch', s.order.branch?.id ?? null);
     await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: this.staffName(actor), action: 'READ', resourceType: 'LAB_RESULTS', resourceId: orderId, patientId: s.order.patient.id, purpose: 'TREATMENT' });
     return s;
   }
@@ -117,12 +121,15 @@ export class ResultsService {
 
   private async raiseCritical(c: Queryable, o: any, resultId: string, testName: string, parameter: string) {
     const alertId = randomUUID();
-    const { rowCount } = await c.query(`INSERT INTO critical_alerts (id, order_id, result_id, notify_user_id) VALUES ($1,$2,$3,$4)
-      ON CONFLICT (result_id) DO UPDATE SET acknowledged_at = NULL, acknowledged_by = NULL, acknowledged_by_name = NULL, created_at = now()`,
-      [alertId, o.id, resultId, o.ordered_by_doctor_id ? o.booked_by : null]);
+    // a self-booked test has no doctor to tell: it goes straight to the pathologists (level 1) — review C-2
+    const doctor = o.ordered_by_doctor_id ? o.booked_by : null;
+    const { rowCount } = await c.query(`INSERT INTO critical_alerts (id, order_id, result_id, notify_user_id, level, escalate_at) VALUES ($1,$2,$3,$4,0,now() + make_interval(mins => $5))
+      ON CONFLICT (result_id) DO UPDATE SET acknowledged_at = NULL, acknowledged_by = NULL, acknowledged_by_name = NULL, created_at = now(), level = 0, escalate_at = EXCLUDED.escalate_at,
+        communicated_to = NULL, read_back = NULL, communicated_at = NULL, communicated_by = NULL, communicated_by_name = NULL`,
+      [alertId, o.id, resultId, doctor, doctor ? ESCALATE_AFTER_MINUTES : 0]);
     if (!rowCount) return;
     const { rows: [a] } = await c.query('SELECT id FROM critical_alerts WHERE result_id = $1', [resultId]);
-    const data: LabCriticalValue = { alertId: a.id, orderId: o.id, orderNo: o.order_no, patientId: o.patient_id, patientName: o.patient_name, patientMrn: o.patient_mrn, testName, parameter, orderedByUserId: o.ordered_by_doctor_id ? o.booked_by : null, orderedByName: o.ordered_by_name };
+    const data: LabCriticalValue = { alertId: a.id, orderId: o.id, orderNo: o.order_no, patientId: o.patient_id, patientName: o.patient_name, patientMrn: o.patient_mrn, testName, parameter, orderedByUserId: o.ordered_by_doctor_id ? o.booked_by : null, orderedByName: o.ordered_by_name, branchId: o.branch_id };
     await addToOutbox(c, Topics.diagnostics, o.id, envelope(EventTypes.labCriticalValue, data, { tenantId: this.tid(), subject: a.id }));
   }
 
@@ -132,6 +139,7 @@ export class ResultsService {
     await this.db.tx(async (c) => {
       const o = await this.lab.row(c, orderId, true);
       if (!o) throw notFound('lab order');
+      await this.lab.atBranch(actor, 'result:enter:branch', o.branch_id);
       if (o.status === 'REPORT_PUBLISHED') throw conflict('REPORT_PUBLISHED', 'the report is published; a pathologist can amend it');
       if (!['IN_LAB', 'RESULTS_ENTERED'].includes(o.status)) throw conflict('INVALID_STATE_TRANSITION', 'results can be entered once the samples are in the lab');
       const changed = await this.apply(c, actor, o, entries, null);
@@ -151,6 +159,7 @@ export class ResultsService {
     const c0 = await this.db.current();
     const o = await this.lab.row(c0, orderId);
     if (!o) throw notFound('lab order');
+    await this.lab.atBranch(actor, 'report:verify:branch', o.branch_id);
     if (o.status !== 'RESULTS_ENTERED') throw conflict('INVALID_STATE_TRANSITION', o.status === 'REPORT_PUBLISHED' ? 'already verified; amend it instead' : 'enter all results first');
     return this.publish(actor, o, null);
   }
@@ -161,6 +170,7 @@ export class ResultsService {
     const c0 = await this.db.current();
     const o = await this.lab.row(c0, orderId);
     if (!o) throw notFound('lab order');
+    await this.lab.atBranch(actor, 'report:verify:branch', o.branch_id);
     if (o.status !== 'REPORT_PUBLISHED') throw conflict('NOT_PUBLISHED', 'only a published report can be amended');
     const changed = await this.db.tx((c) => this.apply(c, actor, o, entries, reason));
     if (!changed.length) {
@@ -230,7 +240,8 @@ export class ResultsService {
     const o = await this.lab.row(c, orderId);
     if (!o) throw notFound('lab order');
     if (actor.kind === 'patient') { if (o.account_person_id !== actor.id) throw notFound('lab order'); }
-    else if (!labStaff) {
+    else if (labStaff) await this.lab.atBranch(actor, 'report:read:branch', o.branch_id);
+    else {
       const a = await this.care.check(actor.id, o.patient_id);
       if (!a.allowed) throw notFound('lab order');
     }
@@ -253,11 +264,16 @@ export class ResultsService {
   /** Doctor: their unacknowledged critical values (values shown in the app); lab: those of self-booked tests. */
   async alerts(actor: Actor, labStaff: boolean) {
     const c = await this.db.current();
+    const scope = labStaff ? await this.lab.branchesOf(actor, 'report:verify:branch') : null;
     const { rows } = await c.query(
-      `SELECT a.*, r.parameter, r.value, r.unit, r.ref_low, r.ref_high, r.flag, i.test_name, o.order_no, o.patient_id, o.patient_name, o.patient_mrn
+      `SELECT a.*, r.parameter, r.value, r.unit, r.ref_low, r.ref_high, r.flag, i.test_name, o.order_no, o.patient_id, o.patient_name, o.patient_mrn, o.ordered_by_name
        FROM critical_alerts a JOIN lab_results r ON r.id = a.result_id JOIN lab_order_items i ON i.id = r.item_id JOIN lab_orders o ON o.id = a.order_id
-       WHERE ${labStaff ? 'a.notify_user_id IS NULL' : 'a.notify_user_id = $1'} AND (a.acknowledged_at IS NULL OR a.acknowledged_at > now() - interval '7 days')
-       ORDER BY a.acknowledged_at NULLS FIRST, a.created_at DESC LIMIT 100`, labStaff ? [] : [actor.id]);
+       WHERE ${labStaff
+         // the lab sees every critical value at its branches: its own to acknowledge (self-booked), and doctors' ones
+         // still outstanding, to phone through (review C-2)
+         ? '($1::uuid[] IS NULL OR o.branch_id = ANY($1)) AND (a.notify_user_id IS NULL OR a.acknowledged_at IS NULL)'
+         : 'a.notify_user_id = $1'} AND (a.acknowledged_at IS NULL OR a.acknowledged_at > now() - interval '7 days')
+       ORDER BY a.acknowledged_at NULLS FIRST, a.created_at DESC LIMIT 100`, labStaff ? [scope] : [actor.id]);
     for (const p of new Set(rows.map((r) => r.patient_id))) {
       await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: this.staffName(actor), action: 'READ', resourceType: 'CRITICAL_ALERTS', patientId: p, purpose: 'TREATMENT' });
     }
@@ -265,20 +281,64 @@ export class ResultsService {
       id: r.id, orderId: r.order_id, orderNo: r.order_no, patient: { id: r.patient_id, name: r.patient_name, mrn: r.patient_mrn },
       test: r.test_name, parameter: r.parameter, value: r.value, unit: r.unit, refLow: r.ref_low == null ? null : Number(r.ref_low), refHigh: r.ref_high == null ? null : Number(r.ref_high),
       flag: r.flag, createdAt: r.created_at, acknowledgedAt: r.acknowledged_at, acknowledgedBy: r.acknowledged_by_name,
+      forDoctor: !!r.notify_user_id, orderedBy: r.ordered_by_name ?? null, level: r.level,
+      communicated: r.communicated_at ? { to: r.communicated_to, at: r.communicated_at, by: r.communicated_by_name, readBack: r.read_back } : null,
     }));
   }
 
   async acknowledge(actor: Actor, alertId: string, labStaff: boolean) {
     await this.loadName(actor);
     return this.db.tx(async (c) => {
-      const { rows } = await c.query('SELECT a.*, o.patient_id FROM critical_alerts a JOIN lab_orders o ON o.id = a.order_id WHERE a.id = $1 FOR UPDATE OF a', [alertId]);
+      const { rows } = await c.query('SELECT a.*, o.patient_id, o.branch_id FROM critical_alerts a JOIN lab_orders o ON o.id = a.order_id WHERE a.id = $1 FOR UPDATE OF a', [alertId]);
       const a = rows[0];
       if (!a || (a.notify_user_id ? a.notify_user_id !== actor.id : !labStaff)) throw notFound('alert');
+      if (!a.notify_user_id) await this.lab.atBranch(actor, 'report:verify:branch', a.branch_id, 'alert');
       if (!a.acknowledged_at) {
         await c.query('UPDATE critical_alerts SET acknowledged_at = now(), acknowledged_by = $2, acknowledged_by_name = $3 WHERE id = $1', [alertId, actor.id, this.staffName(actor)]);
         await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: this.staffName(actor), action: 'UPDATE', resourceType: 'CRITICAL_ALERT', resourceId: alertId, patientId: a.patient_id, purpose: 'TREATMENT', changes: ['acknowledged'] });
       }
       return { acknowledged: true };
+    });
+  }
+
+  /**
+   * Escalation job (review C-2): an unacknowledged critical value nobody has phoned through moves up one level every
+   * ESCALATE_AFTER_MINUTES — level 1 the branch's pathologists, level 2 on call at the branch — and notification-service
+   * e-mails them. Stops at level 2 (it stays on the lab's and the doctor's screens until handled).
+   */
+  async escalateDue(c: Queryable) {
+    const { rows } = await c.query(
+      `SELECT a.id, a.level, a.created_at, r.parameter, i.test_name, o.* , a.id AS alert_id, o.id AS order_id
+       FROM critical_alerts a JOIN lab_results r ON r.id = a.result_id JOIN lab_order_items i ON i.id = r.item_id JOIN lab_orders o ON o.id = a.order_id
+       WHERE a.acknowledged_at IS NULL AND a.communicated_at IS NULL AND a.escalate_at <= now() AND a.level < 2
+       ORDER BY a.escalate_at LIMIT 100 FOR UPDATE OF a SKIP LOCKED`);
+    for (const r of rows) {
+      const level = r.level + 1;
+      await c.query('UPDATE critical_alerts SET level = $2, escalate_at = now() + make_interval(mins => $3) WHERE id = $1', [r.alert_id, level, ESCALATE_AFTER_MINUTES]);
+      const data: LabCriticalEscalated = {
+        alertId: r.alert_id, orderId: r.order_id, orderNo: r.order_no, patientId: r.patient_id, patientName: r.patient_name, patientMrn: r.patient_mrn, testName: r.test_name, parameter: r.parameter,
+        orderedByUserId: r.ordered_by_doctor_id ? r.booked_by : null, orderedByName: r.ordered_by_name, branchId: r.branch_id, level, minutesOpen: Math.round((Date.now() - new Date(r.created_at).getTime()) / 60_000),
+      };
+      await addToOutbox(c, Topics.diagnostics, r.order_id, envelope(EventTypes.labCriticalEscalated, data, { tenantId: this.tid(), subject: `${r.alert_id}:${level}` }));
+    }
+    return rows.length;
+  }
+
+  /**
+   * The lab phoned the value through (to the ordering doctor, or whoever was reachable) and had it read back: recorded
+   * with whom and when, and the escalation stops. For self-booked tests this is how the patient's doctor is told.
+   */
+  async communicated(actor: Actor, alertId: string, v: { communicatedTo: string; readBack: boolean }) {
+    await this.loadName(actor);
+    if (!v.readBack) throw new DomainError(422, 'READ_BACK_REQUIRED', 'ask the person to read the value back to you before recording it');
+    return this.db.tx(async (c) => {
+      const { rows: [a] } = await c.query('SELECT a.*, o.patient_id, o.branch_id FROM critical_alerts a JOIN lab_orders o ON o.id = a.order_id WHERE a.id = $1 FOR UPDATE OF a', [alertId]);
+      if (!a) throw notFound('alert');
+      await this.lab.atBranch(actor, 'report:verify:branch', a.branch_id, 'alert');
+      if (a.communicated_at) throw conflict('ALREADY_COMMUNICATED', `already phoned through to ${a.communicated_to}`);
+      await c.query('UPDATE critical_alerts SET communicated_to = $2, read_back = true, communicated_at = now(), communicated_by = $3, communicated_by_name = $4 WHERE id = $1', [alertId, v.communicatedTo, actor.id, this.staffName(actor)]);
+      await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: this.staffName(actor), action: 'UPDATE', resourceType: 'CRITICAL_ALERT', resourceId: alertId, patientId: a.patient_id, purpose: 'TREATMENT', changes: ['communicated', 'read_back'] });
+      return { communicated: true };
     });
   }
 

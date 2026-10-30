@@ -15,12 +15,12 @@ interface Slot { slotId: string; localTime: string; now: boolean }
 
 /** Book a visit for a patient at the desk: pick the doctor, then a time today or "join the queue now". */
 export default async function DeskBook({ searchParams }: { searchParams: Promise<{ patientId?: string; branch?: string; doctor?: string; ok?: string; error?: string }> }) {
-  await zoneCapabilities('desk', '/desk/book');
+  const caps = await zoneCapabilities('desk', '/desk/book');
   const { accessToken: token } = (await getSession())!;
   const sp = await searchParams;
   const patient = sp.patientId ? await api<Patient>(`/api/patient/v1/desk/patients/${encodeURIComponent(sp.patientId)}`, { token }).catch((e) => (e instanceof ApiError && e.status === 404 ? null : Promise.reject(e))) : null;
   if (!patient) notFound();
-  const { all, current } = await branches(token, sp.branch);
+  const { all, current } = await branches(token, sp.branch, caps, 'walkin:create:branch');
   const board = current ? await api<Board>(`/api/scheduling/v1/desk/board?branchId=${current.id}`, { token }) : null;
   const doctors = board?.doctors ?? [];
   const doctor = doctors.find((d) => d.id === sp.doctor) ?? (doctors.length === 1 ? doctors[0] : undefined);

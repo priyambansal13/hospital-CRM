@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
-import { CurrentActor, notFound, parse } from '@mc/nest-common';
+import { AdminAudited, CurrentActor, notFound, parse } from '@mc/nest-common';
 import type { Actor } from '@mc/tenancy';
 import { z } from 'zod';
 import { KbService } from '../kb/kb.service.js';
@@ -74,6 +74,11 @@ export class HandoffsController {
     return this.chat.handoffs(status === 'DONE' ? 'DONE' : 'OPEN');
   }
 
+  @Get('summary')
+  summary() {
+    return this.chat.handoffSummary();
+  }
+
   @Post(':id/close')
   @HttpCode(200)
   close(@Param('id') hid: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
@@ -84,6 +89,7 @@ export class HandoffsController {
 /** Admin: what the assistant knows. Test preparation is read-only here (it comes from the lab catalog). */
 @Controller('v1/assistant/knowledge')
 @RequireModule('ai')
+@AdminAudited('KNOWLEDGE')
 @RequirePermission('knowledge:manage:tenant')
 export class KnowledgeController {
   constructor(private readonly kb: KbService) {}

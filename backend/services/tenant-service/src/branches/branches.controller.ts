@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Inject, Param, Patch, Post } from '@nestjs/common';
 import { EventTypes, Topics } from '@mc/contracts';
-import { conflict, CurrentActor, Idempotent, Internal, notFound, parse, PLACEMENTS } from '@mc/nest-common';
+import { AdminAudited, conflict, CurrentActor, Idempotent, Internal, notFound, parse, PLACEMENTS } from '@mc/nest-common';
 import { assertWithinLimit, EntitlementsClient, RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { type Actor, addToOutbox, envelope, type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
@@ -43,6 +43,7 @@ export class BranchesController {
 
   @Post()
   @Idempotent()
+  @AdminAudited('BRANCH')
   @RequirePermission('branch:manage:tenant')
   async create(@Body() body: unknown, @CurrentActor() actor: Actor) {
     const input = parse(CreateBranch, body);
@@ -68,6 +69,7 @@ export class BranchesController {
   }
 
   @Patch(':id')
+  @AdminAudited('BRANCH')
   @RequirePermission('branch:manage:tenant')
   async update(@Param('id') id: string, @Body() body: unknown) {
     if (!z.uuid().safeParse(id).success) throw notFound('branch');

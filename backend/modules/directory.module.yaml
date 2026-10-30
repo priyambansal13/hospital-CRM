@@ -17,4 +17,5 @@ defaultRoleGrants:
   PATIENT: [doctor:read:tenant]
   RECEPTIONIST: [doctor:read:tenant]
   DOCTOR: [doctor:read:tenant]
-  BRANCH_ADMIN: [doctor:read:tenant, doctor:manage:tenant]
+  # doctor profiles and fees are hospital-wide: the hospital admin edits them (review B-4)
+  BRANCH_ADMIN: [doctor:read:tenant]

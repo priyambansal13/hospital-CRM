@@ -1,7 +1,7 @@
 import { getSession } from '@mc/auth';
 import { api, ApiError } from '@mc/bff';
 import { ZoneFrame, zoneCapabilities } from '@mc/features';
-import { Badge, Button, Card, PageHeader } from '@mc/ui';
+import { Alert, Badge, Button, Card, PageHeader } from '@mc/ui';
 import type { ReactNode } from 'react';
 import { LiveRefresh } from '@mc/ui/live';
 import { Flash } from '@/lib/flash';
@@ -22,12 +22,15 @@ function Token({ a }: { a: Appt }) {
   return a.tokenNo ? <span className="mc-token" aria-label={`Token ${a.tokenNo}`}>{a.tokenNo}</span> : <span className="mc-token mc-token-none">{a.localTime}</span>;
 }
 
-function Row({ a, now, children }: { a: Appt; now?: boolean; children?: ReactNode }) {
+type Priority = 'ROUTINE' | 'URGENT' | 'EMERGENCY';
+const PRIORITY: Record<Priority, { label: string; tone: 'neutral' | 'warning' | 'danger' }> = { ROUTINE: { label: 'vitals done', tone: 'neutral' }, URGENT: { label: 'urgent', tone: 'warning' }, EMERGENCY: { label: 'emergency', tone: 'danger' } };
+
+function Row({ a, now, triage, children }: { a: Appt; now?: boolean; triage?: Priority; children?: ReactNode }) {
   return (
     <li className={`mc-queue-item${now ? ' now' : ''}`} data-testid={`queue-${a.appointmentNo}`}>
       <Token a={a} />
       <div>
-        <strong>{a.patient.name}</strong>
+        <strong>{a.patient.name}</strong>{triage ? <> <Badge tone={PRIORITY[triage].tone}>{PRIORITY[triage].label}</Badge></> : null}
         <span className="mc-meta">
           {a.patient.mrn} · {a.mode === 'VIDEO' ? 'Video' : a.branch.name} · {a.source === 'WALK_IN' ? 'walk-in' : `booked ${a.localTime}`}
           {a.status === 'CHECKED_IN' && a.checkedInAt ? ` · waiting ${since(a.checkedInAt)}` : ''}
@@ -51,7 +54,7 @@ function Act({ action, id, label, variant }: { action: (f: FormData) => Promise<
 /** The doctor's live queue for today: who is being seen, who is waiting (by token), who hasn't arrived. */
 export default async function TodaysQueue({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string; unsigned?: string }> }) {
   const sp = await searchParams;
-  await zoneCapabilities('doctor', '/doctor/queue');
+  const caps = await zoneCapabilities('doctor', '/doctor/queue');
   const { accessToken: token } = (await getSession())!;
   const me = await api<{ id: string; name: string }>('/api/scheduling/v1/me/doctor', { token }).catch((e) => (e instanceof ApiError && e.status === 404 ? null : Promise.reject(e)));
   const q = me ? await api<{ appointments: Appt[] }>(`/api/scheduling/v1/doctors/${me.id}/queue`, { token }) : { appointments: [] };
@@ -59,12 +62,21 @@ export default async function TodaysQueue({ searchParams }: { searchParams: Prom
   const [current, waiting, notArrived, done] = [by('IN_PROGRESS'), by('CHECKED_IN'), by('CONFIRMED'), by('COMPLETED', 'NO_SHOW')];
   const due = (a: Appt) => Date.parse(a.startsAt) <= Date.now();
   // notes still to sign (finished on purpose, or older visits): never lost
+  // the nurse's triage (priority only here; the values are in the note) and critical values not yet acknowledged
+  const live = q.appointments.filter((a) => ['CHECKED_IN', 'IN_PROGRESS'].includes(a.status)).map((a) => a.id);
+  const triage = me && live.length && caps.modules.includes('emr')
+    ? await api<Record<string, { priority: Priority }>>(`/api/records/v1/triage-summary?appointmentIds=${live.join(',')}`, { token }).catch(() => ({} as Record<string, { priority: Priority }>))
+    : {};
+  const critical = me && caps.modules.includes('diagnostics')
+    ? (await api<{ acknowledgedAt: string | null }[]>('/api/diagnostics/v1/doctor/critical-alerts', { token }).catch(() => [])).filter((x) => !x.acknowledgedAt).length
+    : 0;
   const unsigned = me ? await api<{ encounterId: string; appointmentId: string | null; startedAt: string; patient: { name: string; mrn: string } }[]>('/api/records/v1/encounters/unsigned', { token }).catch(() => []) : [];
 
   return (
     <ZoneFrame zone="doctor" path="/doctor/queue" zones={ZONES}>
       <PageHeader title="Today's queue" subtitle={`${waiting.length} waiting · ${current.length ? 'seeing a patient' : 'free'} · ${done.length} done`} actions={me ? <LiveRefresh src={`/doctor/live?doctorId=${me.id}`} /> : null} />
       <Flash ok={sp.ok} error={sp.error} />
+      {critical ? <Alert tone="error">{critical} critical lab value{critical > 1 ? 's' : ''} waiting for you. <a href="/doctor/lab-results">Review and acknowledge</a></Alert> : null}
       {!me ? <Card><p className="mc-muted">Your account isn&apos;t linked to a doctor profile.</p></Card> : (
         <>
           {unsigned.length ? (
@@ -80,7 +92,7 @@ export default async function TodaysQueue({ searchParams }: { searchParams: Prom
           <Card title="Now seeing">
             {current.length ? (
               <ul className="mc-queue">{current.map((a) => (
-                <Row key={a.id} a={a} now>
+                <Row key={a.id} a={a} now triage={triage[a.id]?.priority}>
                   <a className="mc-btn mc-btn-primary" href={`/doctor/consult/${a.id}`}>Open visit</a>
                   <Act action={completeVisit} id={a.id} label="Complete visit" variant="ghost" />
                   {sp.unsigned === a.id ? <Act action={finishSignLater} id={a.id} label="Finish, sign the note later" variant="ghost" /> : null}
@@ -92,7 +104,7 @@ export default async function TodaysQueue({ searchParams }: { searchParams: Prom
           <h2 className="mc-section-title">Waiting ({waiting.length})</h2>
           {waiting.length ? (
             <ul className="mc-queue" aria-label="Waiting">{waiting.map((a, i) => (
-              <Row key={a.id} a={a}>
+              <Row key={a.id} a={a} triage={triage[a.id]?.priority}>
                 <Act action={startVisit} id={a.id} label={i === 0 ? 'Call in' : 'Start'} variant={i === 0 && !current.length ? 'primary' : 'ghost'} />
                 <Act action={markNoShow} id={a.id} label="Left" variant="ghost" />
               </Row>

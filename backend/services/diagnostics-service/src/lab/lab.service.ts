@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { EventTypes, type LabOrderChanged, Topics } from '@mc/contracts';
 import { conflict, DomainError, forbidden, notFound } from '@mc/nest-common';
-import { EntitlementsClient } from '@mc/entitlements-sdk';
+import { assertInBranch, branchesFor, EntitlementsClient, inBranch } from '@mc/entitlements-sdk';
 import { type Actor, addToOutbox, envelope, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { AuditClient, BillingClient, CareAccessClient, type Patient, PatientsClient } from './clients.js';
@@ -47,6 +47,16 @@ export class LabService {
 
   private tid() { return TenantContext.require().id; }
   async caps(actor: Actor) { return this.entitlements.capabilities(this.tid(), actor); }
+
+  /** Lab staff act on orders of their own branches only (review B-1); others answer "not found". */
+  async atBranch(actor: Actor, permission: string, branchId: string | null, what = 'lab order') {
+    assertInBranch(await this.caps(actor), permission, branchId, what);
+  }
+
+  /** The branches a lab permission covers (null = every branch). */
+  async branchesOf(actor: Actor, permission: string) {
+    return branchesFor(await this.caps(actor), permission);
+  }
 
   // ---------- seeding ----------
 
@@ -325,7 +335,8 @@ export class LabService {
     return this.db.tx(async (c) => {
       const o = await this.row(c, orderId, true);
       if (!o) throw notFound('lab order');
-      const staff = actor.kind === 'staff' && (await this.caps(actor)).permissions.includes('lab_order:read:branch');
+      // cancelling is its own permission (reading the worklist no longer implies it, review B-4), at the order's branch
+      const staff = actor.kind === 'staff' && inBranch(await this.caps(actor), 'lab_order:cancel:branch', o.branch_id);
       if (actor.kind === 'patient' ? o.account_person_id !== actor.id : !staff) throw notFound('lab order');
       if (!['AWAITING_BOOKING', 'PENDING_PAYMENT', 'BOOKED'].includes(o.status)) throw conflict('INVALID_STATE_TRANSITION', 'samples have been collected; ask the lab');
       const { rows: [v] } = await c.query('SELECT * FROM home_visits WHERE order_id = $1 FOR UPDATE', [orderId]);
@@ -449,7 +460,7 @@ export class LabService {
       if (o.account_person_id !== actor.id) throw notFound('lab order');
       return this.dto(c, o);
     }
-    const lab = (await this.caps(actor)).permissions.includes('lab_order:read:branch');
+    const lab = inBranch(await this.caps(actor), 'lab_order:read:branch', o.branch_id);
     const care = lab ? null : await this.care.check(actor.id, o.patient_id);
     if (!lab && !care?.allowed) throw notFound('lab order');
     await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: care?.doctorName ?? actor.email ?? null, action: 'READ', resourceType: 'LAB_ORDER', resourceId: id, patientId: o.patient_id, purpose: lab ? 'TREATMENT' : (care!.purpose as any) });
@@ -496,6 +507,7 @@ export class LabService {
   async collect(actor: Actor, barcode: string) {
     return this.db.tx(async (c) => {
       const s = await this.sampleByBarcode(c, barcode);
+      await this.atBranch(actor, 'sample:collect:branch', s.branch_id, 'sample');
       // a replacement tube (after a rejection) may be collected at the counter, home orders included: the patient
       // was told to visit the lab
       if (s.collection_type === 'HOME' && !s.replaces) throw conflict('HOME_COLLECTION', `sample ${s.barcode} is collected at the patient's home by the phlebotomist`);
@@ -528,6 +540,7 @@ export class LabService {
   async receive(actor: Actor, barcode: string) {
     return this.db.tx(async (c) => {
       const s = await this.sampleByBarcode(c, barcode);
+      await this.atBranch(actor, 'sample:collect:branch', s.branch_id, 'sample');
       if (s.status !== 'COLLECTED') throw conflict('INVALID_STATE_TRANSITION', `sample ${s.barcode} is ${s.status.toLowerCase()}`);
       await c.query(`UPDATE samples SET status = 'RECEIVED', received_at = now() WHERE id = $1`, [s.id]);
       // home collection: the first tube scanned at the bench is the phlebotomist's hand-over
@@ -552,6 +565,7 @@ export class LabService {
     return this.db.tx(async (c) => {
       const o = await this.row(c, orderId, true);
       if (!o) throw notFound('lab order');
+      await this.atBranch(actor, 'sample:collect:branch', o.branch_id);
       const { rows: [{ tubes }] } = await c.query(`SELECT count(*)::int AS tubes FROM samples WHERE order_id = $1`, [orderId]);
       if (tubes) throw conflict('HAS_SAMPLES', 'this order has samples: scan them instead');
       if (o.status !== 'BOOKED') throw conflict('INVALID_STATE_TRANSITION', `the order is ${o.status.toLowerCase().replace('_', ' ')}`);
@@ -571,6 +585,7 @@ export class LabService {
   async reject(actor: Actor, barcode: string, reason: string) {
     return this.db.tx(async (c) => {
       const s = await this.sampleByBarcode(c, barcode);
+      await this.atBranch(actor, 'sample:collect:branch', s.branch_id, 'sample');
       if (!['COLLECTED', 'RECEIVED'].includes(s.status)) throw conflict('INVALID_STATE_TRANSITION', `sample ${s.barcode} is ${s.status.toLowerCase()}`);
       // once results are entered, a wrong result is corrected by an amendment (with history), not by hiding the report
       if (['RESULTS_ENTERED', 'REPORT_PUBLISHED', 'CANCELLED'].includes(s.order_status)) throw conflict('RESULTS_ALREADY_ENTERED', 'results are already entered for this order: correct them with an amendment instead');

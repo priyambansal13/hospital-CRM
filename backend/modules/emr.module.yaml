@@ -8,6 +8,7 @@ permissions:
   - { code: record:write:treating, description: Write visits and prescriptions for patients you are treating }
   - { code: record:break_glass:tenant, description: Emergency access to any patient's record (time-limited, audited) }
   - { code: record:read:own, description: View own and family members' prescriptions }
+  - { code: vitals:record:branch, description: Record vitals and triage priority for checked-in patients }
 features: []
 nav:
   - { key: doctor-patients, label: Patients, zone: doctor, href: /doctor/patients, permissions: [record:read:treating], audience: staff }
@@ -17,3 +18,4 @@ nav:
 defaultRoleGrants:
   DOCTOR: [record:read:treating, record:write:treating, record:break_glass:tenant]
   PATIENT: [record:read:own]
+  NURSE: [vitals:record:branch]

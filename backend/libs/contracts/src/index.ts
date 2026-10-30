@@ -59,6 +59,8 @@ export const StaffJoined = z.object({
   email: z.email(),
   name: z.string(),
   initialRoles: z.array(z.string()),
+  /** the roles are given at this branch only (null/absent: every branch; review B-1) */
+  branchId: z.uuid().nullable().optional(),
 });
 export type StaffJoined = z.infer<typeof StaffJoined>;
 
@@ -245,8 +247,16 @@ export type HomeVisitChanged = z.infer<typeof HomeVisitChanged>;
 export const LabCriticalValue = z.object({
   alertId: z.uuid(), orderId: z.uuid(), orderNo: z.string(), patientId: z.uuid(), patientName: z.string(), patientMrn: z.string(),
   testName: z.string(), parameter: z.string(), orderedByUserId: z.uuid().nullable(), orderedByName: z.string().nullable(),
+  branchId: z.uuid().nullable().optional(),
 });
 export type LabCriticalValue = z.infer<typeof LabCriticalValue>;
+
+/**
+ * Nobody has acknowledged a critical value (review C-2): level 1 = the branch's pathologists (phone the doctor, record
+ * the read-back), level 2 = whoever is on call for escalations at the branch (branch admin).
+ */
+export const LabCriticalEscalated = LabCriticalValue.extend({ level: z.number().int().min(1).max(2), minutesOpen: z.number().int() });
+export type LabCriticalEscalated = z.infer<typeof LabCriticalEscalated>;
 
 /** A patient shares (part of) their record with a doctor for a while (owned by patient-service). */
 export const ConsentScope = z.enum(['NOTES', 'PRESCRIPTIONS', 'DOCUMENTS']);
@@ -261,7 +271,7 @@ export const AuditEntry = z.object({
   actorId: z.string().min(1).max(64),
   actorKind: z.enum(['staff', 'patient', 'system']),
   actorName: z.string().max(120).nullable().default(null),
-  action: z.enum(['READ', 'CREATE', 'UPDATE', 'SIGN', 'AMEND', 'EXPORT', 'BREAK_GLASS', 'LOOKUP', 'DENIED']),
+  action: z.enum(['READ', 'CREATE', 'UPDATE', 'DELETE', 'SIGN', 'AMEND', 'EXPORT', 'BREAK_GLASS', 'LOOKUP', 'DENIED']),
   resourceType: z.string().min(2).max(40),
   resourceId: z.uuid().nullable().default(null),
   patientId: z.uuid().nullable().default(null),
@@ -317,6 +327,7 @@ export const EventTypes = {
   labResultsEntered: 'diagnostics.lab_order_results_entered',
   labReportPublished: 'diagnostics.report_published',
   labCriticalValue: 'diagnostics.critical_value',
+  labCriticalEscalated: 'diagnostics.critical_escalated',
   labTatBreached: 'diagnostics.tat_breached',
   homeVisitAssigned: 'diagnostics.home_visit_assigned',
   homeVisitEnRoute: 'diagnostics.home_visit_en_route',
@@ -368,6 +379,13 @@ export interface Capabilities {
   /** the hospital's MediCare subscription (banners; SUSPENDED etc. already reflected in modules/readOnlyModules) */
   billing: { status: string; graceEndsAt: string | null; trialEndsAt: string | null };
   permissions: string[];
+  /**
+   * ":branch" permissions granted only at some branches (review B-1): permission → branch ids. A permission that is
+   * missing here but present in `permissions` covers every branch.
+   */
+  branchScopes?: Record<string, string[]>;
+  /** the branches this person works at (union of their role grants); null = every branch (screens default to these) */
+  branchIds?: string[] | null;
   features: Record<string, FeatureState>;
   nav: NavItem[];
   home: string;

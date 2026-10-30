@@ -68,7 +68,7 @@ export function Button({ children, variant = 'primary', type = 'submit', name, v
 }
 
 export function Field({ label, name, type = 'text', required, placeholder, defaultValue, hint, autoComplete, inputMode, pattern }: {
-  label: string; name: string; type?: string; required?: boolean; placeholder?: string; defaultValue?: string; hint?: string; autoComplete?: string; inputMode?: 'numeric' | 'tel' | 'email' | 'text'; pattern?: string;
+  label: string; name: string; type?: string; required?: boolean; placeholder?: string; defaultValue?: string; hint?: string; autoComplete?: string; inputMode?: 'numeric' | 'decimal' | 'tel' | 'email' | 'text'; pattern?: string;
 }) {
   return (
     <label className="mc-field">

@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
-import { DomainError, Internal, notFound, parse, TenantPublic } from '@mc/nest-common';
+import { AdminAudited, DomainError, Internal, notFound, parse, TenantPublic } from '@mc/nest-common';
 import { RequirePermission } from '@mc/entitlements-sdk';
 import { TenantContext } from '@mc/tenancy';
 import { z } from 'zod';
@@ -82,6 +82,7 @@ export class BrandingController {
   }
 
   @Patch('branding')
+  @AdminAudited('BRANDING')
   @RequirePermission('settings:manage:tenant')
   async update(@Body() body: unknown) {
     const id = TenantContext.require().id;

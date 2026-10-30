@@ -1,8 +1,8 @@
 import { getSession } from '@mc/auth';
 import { api } from '@mc/bff';
-import { can, ZoneFrame, zoneCapabilities } from '@mc/features';
+import { branchesFor, can, ZoneFrame, zoneCapabilities } from '@mc/features';
 import { ReadOnlyNotice } from '@mc/features/plan';
-import { Badge, Button, Card, Chip, PageHeader, Table } from '@mc/ui';
+import { Alert as AlertBox, Badge, Button, Card, Chip, PageHeader, Table } from '@mc/ui';
 import { acknowledgeAlert } from '@/lib/result-actions';
 import { Flash } from '@/lib/flash';
 import { age, type LabOrder, STATUS } from '@/lib/lab';
@@ -10,7 +10,7 @@ import { ZONES } from '@/lib/zones';
 
 export const dynamic = 'force-dynamic';
 
-interface Alert { id: string; orderId: string; orderNo: string; patient: { name: string; mrn: string }; test: string; parameter: string; value: string; unit: string | null; flag: string; createdAt: string; acknowledgedAt: string | null }
+interface Alert { id: string; orderId: string; orderNo: string; patient: { name: string; mrn: string }; test: string; parameter: string; value: string; unit: string | null; flag: string; createdAt: string; acknowledgedAt: string | null; forDoctor: boolean }
 const when = (iso: string | null) => (iso ? new Intl.DateTimeFormat('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }).format(new Date(iso)) : '—');
 
 /** Samples in the lab waiting for results or verification, overdue first; critical values from self-booked tests. */
@@ -18,17 +18,21 @@ export default async function Pending({ searchParams }: { searchParams: Promise<
   const caps = await zoneCapabilities('lab', '/lab/pending');
   const { accessToken: token } = (await getSession())!;
   const sp = await searchParams;
-  const branches = await api<{ id: string; name: string }[]>('/api/diagnostics/v1/public/lab-branches', { token });
-  const branch = branches.find((b) => b.id === sp.branch) ?? branches.find((b) => b.name === 'Sector 44') ?? branches[0];
+  // only the branches this person works at, their own first (review B-1)
+  const branches = branchesFor(caps, 'lab_order:read:branch', await api<{ id: string; name: string }[]>('/api/diagnostics/v1/public/lab-branches', { token }));
+  const branch = branches.find((b) => b.id === sp.branch) ?? (caps.branchIds ? branches[0] : branches.find((b) => b.name === 'Sector 44')) ?? branches[0];
   const orders = branch ? await api<LabOrder[]>(`/api/diagnostics/v1/lab/pending?branchId=${branch.id}`, { token }) : [];
   const alerts = can(caps, 'report:verify:branch') ? await api<Alert[]>('/api/diagnostics/v1/lab/critical-alerts', { token }) : [];
-  const open = alerts.filter((a) => !a.acknowledgedAt);
+  // the lab's own (self-booked tests); doctors' outstanding ones are on /lab/critical
+  const open = alerts.filter((a) => !a.acknowledgedAt && !a.forDoctor);
+  const doctors = alerts.filter((a) => !a.acknowledgedAt && a.forDoctor).length;
   return (
     <ZoneFrame zone="lab" path="/lab/pending" zones={ZONES}>
       <PageHeader title="Pending results" subtitle={branch ? branch.name : undefined} />
       <ReadOnlyNotice caps={caps} module="diagnostics" />
       <Flash ok={sp.ok} error={sp.error} />
       {branches.length > 1 ? <div className="mc-chips">{branches.map((b) => <Chip key={b.id} href={`/lab/pending?branch=${b.id}`} active={b.id === branch?.id}>{b.name}</Chip>)}</div> : null}
+      {doctors ? <AlertBox tone="error">{doctors} critical value{doctors > 1 ? 's' : ''} not yet acknowledged by the doctor. <a href="/lab/critical">Phone them through</a></AlertBox> : null}
       {open.length ? (
         <Card title={`Critical values to act on (${open.length})`}>
           <Table rows={open} empty="" columns={[

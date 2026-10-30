@@ -6,16 +6,11 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { prescriptionPdf } from './prescription-pdf.js';
 import { RecordsService } from './records.service.js';
+import { Vitals } from './vitals.js';
 
 const Uuid = z.uuid();
 const id = (v: string, what: string) => { if (!Uuid.safeParse(v ?? '').success) throw notFound(what); return v; };
 const text = (max: number) => z.string().trim().max(max).nullable();
-const Vitals = z.object({
-  bp: z.string().regex(/^\d{2,3}\/\d{2,3}$/, 'blood pressure like 120/80').optional(),
-  pulse: z.number().int().min(20).max(250).optional(), tempC: z.number().min(30).max(45).optional(),
-  weightKg: z.number().min(0.3).max(400).optional(), heightCm: z.number().min(20).max(260).optional(),
-  spo2: z.number().int().min(50).max(100).optional(), respRate: z.number().int().min(4).max(80).optional(),
-}).strict();
 const Diagnosis = z.object({ code: z.string().trim().regex(/^[A-Z]\d{2}(\.\d{1,2})?$/, 'ICD-10 code like E11.9').nullable().optional(), description: text(200).optional(), isPrimary: z.boolean().optional() });
 const Update = z.object({ version: z.number().int(), vitals: Vitals.optional(), chiefComplaint: text(500).optional(), notes: text(10_000).optional(), diagnoses: z.array(Diagnosis).max(10).optional() });
 const Amend = z.object({ reason: z.string().trim().min(5).max(300), chiefComplaint: text(500).optional(), notes: text(10_000).optional(), diagnoses: z.array(Diagnosis).max(10).optional() });

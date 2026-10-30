@@ -133,6 +133,7 @@ export class HomeService {
   async assign(actor: Actor, visitId: string, phlebotomistId: string) {
     return this.db.tx(async (c) => {
       const v = await this.lockVisit(c, visitId);
+      await this.lab.atBranch(actor, 'home_visit:assign:branch', v.branch_id, 'home visit');
       if (!['UNASSIGNED', 'ASSIGNED'].includes(v.status)) throw conflict('INVALID_STATE_TRANSITION', `the visit is ${v.status.toLowerCase().replace('_', ' ')}`);
       if (v.order_status !== 'BOOKED') throw conflict('INVALID_STATE_TRANSITION', v.order_status === 'PENDING_PAYMENT' ? 'the patient has not paid yet' : `the order is ${v.order_status.toLowerCase().replace('_', ' ')}`);
       const { rows: [p] } = await c.query('SELECT * FROM phlebotomists WHERE user_id = $1 AND active', [phlebotomistId]);

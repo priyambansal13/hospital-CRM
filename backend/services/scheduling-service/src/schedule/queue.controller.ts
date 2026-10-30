@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Inject, Param, Post, Query } from '@nestjs/common';
 import { CurrentActor, Idempotent, Internal, notFound, parse, PLACEMENTS } from '@mc/nest-common';
-import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
+import { assertInBranch, inBranch, RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { type Actor, type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { z } from 'zod';
 import { AppointmentsService } from './appointments.service.js';
@@ -38,7 +38,7 @@ export class DeskController {
   /** A doctor's open slots for the rest of today at a branch (including the one running now). */
   @Get('doctors/:doctorId/slots')
   @RequirePermission('walkin:create:branch')
-  async todaySlots(@Param('doctorId') doctorId: string, @Query('branchId') branchId: string) {
+  async todaySlots(@Param('doctorId') doctorId: string, @Query('branchId') branchId: string) { // branch checked by the guard (query)
     const { rowCount } = await this.db.query('SELECT 1 FROM doctors WHERE id = $1 AND $2 = ANY(branch_ids)', [id(doctorId, 'doctor'), id(branchId, 'branch')]);
     if (!rowCount) throw notFound('doctor');
     const { rows } = await this.db.query(
@@ -55,13 +55,17 @@ export class DeskController {
   @RequirePermission('walkin:create:branch')
   async book(@Body() body: unknown, @CurrentActor() actor: Actor) {
     const input = parse(DeskBook, body);
-    const patient = await this.patients.get(TenantContext.require().id, input.patientId);
     const caps = await this.queue.caps(actor);
+    // only at the caller's branches (review B-1)
+    const branchId = input.walkIn?.branchId ?? (await this.db.query('SELECT branch_id FROM slots WHERE id = $1', [input.slotId])).rows[0]?.branch_id;
+    if (!branchId) throw notFound('slot');
+    assertInBranch(caps, 'walkin:create:branch', branchId, 'branch', false);
+    const patient = await this.patients.get(TenantContext.require().id, input.patientId);
     return this.appts.bookingTx(async (c) => {
       const appt = input.slotId
         ? await this.appts.bookSlot(c, actor, input.slotId, { patient, reason: input.reason, source: 'DESK' })
         : await this.appts.walkIn(c, actor, input.walkIn!.doctorId, input.walkIn!.branchId, { patient, reason: input.reason });
-      if (!input.checkIn || !caps.permissions.includes(CHECKIN)) return appt;
+      if (!input.checkIn || !caps.permissions.includes(CHECKIN) || !inBranch(caps, CHECKIN, branchId)) return appt;
       // a slot later today is booked but not checked in yet (the patient may step out)
       if (new Date(appt.startsAt).getTime() - Date.now() > 60 * 60_000) return appt;
       return this.queue.checkIn(c, actor, appt.id);
@@ -85,7 +89,7 @@ export class QueueController {
   @Get('doctors/:doctorId/queue')
   async doctorQueue(@Param('doctorId') doctorId: string, @Query('date') date: string | undefined, @CurrentActor() actor: Actor) {
     const d = await this.queue.assertQueueAccess(await this.db.current(), actor, id(doctorId, 'doctor'));
-    return { doctor: { id: d.id, name: d.name }, appointments: await this.queue.queue(d.id, parse(Day, date)) };
+    return { doctor: { id: d.id, name: d.name }, appointments: await this.queue.queue(d.id, parse(Day, date), d.branches) };
   }
 
   /** May the caller watch this queue (doctorId) or board (branchId) live? Used by the realtime gateway. */

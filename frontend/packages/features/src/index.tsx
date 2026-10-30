@@ -22,6 +22,10 @@ export interface Capabilities {
   plan: { code: string; name: string } | null;
   billing?: { status: string; graceEndsAt: string | null; trialEndsAt: string | null };
   permissions: string[];
+  /** ":branch" permissions held at some branches only: permission → branch ids (absent = every branch) */
+  branchScopes?: Record<string, string[]>;
+  /** the branches this person works at; null = every branch */
+  branchIds?: string[] | null;
   features: Record<string, { enabled: boolean; limit?: number | null; reason?: string }>;
   nav: NavItem[];
   home: string;
@@ -66,6 +70,20 @@ export async function requireZone(caps: Capabilities, zone: string) {
 }
 
 export const can = (caps: Capabilities, permission: string) => caps.permissions.includes(permission);
+
+/**
+ * Branches a screen should offer for a ":branch" permission (review B-1): only those the person works at, the first
+ * one being the default. `all` = every branch of the hospital.
+ */
+export function branchesFor<B extends { id: string }>(caps: Capabilities, permission: string, all: B[]): B[] {
+  const scope = caps.branchScopes?.[permission];
+  if (!scope) {
+    const home = caps.branchIds;
+    // hospital-wide, but the person's own branches first (the default)
+    return home ? [...all.filter((b) => home.includes(b.id)), ...all.filter((b) => !home.includes(b.id))] : all;
+  }
+  return all.filter((b) => scope.includes(b.id));
+}
 export const hasFeature = (caps: Capabilities, feature: string) => caps.features[feature]?.enabled === true;
 
 export function Can({ caps, permission, children, fallback = null }: { caps: Capabilities; permission: string; children: ReactNode; fallback?: ReactNode }) {

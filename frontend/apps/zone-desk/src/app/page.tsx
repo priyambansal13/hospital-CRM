@@ -5,7 +5,8 @@ import { Badge, Button, Card, Chip, PageHeader, Table } from '@mc/ui';
 import { randomUUID } from 'node:crypto';
 import { LiveRefresh } from '@mc/ui/live';
 import { cancel, checkIn, collectPayment, noShow } from '@/lib/actions';
-import { type Appt, type Board, branches, STATUS } from '@/lib/desk';
+import { type Appt, type Board, branches, chatSummary, STATUS, triageSummary } from '@/lib/desk';
+import { ChatAlert } from '@/lib/chat-alert';
 import { Flash } from '@/lib/flash';
 import { ZONES } from '@/lib/zones';
 
@@ -26,9 +27,14 @@ export default async function DeskBoard({ searchParams }: { searchParams: Promis
   const caps = await zoneCapabilities('desk', '/desk');
   const { accessToken: token } = (await getSession())!;
   const sp = await searchParams;
-  const { all, current } = await branches(token, sp.branch);
+  const { all, current } = await branches(token, sp.branch, caps);
   const board = current ? await api<Board>(`/api/scheduling/v1/desk/board?branchId=${current.id}`, { token }) : null;
   const back = current ? `/desk?branch=${current.id}` : '/desk';
+  const chats = await chatSummary(token, caps);
+  // nurses: vitals and triage for patients waiting (checked in)
+  const canTriage = can(caps, 'vitals:record:branch') && caps.modules.includes('emr');
+  const triage = canTriage && board ? await triageSummary(token, caps, board.doctors.flatMap((d) => d.appointments.filter((a) => ['CHECKED_IN', 'IN_PROGRESS'].includes(a.status)).map((a) => a.id))) : {};
+  const PRIORITY = { ROUTINE: { label: 'routine', tone: 'neutral' }, URGENT: { label: 'urgent', tone: 'warning' }, EMERGENCY: { label: 'emergency', tone: 'danger' } } as const;
   const canBook = can(caps, 'walkin:create:branch');
   const canCancel = can(caps, 'appointment:cancel:branch');
   const canCollect = can(caps, 'payment:collect:branch');
@@ -64,6 +70,7 @@ export default async function DeskBoard({ searchParams }: { searchParams: Promis
         </>}
       />
       <Flash ok={sp.ok} error={sp.error} />
+      {chats ? <ChatAlert initial={chats} /> : null}
       {all.length > 1 ? <div className="mc-chips">{all.map((b) => <Chip key={b.id} href={`/desk?branch=${b.id}`} active={b.id === current?.id}>{b.name}</Chip>)}</div> : null}
       {!board ? <Card><p className="mc-muted">No active branches yet.</p></Card> : (
         <>
@@ -87,6 +94,8 @@ export default async function DeskBoard({ searchParams }: { searchParams: Promis
                     header: '', cell: (a) => (
                       <span className="mc-inline">
                         {a.status === 'CONFIRMED' && a.mode !== 'VIDEO' ? <Act action={checkIn} id={a.id} back={back} label="Check in" variant="primary" /> : null}
+                        {triage[a.id] ? <Badge tone={PRIORITY[triage[a.id].priority].tone}>{PRIORITY[triage[a.id].priority].label}</Badge> : null}
+                        {canTriage && a.status === 'CHECKED_IN' ? <a className="mc-btn mc-btn-ghost" href={`/desk/triage/${a.id}?back=${encodeURIComponent(back)}`}>{triage[a.id] ? 'Vitals ✓' : 'Vitals'}</a> : null}
                         {(a.status === 'CONFIRMED' && due(a)) || a.status === 'CHECKED_IN' ? <Act action={noShow} id={a.id} back={back} label={a.status === 'CHECKED_IN' ? 'Left' : 'No-show'} /> : null}
                         {a.status === 'CONFIRMED' && canCancel ? <Act action={cancel} id={a.id} back={back} label="Cancel" /> : null}
                       </span>

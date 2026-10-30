@@ -1,11 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { EventTypes } from '@mc/contracts';
 import { conflict, DomainError, notFound } from '@mc/nest-common';
-import { EntitlementsClient } from '@mc/entitlements-sdk';
+import { assertInBranch, branchesFor, EntitlementsClient, inBranch } from '@mc/entitlements-sdk';
 import { type Actor, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { AppointmentsService, toAppointment } from './appointments.service.js';
 
 export const CHECKIN = 'appointment:checkin:branch';
+/** start or finish someone else's visit (the doctor does their own); not a desk default (review B-4) */
+export const VISIT = 'visit:manage:branch';
 /** CONFIRMED appointments this long past their end, never checked in, become NO_SHOW. */
 export const NO_SHOW_GRACE_MINUTES = Number(process.env.NO_SHOW_GRACE_MINUTES ?? 60);
 
@@ -36,28 +38,37 @@ export class QueueService {
     return this.entitlements.capabilities(TenantContext.require().id, actor);
   }
 
-  /** Desk staff (check-in permission) see every queue; a doctor sees their own. */
-  async assertQueueAccess(c: Queryable, actor: Actor, doctorId: string) {
-    const { rows } = await c.query('SELECT id, name, user_id FROM doctors WHERE id = $1', [doctorId]);
+  /**
+   * A doctor sees their own queue; desk staff (check-in permission) see queues at their branches (review B-1).
+   * `branches`: which of the doctor's branches the caller may see (null = all).
+   */
+  async assertQueueAccess(c: Queryable, actor: Actor, doctorId: string): Promise<{ id: string; name: string; user_id: string | null; branches: string[] | null }> {
+    const { rows } = await c.query('SELECT id, name, user_id, branch_ids FROM doctors WHERE id = $1', [doctorId]);
     if (!rows[0]) throw notFound('doctor');
-    if (actor.kind === 'staff' && rows[0].user_id === actor.id) return rows[0];
-    if ((await this.caps(actor)).permissions.includes(CHECKIN)) return rows[0];
+    if (actor.kind === 'staff' && rows[0].user_id === actor.id) return { ...rows[0], branches: null };
+    const scope = branchesFor(await this.caps(actor), CHECKIN);
+    if (scope === null) return { ...rows[0], branches: null };
+    const shared = (rows[0].branch_ids as string[]).filter((b) => scope.includes(b));
+    if (shared.length) return { ...rows[0], branches: shared };
     throw notFound('doctor');
   }
 
   async assertBranchAccess(c: Queryable, actor: Actor, branchId: string) {
-    if (!(await this.caps(actor)).permissions.includes(CHECKIN)) throw new DomainError(403, 'PERMISSION_DENIED', `missing permission ${CHECKIN}`, { permission: CHECKIN });
+    const caps = await this.caps(actor);
+    if (!caps.permissions.includes(CHECKIN)) throw new DomainError(403, 'PERMISSION_DENIED', `missing permission ${CHECKIN}`, { permission: CHECKIN });
+    assertInBranch(caps, CHECKIN, branchId, 'branch', false);
     const { rows } = await c.query('SELECT id, name, timezone FROM branches WHERE id = $1 AND active', [branchId]);
     if (!rows[0]) throw notFound('branch');
     return rows[0];
   }
 
-  /** One doctor's queue for a day (all branches they work at that day). */
-  async queue(doctorId: string, date: string | undefined) {
+  /** One doctor's queue for a day (all branches they work at that day, or only `branches`). */
+  async queue(doctorId: string, date: string | undefined, branches: string[] | null = null) {
     const pool = await this.db.current();
     const { rows } = await pool.query(
       `${QUEUE_SELECT} WHERE a.doctor_id = $1 AND a.local_date = coalesce($2::date, ${TODAY_AT('a.branch_id')})
-         AND a.status NOT IN ('CANCELLED','RESCHEDULED','EXPIRED','PENDING_PAYMENT') ${QUEUE_ORDER}`, [doctorId, date ?? null]);
+         AND ($3::uuid[] IS NULL OR a.branch_id = ANY($3))
+         AND a.status NOT IN ('CANCELLED','RESCHEDULED','EXPIRED','PENDING_PAYMENT') ${QUEUE_ORDER}`, [doctorId, date ?? null, branches]);
     return rows.map(toAppointment);
   }
 
@@ -81,6 +92,7 @@ export class QueueService {
   /** Patient arrived: CONFIRMED → CHECKED_IN with the next token for (doctor, branch, day). Only on the visit day. */
   async checkIn(c: Queryable, actor: Actor, id: string) {
     const a = await this.load(c, id);
+    assertInBranch(await this.caps(actor), CHECKIN, a.branch_id, 'appointment');
     if (a.status === 'CHECKED_IN') throw conflict('ALREADY_CHECKED_IN', `already checked in${a.token_no ? ` (token ${a.token_no})` : ''}`);
     if (a.status !== 'CONFIRMED') throw conflict('INVALID_STATE_TRANSITION', `a ${a.status.toLowerCase().replace('_', ' ')} appointment cannot be checked in`);
     if (a.mode === 'VIDEO') throw new DomainError(422, 'VIDEO_VISIT', 'video visits do not check in at the desk');
@@ -103,7 +115,7 @@ export class QueueService {
   /** Doctor calls the patient in. One visit at a time per doctor. Video visits start straight from CONFIRMED. */
   async start(c: Queryable, actor: Actor, id: string) {
     const a = await this.load(c, id);
-    await this.assertActsFor(actor, a);
+    await this.assertActsFor(actor, a, VISIT);
     const from = a.mode === 'VIDEO' ? ['CONFIRMED', 'CHECKED_IN'] : ['CHECKED_IN'];
     if (!from.includes(a.status)) {
       throw conflict('INVALID_STATE_TRANSITION', a.status === 'CONFIRMED' ? 'check the patient in at the desk first' : `a ${a.status.toLowerCase().replace('_', ' ')} visit cannot be started`);
@@ -127,7 +139,7 @@ export class QueueService {
 
   async complete(c: Queryable, actor: Actor, id: string) {
     const a = await this.load(c, id);
-    await this.assertActsFor(actor, a);
+    await this.assertActsFor(actor, a, VISIT);
     if (a.status !== 'IN_PROGRESS') throw conflict('INVALID_STATE_TRANSITION', 'only a visit in progress can be completed');
     return this.move(c, a, ['IN_PROGRESS'], 'COMPLETED', EventTypes.appointmentCompleted, 'completed_at = now()', []);
   }
@@ -135,7 +147,7 @@ export class QueueService {
   /** Did not come (CONFIRMED, once the time has come) or left before being seen (CHECKED_IN). The slot stays used. */
   async noShow(c: Queryable, actor: Actor, id: string) {
     const a = await this.load(c, id);
-    await this.assertActsFor(actor, a);
+    await this.assertActsFor(actor, a, CHECKIN);
     if (!['CONFIRMED', 'CHECKED_IN'].includes(a.status)) throw conflict('INVALID_STATE_TRANSITION', `a ${a.status.toLowerCase().replace('_', ' ')} appointment cannot be marked as no-show`);
     if (a.status === 'CONFIRMED' && new Date(a.starts_at).getTime() > Date.now()) throw new DomainError(422, 'NOT_DUE_YET', 'the appointment time has not come yet');
     return this.move(c, a, ['CONFIRMED', 'CHECKED_IN'], 'NO_SHOW', EventTypes.appointmentNoShow, 'no_show_at = now()', []);
@@ -153,10 +165,16 @@ export class QueueService {
     return rows.length;
   }
 
-  /** The doctor of the visit, or desk staff. */
-  private async assertActsFor(actor: Actor, a: any) {
+  /**
+   * The doctor of the visit, or staff holding `permission` at the visit's branch. Starting and finishing a visit is the
+   * doctor's (VISIT is not a desk default: the desk starting a visit blocked the doctor with DOCTOR_BUSY, review B-4);
+   * the desk marks no-shows (CHECKIN).
+   */
+  private async assertActsFor(actor: Actor, a: any, permission: string) {
     if (actor.kind === 'staff' && a.doctor_user_id === actor.id) return;
-    if ((await this.caps(actor)).permissions.includes(CHECKIN)) return;
+    const caps = await this.caps(actor);
+    if (inBranch(caps, permission, a.branch_id)) return;
+    if (inBranch(caps, CHECKIN, a.branch_id)) throw new DomainError(403, 'PERMISSION_DENIED', 'only the doctor starts and finishes their visits', { permission });
     throw notFound('appointment');
   }
 

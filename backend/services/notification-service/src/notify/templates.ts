@@ -29,6 +29,7 @@ const en: DefaultTemplate[] = [
   { key: 'lab_report_ready', channel: 'EMAIL', language: 'en', subject: 'Lab report ready: {{orderNo}}', body: 'Hello,\n\nThe lab report for {{patientName}} ({{orderNo}}) is ready{{amendedNote}}.\n\nView and download it securely: {{link}}\nPlease discuss the results with your doctor.\n\n{{hospital}}' },
   { key: 'lab_report_ready_doctor', channel: 'EMAIL', language: 'en', subject: 'Report ready: {{patientName}} ({{orderNo}})', body: 'Dr.,\n\nThe lab report for {{patientName}} ({{patientMrn}}, {{orderNo}}) you ordered is verified{{amendedNote}}. {{flagsLine}}\n\nOpen MediCare: {{link}}\n\n{{hospital}}' },
   { key: 'lab_critical_value', channel: 'EMAIL', language: 'en', subject: 'CRITICAL lab value: {{patientName}} ({{patientMrn}})', body: 'URGENT\n\nA critical value was entered for {{patientName}} ({{patientMrn}}, order {{orderNo}}): {{testName}}, {{parameter}}.\n\nOpen MediCare now to see the value and acknowledge: {{link}}\n\n{{hospital}} lab' },
+  { key: 'lab_critical_escalated', channel: 'EMAIL', language: 'en', subject: 'ESCALATED critical lab value: {{patientName}} ({{patientMrn}})', body: 'URGENT: not acknowledged for {{minutesOpen}} minutes\n\nA critical value for {{patientName}} ({{patientMrn}}, order {{orderNo}}): {{testName}}, {{parameter}}. {{orderedByLine}}\n\n{{action}}\nOpen MediCare: {{link}}\n\n{{hospital}} lab' },
   { key: 'home_visit_assigned', channel: 'SMS', language: 'en', body: '{{hospital}}: {{collector}} will collect the sample for {{patientName}} at home on {{when}} ({{orderNo}}). Details: {{link}}' },
   { key: 'home_visit_assigned', channel: 'EMAIL', language: 'en', subject: 'Home sample collection on {{when}}', body: 'Hello,\n\n{{collector}} from {{hospital}} will come to collect the sample for {{patientName}} on {{when}} (order {{orderNo}}).\nPlease keep the preparation instructions in mind; you can pay the collector if you have not paid yet.\n\nDetails: {{link}}\n\n{{hospital}}' },
   { key: 'home_visit_en_route', channel: 'SMS', language: 'en', body: '{{hospital}}: {{collector}} is on the way to collect the sample for {{patientName}} ({{orderNo}}).' },
@@ -64,7 +65,7 @@ const hi: DefaultTemplate[] = [
 export const DEFAULT_TEMPLATES = [...en, ...hi];
 
 /** Messages to hospital staff: email only (no SMS template on purpose). */
-export const STAFF_ONLY_KEYS = new Set(['lab_report_ready_doctor', 'lab_critical_value', 'home_visit_assigned_staff', 'billing_notice_staff']);
+export const STAFF_ONLY_KEYS = new Set(['lab_report_ready_doctor', 'lab_critical_value', 'lab_critical_escalated', 'home_visit_assigned_staff', 'billing_notice_staff']);
 
 /** {{var}} replacement; missing values render as empty strings. */
 export function render(text: string, vars: Record<string, unknown>): string {

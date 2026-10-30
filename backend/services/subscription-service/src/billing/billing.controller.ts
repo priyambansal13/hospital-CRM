@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
-import { CurrentActor, Internal, notFound, parse } from '@mc/nest-common';
+import { AdminAudited, CurrentActor, Internal, notFound, parse } from '@mc/nest-common';
 import { type Actor, TenantContext } from '@mc/tenancy';
 import { z } from 'zod';
 import { BillingService } from './billing.service.js';
@@ -16,6 +16,7 @@ const who = (a: Actor) => a.email ?? a.id;
 /** The hospital's own MediCare subscription (zone /account): the account owner pays, changes plan, sees usage. */
 @Controller('v1/account')
 @RequireModule('core')
+@AdminAudited('SUBSCRIPTION')
 @RequirePermission('subscription:manage:tenant')
 export class AccountController {
   constructor(private readonly billing: BillingService, private readonly usage: UsageService) {}

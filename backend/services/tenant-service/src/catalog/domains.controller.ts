@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post } from '@nestjs/common';
 import { RequireFeature, RequireModule, RequirePermission } from '@mc/entitlements-sdk';
-import { CONTROL_DB, DomainError, isDev, notFound, parse } from '@mc/nest-common';
+import { AdminAudited, CONTROL_DB, DomainError, isDev, notFound, parse } from '@mc/nest-common';
 import { TenantContext } from '@mc/tenancy';
 import { randomBytes } from 'node:crypto';
 import { resolveTxt } from 'node:dns/promises';
@@ -17,6 +17,7 @@ const base = () => process.env.TENANT_BASE_DOMAIN ?? 'localhost';
  */
 @Controller('v1/domains')
 @RequireModule('core')
+@AdminAudited('DOMAIN')
 @RequirePermission('settings:manage:tenant')
 export class DomainsController {
   constructor(@Inject(CONTROL_DB) private readonly db: pg.Pool) {}
@@ -84,6 +85,7 @@ export class DomainsController {
 /** The setup guide's state: which first steps are done (read from the data), and the owner's "finished". */
 @Controller('v1/setup')
 @RequireModule('core')
+@AdminAudited('SETUP')
 @RequirePermission('settings:manage:tenant')
 export class SetupController {
   constructor(@Inject(CONTROL_DB) private readonly db: pg.Pool) {}

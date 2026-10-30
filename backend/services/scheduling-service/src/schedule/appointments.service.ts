@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { type AppointmentChanged, EventTypes, Topics } from '@mc/contracts';
 import { conflict, DomainError, forbidden, notFound } from '@mc/nest-common';
-import { EntitlementsClient } from '@mc/entitlements-sdk';
+import { EntitlementsClient, inBranch } from '@mc/entitlements-sdk';
 import { type Actor, addToOutbox, envelope, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { BillingClient, type OnlineCheckout } from './billing.client.js';
@@ -80,7 +80,8 @@ export class AppointmentsService {
     }
     if (r.doctor_user_id === actor.id) return { row: r, as: 'doctor' as const };
     const caps = await this.entitlements.capabilities(TenantContext.require().id, actor);
-    if (caps.permissions.includes(staffPermission)) return { row: r, as: 'staff' as const };
+    // staff: only appointments at branches the permission was granted for (review B-1)
+    if (inBranch(caps, staffPermission, r.branch_id)) return { row: r, as: 'staff' as const };
     throw notFound('appointment');
   }
 

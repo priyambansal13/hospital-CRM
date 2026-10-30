@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Put, Query } from '@nestjs/common';
-import { CurrentActor, forbidden, notFound, parse } from '@mc/nest-common';
+import { AdminAudited, CurrentActor, forbidden, notFound, parse } from '@mc/nest-common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { type Actor, TenantDbRouter } from '@mc/tenancy';
 import { z } from 'zod';
@@ -58,6 +58,7 @@ export class NotificationsController {
   }
 
   @Put('notification-templates/:id')
+  @AdminAudited('TEMPLATE')
   @RequirePermission('notification:manage:tenant')
   async updateTemplate(@Param('id') id: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
     if (!z.uuid().safeParse(id).success) throw notFound('template');

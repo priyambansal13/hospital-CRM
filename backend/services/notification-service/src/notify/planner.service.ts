@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EntitlementsClient } from '@mc/entitlements-sdk';
-import { type AppointmentChanged, type BillingNotice, type HomeVisitChanged, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable } from '@mc/contracts';
+import { type AppointmentChanged, type BillingNotice, type HomeVisitChanged, type LabCriticalEscalated, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable } from '@mc/contracts';
 import { type Queryable, TenantContext } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_TEMPLATES } from './templates.js';
@@ -149,6 +149,26 @@ export class PlannerService {
     if (!a.orderedByUserId) return; // self-booked: the pathologist sees it in the lab zone
     const t = TenantContext.require();
     await this.plan(c, 'lab_critical_value', a.orderedByUserId, { hospital: t.name, patientName: a.patientName, patientMrn: a.patientMrn, orderNo: a.orderNo, testName: a.testName, parameter: a.parameter, link: webLink(t, '/doctor/lab-results') }, a.alertId, new Date(), a.alertId, 'staff');
+  }
+
+  /**
+   * Nobody acknowledged a critical value (review C-2): level 1 → the branch's pathologists, level 2 → on call at the
+   * branch (critical:escalation:branch, the branch admin by default). E-mail (staff have no SMS channel).
+   */
+  async onCriticalEscalated(c: Queryable, a: LabCriticalEscalated) {
+    const t = TenantContext.require();
+    const permission = a.level === 1 ? 'report:verify:branch' : 'critical:escalation:branch';
+    const q = a.branchId ? `?branchId=${a.branchId}` : '';
+    const res = await fetch(`${process.env.SVC_URL_ENTITLEMENT ?? 'http://localhost:4403'}/internal/tenants/${t.id}/users-with-permission/${permission}${q}`, { headers: { 'x-internal-token': process.env.INTERNAL_API_TOKEN ?? '' } });
+    if (!res.ok) throw new Error(`entitlement-service ${res.status}`);
+    const { userIds } = (await res.json()) as { userIds: string[] };
+    const vars = {
+      hospital: t.name, patientName: a.patientName, patientMrn: a.patientMrn, orderNo: a.orderNo, testName: a.testName, parameter: a.parameter, minutesOpen: a.minutesOpen,
+      orderedByLine: a.orderedByName ? `Ordered by ${a.orderedByName}, who has not acknowledged it.` : 'Booked by the patient: no doctor has been told.',
+      action: a.level === 1 ? 'Phone the value through to the doctor (or the duty doctor), have it read back, and record it in the lab.' : 'The lab has not been able to hand this over: make sure a doctor is reached now.',
+      link: webLink(t, '/lab/critical'),
+    };
+    for (const userId of userIds) await this.plan(c, 'lab_critical_escalated', userId, vars, a.alertId, new Date(), `${a.alertId}:${a.level}:${userId}`, 'staff');
   }
 
   async onWaitlist(c: Queryable, w: WaitlistSlotAvailable & { doctorName?: string }, eventTime: string) {

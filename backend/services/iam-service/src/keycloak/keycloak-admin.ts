@@ -150,6 +150,37 @@ export class KeycloakAdmin {
     return { user, created: true };
   }
 
+  /** Leave a hospital: the user's next token no longer carries its organization (already gone counts as success). */
+  async removeMember(orgId: string, userId: string) {
+    await this.call('DELETE', `/organizations/${orgId}/members/${userId}`, undefined, true);
+  }
+
+  /** Disabled users cannot sign in anywhere; their sessions end with logout(). */
+  async setEnabled(userId: string, enabled: boolean) {
+    await this.call('PUT', `/users/${userId}`, { enabled });
+  }
+
+  /** End every session of the user (refresh tokens stop working; access tokens expire within minutes). */
+  async logout(userId: string) {
+    await this.call('POST', `/users/${userId}/logout`);
+  }
+
+  /** Email the user a link to do these actions (set a password, set up the authenticator app, verify the email). */
+  async executeActions(userId: string, actions: string[], lifespanSeconds = 259_200) {
+    await this.call('PUT', `/users/${userId}/execute-actions-email?lifespan=${lifespanSeconds}`, actions);
+  }
+
+  /** Lost phone: remove the authenticator app so it is set up again at the next sign-in. */
+  async removeOtp(userId: string) {
+    const creds = (await this.call<{ id: string; type: string }[]>('GET', `/users/${userId}/credentials`)) ?? [];
+    for (const c of creds.filter((x) => x.type === 'otp')) await this.call('DELETE', `/users/${userId}/credentials/${c.id}`, undefined, true);
+    return creds.filter((x) => x.type === 'otp').length;
+  }
+
+  async requireActions(userId: string, actions: string[]) {
+    await this.call('PUT', `/users/${userId}`, { requiredActions: actions });
+  }
+
   /** Add a user to an organization; "already a member" (409) counts as success. */
   async addMember(orgId: string, userId: string) {
     const res = await fetch(`${this.base}/admin/realms/${this.realm}/organizations/${orgId}/members`, {

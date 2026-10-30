@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { type DoctorChanged, EventTypes, Topics } from '@mc/contracts';
-import { conflict, CurrentActor, DomainError, Idempotent, notFound, parse } from '@mc/nest-common';
+import { AdminAudited, conflict, CurrentActor, DomainError, Idempotent, notFound, parse } from '@mc/nest-common';
 import { assertWithinLimit, EntitlementsClient, RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { type Actor, addToOutbox, envelope, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
@@ -62,6 +62,7 @@ export class DoctorsController {
 
   @Post()
   @Idempotent()
+  @AdminAudited('DOCTOR')
   @RequirePermission('doctor:manage:tenant')
   async create(@Body() body: unknown, @CurrentActor() actor: Actor) {
     const input = parse(CreateDoctor, body);
@@ -95,6 +96,7 @@ export class DoctorsController {
   }
 
   @Patch(':id')
+  @AdminAudited('DOCTOR')
   @RequirePermission('doctor:manage:tenant')
   async update(@Param('id') id: string, @Body() body: unknown) {
     await this.mustFind(id);
@@ -126,6 +128,7 @@ export class DoctorsController {
 
   /** Publish (ACTIVE: visible to patients) or unpublish (INACTIVE). */
   @Post(':id/status')
+  @AdminAudited('DOCTOR')
   @RequirePermission('doctor:manage:tenant')
   async setStatus(@Param('id') id: string, @Body() body: unknown) {
     const doctor = await this.mustFind(id);

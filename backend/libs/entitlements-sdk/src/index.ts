@@ -7,7 +7,7 @@ import { applyDecorators, type CanActivate, type ExecutionContext, Global, Injec
 import { Reflector } from '@nestjs/core';
 import { type Capabilities, EventTypes, Topics } from '@mc/contracts';
 import { createConsumer } from '@mc/kafka';
-import { appendRequires, DomainError, REDIS, type Redis, REQUIRES, verifyActor } from '@mc/nest-common';
+import { appendRequires, DomainError, notFound, REDIS, type Redis, REQUIRES, verifyActor } from '@mc/nest-common';
 import { RequestContext } from '@mc/tenancy';
 import { LRUCache } from 'lru-cache';
 import { randomUUID } from 'node:crypto';
@@ -175,8 +175,43 @@ export class EntitlementGuard implements CanActivate {
     if (!rc.actor) return true; // public route with a token: only the module check applies
     for (const f of need('feature:')) if (!caps.features[f]?.enabled) throw new DomainError(403, 'FEATURE_NOT_IN_PLAN', `feature ${f} is not available on this hospital's plan`, { feature: f, upgradeUrl: '/admin/plan' });
     for (const p of need('permission:')) if (!caps.permissions.includes(p)) throw new DomainError(403, 'PERMISSION_DENIED', `missing permission ${p}`, { permission: p });
+    // a branch named in the request must be one the permission was granted for (review B-1). Records looked up by id
+    // are checked by the service (assertInBranch), which knows the record's branch.
+    const r = ctx.switchToHttp().getRequest<{ query?: Record<string, unknown>; params?: Record<string, unknown>; body?: unknown }>();
+    const named = [r.params?.branchId, r.query?.branchId, (r.body as { branchId?: unknown } | undefined)?.branchId].filter((b): b is string => typeof b === 'string' && b.length > 0);
+    for (const p of need('permission:')) for (const b of named) if (!inBranch(caps, p, b)) throw outsideBranch(p);
     return true;
   }
+}
+
+/** The branches a ":branch" permission covers for this person: null = every branch, [] = not held at all. */
+export function branchesFor(caps: Capabilities, permission: string): string[] | null {
+  if (!caps.permissions.includes(permission)) return [];
+  return caps.branchScopes?.[permission] ?? null;
+}
+
+/** Does the person hold the permission at this branch? (A record without a branch needs the hospital-wide grant.) */
+export function inBranch(caps: Capabilities, permission: string, branchId: string | null | undefined): boolean {
+  const b = branchesFor(caps, permission);
+  return b === null || (!!branchId && b.includes(branchId));
+}
+
+const outsideBranch = (permission: string) => new DomainError(403, 'OUTSIDE_BRANCH', 'you work at other branches: this belongs to a branch you have no access to', { permission });
+
+/**
+ * For records found by id: refuse one at a branch the person does not work at. `hide` answers "not found" (the default:
+ * the record's existence is not revealed); otherwise 403 OUTSIDE_BRANCH.
+ */
+export function assertInBranch(caps: Capabilities, permission: string, branchId: string | null | undefined, what = 'record', hide = true) {
+  if (inBranch(caps, permission, branchId)) return;
+  if (hide) throw notFound(what);
+  throw outsideBranch(permission);
+}
+
+/** SQL helper: `branch_col = ANY($n)` when the permission is branch-limited, otherwise no condition. */
+export function branchFilter(caps: Capabilities, permission: string, column: string, param: number): { sql: string; args: unknown[] } {
+  const b = branchesFor(caps, permission);
+  return b === null ? { sql: '', args: [] } : { sql: ` AND ${column} = ANY($${param})`, args: [b] };
 }
 
 const moduleError = (m: string) => new DomainError(403, 'MODULE_NOT_IN_PLAN', `module ${m} is not active for this hospital`, { module: m, upgradeUrl: '/admin/plan' });

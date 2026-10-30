@@ -533,7 +533,8 @@ const main = async () => {
       if (sub === 'search') return run(`node ${join(PLATFORM, 'tests/search.mjs')}`, PLATFORM);
       if (sub === 'assistant') return run(`node ${join(PLATFORM, 'tests/assistant.mjs')}`, PLATFORM);
       if (sub === 'gaps') return run(`node ${join(PLATFORM, 'tests/gaps.mjs')}`, PLATFORM);
-      return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps');
+      if (sub === 'wave2') return run(`node ${join(PLATFORM, 'tests/wave2.mjs')}`, PLATFORM);
+      return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2');
     case 'seed':
       if (sub !== 'demo') return fail('seed demo');
       for (const [slug, name, plan] of [['citycare', 'CityCare Clinic', 'HOSPITAL_ENTERPRISE'], ['sunrise', 'Sunrise Diagnostics', 'HOSPITAL_PRO'], ['medicare', 'MediCare HQ', 'MEDICARE_HQ']]) {

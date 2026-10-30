@@ -1,6 +1,6 @@
 import { getSession } from '@mc/auth';
 import { api } from '@mc/bff';
-import { ZoneFrame, zoneCapabilities } from '@mc/features';
+import { branchesFor, ZoneFrame, zoneCapabilities } from '@mc/features';
 import { isReadOnly, ReadOnlyNotice } from '@mc/features/plan';
 import { Badge, Button, Card, Chip, PageHeader, Table } from '@mc/ui';
 import { Flash } from '@/lib/flash';
@@ -19,8 +19,9 @@ export default async function HomeBoard({ searchParams }: { searchParams: Promis
   const readOnly = isReadOnly(caps, 'home_collection') || isReadOnly(caps, 'diagnostics');
   const { accessToken: token } = (await getSession())!;
   const sp = await searchParams;
-  const branches = await api<{ id: string; name: string }[]>('/api/diagnostics/v1/public/lab-branches', { token });
-  const branch = branches.find((b) => b.id === sp.branch) ?? branches.find((b) => b.name === 'Sector 44') ?? branches[0];
+  // only the branches this person works at, their own first (review B-1)
+  const branches = branchesFor(caps, 'home_visit:assign:branch', await api<{ id: string; name: string }[]>('/api/diagnostics/v1/public/lab-branches', { token }));
+  const branch = branches.find((b) => b.id === sp.branch) ?? (caps.branchIds ? branches[0] : branches.find((b) => b.name === 'Sector 44')) ?? branches[0];
   const board = branch ? await api<Board>(`/api/diagnostics/v1/lab/home-visits?branchId=${branch.id}${sp.date ? `&date=${sp.date}` : ''}`, { token }) : null;
   const q = (x: Record<string, string>) => `/lab/home?${new URLSearchParams({ ...(branch ? { branch: branch.id } : {}), ...(sp.date ? { date: sp.date } : {}), ...x })}`;
   const back = q({});

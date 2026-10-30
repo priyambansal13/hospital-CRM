@@ -64,3 +64,16 @@ export async function acknowledgeAlert(f: FormData) {
   }
   return back(f, q);
 }
+
+/** Phoned through and read back (review C-2): stops the escalation. */
+export async function communicatedAlert(f: FormData) {
+  const { accessToken: token } = await actionSession();
+  let q: Record<string, string>;
+  try {
+    await api(`/api/diagnostics/v1/lab/critical-alerts/${encodeURIComponent(String(f.get('alertId')))}/communicated`, { token, body: { communicatedTo: String(f.get('communicatedTo') ?? '').trim(), readBack: f.get('readBack') === 'on' } });
+    q = { ok: 'Recorded: the escalation has stopped' };
+  } catch (e) {
+    q = { error: msg(e) };
+  }
+  return back(f, q);
+}

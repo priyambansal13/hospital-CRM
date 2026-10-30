@@ -63,11 +63,12 @@ export class ScheduleController {
 
   @Get('doctors')
   @RequirePermission('schedule:manage:branch')
-  async doctors() {
+  async doctors(@CurrentActor() actor: Actor) {
+    const scope = await this.svc.manageableBranches(actor);
     const { rows } = await this.db.query(`SELECT d.id, d.name, d.status,
         (SELECT count(*)::int FROM availability_templates t WHERE t.doctor_id = d.id) AS hours,
         (SELECT count(*)::int FROM slots s WHERE s.doctor_id = d.id AND s.status = 'OPEN' AND s.starts_at > now() AND s.starts_at < now() + interval '7 days') AS open_next_7_days
-      FROM doctors d ORDER BY d.name`);
+      FROM doctors d WHERE $1::uuid[] IS NULL OR d.branch_ids && $1 ORDER BY d.name`, [scope]);
     return rows.map((r) => ({ id: r.id, name: r.name, status: r.status, hours: r.hours, openNext7Days: r.open_next_7_days }));
   }
 
@@ -102,6 +103,7 @@ export class ScheduleController {
     if (input.mode === 'VIDEO' && !POLICY.videoEnabled) throw new DomainError(422, 'VIDEO_NOT_AVAILABLE', 'video consultations are not available yet (they need a video room); add in-person hours');
     return this.db.tx(async (c) => {
       const d = await this.svc.assertCanManage(c, actor, id(doctorId, 'doctor'));
+      await this.svc.assertCanManageAt(actor, d, input.branchId);
       return this.svc.addHours(c, d, { ...input, effectiveFrom: input.effectiveFrom ?? today() }, actor.id);
     });
   }

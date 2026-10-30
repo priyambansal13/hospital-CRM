@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Put, Query } from '@nestjs/common';
-import { CurrentActor, Internal, notFound, parse, PLACEMENTS, TenantPublic } from '@mc/nest-common';
+import { AdminAudited, CurrentActor, Internal, notFound, parse, PLACEMENTS, TenantPublic } from '@mc/nest-common';
 import { RequirePermission } from '@mc/entitlements-sdk';
 import { type Actor, type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { z } from 'zod';
@@ -54,24 +54,28 @@ export class EntitlementsController {
   }
 
   @Post('users/:userId/roles')
+  @AdminAudited('ROLE_GRANT', { idParam: 'userId' })
   @RequirePermission('role:assign:tenant')
   async assign(@Param('userId') userId: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
     if (!Uuid.safeParse(userId).success) throw notFound('user');
     const { roleCode, branchId } = parse(AssignRole, body);
     await this.db.tx(async (c) => {
-      await this.svc.assertCanGrant(c, actor.id, [roleCode]);
+      await this.svc.assertCanGrant(c, actor.id, [roleCode], branchId);
       await this.svc.assignRoles(c, userId, [roleCode], branchId);
     });
     return this.userRoles(userId);
   }
 
   @Delete('users/:userId/roles/:roleCode')
+  @AdminAudited('ROLE_GRANT', { idParam: 'userId', keyParam: 'roleCode' })
   @RequirePermission('role:assign:tenant')
   @HttpCode(204)
   async remove(@Param('userId') userId: string, @Param('roleCode') roleCode: string, @CurrentActor() actor: Actor) {
     if (!Uuid.safeParse(userId).success) throw notFound('user');
     await this.db.tx(async (c) => {
       await this.config.assertNotLastOwner(c, userId, roleCode, actor.id);
+      // taking a role away needs the same power as giving it, at the same branch (reviews B-1, B-3)
+      for (const g of (await this.svc.grantsList(c, userId)).filter((x) => x.roleCode === roleCode)) await this.svc.assertCanGrant(c, actor.id, [roleCode], g.branchId);
       await this.svc.removeRole(c, userId, roleCode);
     });
   }
@@ -85,6 +89,7 @@ export class EntitlementsController {
   }
 
   @Put('settings/:key')
+  @AdminAudited('SETTING')
   @RequirePermission('settings:manage:tenant')
   saveSetting(@Param('key') key: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
     if (!/^[a-z_]+\.[a-z_]+$/.test(key)) throw notFound('setting');
@@ -100,12 +105,14 @@ export class EntitlementsController {
   }
 
   @Post('roles')
+  @AdminAudited('ROLE')
   @RequirePermission('role:manage:tenant')
   createRole(@Body() body: unknown, @CurrentActor() actor: Actor) {
     return this.config.createRole(parse(NewRole, body), actor.email ?? actor.id, actor.id);
   }
 
   @Put('roles/:code')
+  @AdminAudited('ROLE')
   @RequirePermission('role:manage:tenant')
   setRole(@Param('code') code: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
     if (!/^[A-Z_]{3,40}$/.test(code)) throw notFound('role');
@@ -114,6 +121,7 @@ export class EntitlementsController {
   }
 
   @Delete('roles/:code')
+  @AdminAudited('ROLE')
   @RequirePermission('role:manage:tenant')
   @HttpCode(204)
   async deleteRole(@Param('code') code: string, @CurrentActor() actor: Actor) {
@@ -140,11 +148,34 @@ export class InternalEntitlementsController {
   @HttpCode(200)
   async grantCheck(@Param('tenantId') tenantId: string, @Body() body: unknown) {
     if (!Uuid.safeParse(tenantId).success) throw notFound('tenant');
-    const v = parse(z.object({ actorId: z.uuid(), roles: z.array(z.string().min(1).max(40)).min(1).max(10) }), body);
+    const v = parse(z.object({ actorId: z.uuid(), roles: z.array(z.string().min(1).max(40)).min(1).max(10), branchId: z.uuid().nullable().default(null) }), body);
     return TenantContext.run(await this.placements.get(tenantId), async () => {
-      await this.svc.assertCanGrant(await this.db.current(), v.actorId, v.roles);
+      await this.svc.assertCanGrant(await this.db.current(), v.actorId, v.roles, v.branchId);
       return { ok: true };
     });
+  }
+
+  /** iam asks before resetting someone's sign-in or resending their invite (review B-2). */
+  @Post('tenants/:tenantId/users/:userId/manage-check')
+  @Internal()
+  @HttpCode(200)
+  manageCheck(@Param('tenantId') tenantId: string, @Param('userId') userId: string, @Body() body: unknown) {
+    const { actorId } = parse(z.object({ actorId: z.uuid() }), body);
+    if (!Uuid.safeParse(userId).success) throw notFound('user');
+    return this.inTenant(tenantId, async () => {
+      await this.svc.assertCanManage(await this.db.current(), actorId, userId);
+      return { ok: true };
+    });
+  }
+
+  /** iam deactivating a staff member: every role goes, at once (review B-2). */
+  @Post('tenants/:tenantId/users/:userId/revoke-all')
+  @Internal()
+  @HttpCode(200)
+  revokeAll(@Param('tenantId') tenantId: string, @Param('userId') userId: string, @Body() body: unknown) {
+    const { actorId } = parse(z.object({ actorId: z.uuid() }), body);
+    if (!Uuid.safeParse(userId).success) throw notFound('user');
+    return this.inTenant(tenantId, () => this.db.tx((c) => this.svc.revokeAll(c, actorId, userId)));
   }
 
   private async inTenant<T>(tenantId: string, fn: () => Promise<T>): Promise<T> {
@@ -176,9 +207,10 @@ export class InternalEntitlementsController {
   /** Staff ids holding a permission (notification-service: who gets billing e-mails). */
   @Get('tenants/:tenantId/users-with-permission/:permission')
   @Internal()
-  usersWith(@Param('tenantId') tenantId: string, @Param('permission') permission: string) {
+  usersWith(@Param('tenantId') tenantId: string, @Param('permission') permission: string, @Query('branchId') branchId?: string) {
     if (!/^[a-z_]+:[a-z_]+:[a-z_]+$/.test(permission)) throw notFound('permission');
-    return this.inTenant(tenantId, async () => ({ userIds: await this.svc.usersWithPermission(await this.db.current(), permission) }));
+    const branch = branchId && Uuid.safeParse(branchId).success ? branchId : null;
+    return this.inTenant(tenantId, async () => ({ userIds: await this.svc.usersWithPermission(await this.db.current(), permission, branch) }));
   }
 
   /** Effective settings (services read them through the SDK). */

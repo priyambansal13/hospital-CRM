@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Put, Query } from '@nestjs/common';
-import { CurrentActor, notFound, parse, TenantPublic } from '@mc/nest-common';
+import { AdminAudited, CurrentActor, notFound, parse, TenantPublic } from '@mc/nest-common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import type { Actor } from '@mc/tenancy';
 import { z } from 'zod';
@@ -35,6 +35,7 @@ export class PublicHomeController {
 /** Hospital admin: pincodes served, visit fee, home collection times per branch. */
 @Controller('v1/admin')
 @RequireModule('home_collection')
+@AdminAudited('HOME_COLLECTION')
 @RequirePermission('home_area:manage:tenant')
 export class HomeAdminController {
   constructor(private readonly home: HomeService) {}

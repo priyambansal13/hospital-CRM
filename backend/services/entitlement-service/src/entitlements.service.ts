@@ -5,6 +5,7 @@ import { addToOutbox, envelope, type PlacementSource, type Queryable, TenantCont
 import { createHash, randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { type Catalog, isReadPermission, loadCatalog, templateGrants } from '@mc/entitlements-sdk/catalog';
+import { scopesOf } from './branch-scopes.js';
 
 const CAP_TTL_S = 300;
 /** subscription states in which nothing new can be done (records stay readable) */
@@ -54,7 +55,10 @@ export class EntitlementsService implements OnModuleInit {
     this.log.log(`registry: ${this.catalog.modules.size} modules, ${this.catalog.permissionModule.size} permissions`);
   }
 
-  /** Create missing system roles and add template grants to roles the hospital hasn't customized. */
+  /**
+   * Create missing system roles and keep roles the hospital hasn't customized equal to the template: new grants are
+   * added and grants the template dropped are removed (review B-4 trimmed some defaults).
+   */
   async syncSystemRoles(c: Queryable) {
     const allModules = [...this.catalog.modules.keys()];
     for (const r of this.catalog.roles) {
@@ -64,9 +68,11 @@ export class EntitlementsService implements OnModuleInit {
         [randomUUID(), r.code, r.name, r.grantsAll, r.home],
       );
       if (rows[0].customized) continue;
-      for (const p of templateGrants(this.catalog, r.code, allModules)) {
+      const grants = templateGrants(this.catalog, r.code, allModules);
+      for (const p of grants) {
         await c.query('INSERT INTO role_permissions (role_id, permission_code) VALUES ($1,$2) ON CONFLICT DO NOTHING', [rows[0].id, p]);
       }
+      await c.query('DELETE FROM role_permissions WHERE role_id = $1 AND NOT (permission_code = ANY($2))', [rows[0].id, grants]);
     }
   }
 
@@ -140,9 +146,11 @@ export class EntitlementsService implements OnModuleInit {
   }
 
   /** Staff whose roles give a permission (e.g. the account owners who hear about billing). grants_all roles count. */
-  async usersWithPermission(c: Queryable, permission: string): Promise<string[]> {
+  /** Who holds a permission (at a branch: grants for that branch or for every branch). */
+  async usersWithPermission(c: Queryable, permission: string, branchId: string | null = null): Promise<string[]> {
     const { rows } = await c.query(`SELECT DISTINCT ur.user_id FROM user_roles ur JOIN roles r ON r.id = ur.role_id
-      WHERE (ur.valid_until IS NULL OR ur.valid_until > now()) AND (r.grants_all OR EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = r.id AND rp.permission_code = $1))`, [permission]);
+      WHERE (ur.valid_until IS NULL OR ur.valid_until > now()) AND (r.grants_all OR EXISTS (SELECT 1 FROM role_permissions rp WHERE rp.role_id = r.id AND rp.permission_code = $1))
+        AND ($2::uuid IS NULL OR ur.branch_id IS NULL OR ur.branch_id = $2)`, [permission, branchId]);
     return rows.map((r) => r.user_id);
   }
 
@@ -181,9 +189,13 @@ export class EntitlementsService implements OnModuleInit {
    * No privilege escalation (docs/ROLE-FLOWS-AND-GAPS.md B-3): a staff member may give (by invite or assignment) only
    * roles whose permissions they hold themselves, and only a hospital admin may make someone a hospital admin.
    * Patients' role is never given to staff. Unknown roles are refused here, before any login is created.
+   * Someone who works at some branches only gives roles at those branches (review B-1).
    */
-  async assertCanGrant(c: Queryable, actorId: string, roleCodes: string[]) {
+  async assertCanGrant(c: Queryable, actorId: string, roleCodes: string[], branchId: string | null = null) {
     const mine = await this.grantsOf(c, actorId);
+    if (mine.branches && (!branchId || !mine.branches.includes(branchId))) {
+      throw new DomainError(403, 'OUTSIDE_BRANCH', 'you can give roles only at the branches you work at: pick one of them');
+    }
     for (const code of roleCodes) {
       const { rows: [r] } = await c.query(`SELECT r.code, r.grants_all, coalesce(array_agg(rp.permission_code) FILTER (WHERE rp.permission_code IS NOT NULL), '{}') perms
         FROM roles r LEFT JOIN role_permissions rp ON rp.role_id = r.id WHERE r.code = $1 GROUP BY r.id`, [code]);
@@ -196,12 +208,45 @@ export class EntitlementsService implements OnModuleInit {
     }
   }
 
-  /** Permissions a staff member holds through their roles (ignoring plans: the escalation rule is about roles). */
+  /**
+   * Permissions a staff member holds through their roles (ignoring plans: the escalation rule is about roles), and the
+   * branches they work at (null = a grant without a branch, so every branch).
+   */
   async grantsOf(c: Queryable, userId: string) {
-    const { rows } = await c.query(`SELECT bool_or(r.grants_all) AS all, coalesce(array_agg(rp.permission_code) FILTER (WHERE rp.permission_code IS NOT NULL), '{}') perms
+    const { rows } = await c.query(`SELECT bool_or(r.grants_all) AS all, coalesce(array_agg(rp.permission_code) FILTER (WHERE rp.permission_code IS NOT NULL), '{}') perms,
+        bool_or(ur.branch_id IS NULL) AS wide, coalesce(array_agg(DISTINCT ur.branch_id) FILTER (WHERE ur.branch_id IS NOT NULL), '{}') branches
       FROM user_roles ur JOIN roles r ON r.id = ur.role_id LEFT JOIN role_permissions rp ON rp.role_id = r.id
       WHERE ur.user_id = $1 AND (ur.valid_until IS NULL OR ur.valid_until > now())`, [userId]);
-    return { grantsAll: !!rows[0]?.all, perms: new Set<string>(rows[0]?.perms ?? []) };
+    const r = rows[0];
+    return { grantsAll: !!r?.all, perms: new Set<string>(r?.perms ?? []), branches: r?.wide === false ? (r.branches as string[]) : null };
+  }
+
+  /** The role grants a staff member has: { roleCode, branchId }. */
+  async grantsList(c: Queryable, userId: string): Promise<{ roleCode: string; branchId: string | null }[]> {
+    const { rows } = await c.query('SELECT r.code, ur.branch_id FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = $1 ORDER BY r.code', [userId]);
+    return rows.map((r) => ({ roleCode: r.code, branchId: r.branch_id }));
+  }
+
+  /**
+   * May `actorId` manage this person's account (deactivate, reset sign-in, resend the invite; review B-2)? Only if they
+   * could have given every role the person has, where they have it: nobody locks out someone with more power.
+   */
+  async assertCanManage(c: Queryable, actorId: string, userId: string) {
+    if (actorId === userId) throw new DomainError(422, 'OWN_ACCOUNT', 'you cannot do this to your own account');
+    for (const g of await this.grantsList(c, userId)) await this.assertCanGrant(c, actorId, [g.roleCode], g.branchId);
+  }
+
+  /** Offboarding: every role goes (the hospital keeps at least one hospital admin). Returns what was removed. */
+  async revokeAll(c: Queryable, actorId: string, userId: string) {
+    await this.assertCanManage(c, actorId, userId);
+    const grants = await this.grantsList(c, userId);
+    if (grants.some((g) => g.roleCode === 'TENANT_ADMIN')) {
+      const { rows: [n] } = await c.query(`SELECT count(DISTINCT ur.user_id)::int n FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE r.code = 'TENANT_ADMIN' AND ur.user_id <> $1`, [userId]);
+      if (!n.n) throw new DomainError(422, 'LAST_ADMIN', 'the hospital must keep at least one hospital admin');
+    }
+    await c.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
+    await this.changed(c, userId, 'staff deactivated');
+    return { removed: grants };
   }
 
   async assignRoles(c: Queryable, userId: string, roleCodes: string[], branchId: string | null = null) {
@@ -286,7 +331,7 @@ export class EntitlementsService implements OnModuleInit {
       this.billing(pool),
     ]);
     const planFeatures = new Map(featureRows.map((r) => [r.feature_key as string, { enabled: r.enabled as boolean, limit: r.limit_value == null ? null : Number(r.limit_value), overage: r.overage ?? null }]));
-    let roles: { code: string; grants_all: boolean; home: string; perms: string[] }[];
+    let roles: { code: string; grants_all: boolean; home: string; perms: string[]; branch_id?: string | null }[];
     if (opts.previewRole) {
       // "preview as role": exactly what someone with only this role would get (role editor)
       const { rows } = await pool.query(`SELECT r.code, r.grants_all, r.home, coalesce(array_agg(rp.permission_code) FILTER (WHERE rp.permission_code IS NOT NULL), '{}') perms
@@ -297,9 +342,10 @@ export class EntitlementsService implements OnModuleInit {
         FROM roles r LEFT JOIN role_permissions rp ON rp.role_id = r.id WHERE r.code = 'PATIENT' GROUP BY r.id`);
       roles = rows;
     } else {
-      const { rows } = await pool.query(`SELECT r.code, r.grants_all, r.home, coalesce(array_agg(rp.permission_code) FILTER (WHERE rp.permission_code IS NOT NULL), '{}') perms
+      // one row per grant: the same role can be given at two branches (review B-1)
+      const { rows } = await pool.query(`SELECT r.code, r.grants_all, r.home, ur.branch_id, coalesce(array_agg(rp.permission_code) FILTER (WHERE rp.permission_code IS NOT NULL), '{}') perms
         FROM user_roles ur JOIN roles r ON r.id = ur.role_id LEFT JOIN role_permissions rp ON rp.role_id = r.id
-        WHERE ur.user_id = $1 AND (ur.valid_until IS NULL OR ur.valid_until > now()) GROUP BY r.id`, [actor.id]);
+        WHERE ur.user_id = $1 AND (ur.valid_until IS NULL OR ur.valid_until > now()) GROUP BY r.id, ur.id`, [actor.id]);
       roles = rows;
     }
 
@@ -311,6 +357,7 @@ export class EntitlementsService implements OnModuleInit {
     // grants_all (hospital admin) covers every permission of every active module EXCEPT ":own" ones: those act on the
     // user's own identity (a doctor's own schedule, a patient's own appointments) and come with DOCTOR / PATIENT roles.
     for (const r of roles) for (const p of r.grants_all ? [...activePerms].filter((x) => !x.endsWith(':own')) : r.perms) if (activePerms.has(p)) permissions.add(p);
+    const { branchScopes, branchIds } = scopesOf(roles, activePerms);
 
     const features: Record<string, FeatureState> = {};
     for (const m of this.catalog.modules.values()) {
@@ -336,6 +383,8 @@ export class EntitlementsService implements OnModuleInit {
       plan: plan ? { code: plan.plan_code, name: plan.plan_name } : null,
       billing,
       permissions: [...permissions].sort(),
+      branchScopes,
+      branchIds,
       features,
       nav,
       home: primary?.home ?? '/',
@@ -345,3 +394,4 @@ export class EntitlementsService implements OnModuleInit {
     return caps;
   }
 }
+

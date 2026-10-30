@@ -9,6 +9,7 @@ import { FieldCrypto } from '../crypto/field-crypto.js';
 import { BREAK_GLASS_HOURS, type Decision, RecordAccess } from './access.js';
 import { AuditClient } from './audit.client.js';
 import { TimelineService } from '../timeline/timeline.service.js';
+import { TriageService } from './triage.js';
 
 export interface Vitals { bp?: string; pulse?: number; tempC?: number; weightKg?: number; heightCm?: number; spo2?: number; respRate?: number }
 export interface DiagnosisIn { code?: string | null; description?: string | null; isPrimary?: boolean }
@@ -32,6 +33,7 @@ export class RecordsService {
     private readonly access: RecordAccess,
     private readonly audit: AuditClient,
     private readonly timeline: TimelineService,
+    private readonly triage: TriageService,
     /** control plane: the shared ICD-10 reference list */
     @Inject(CONTROL_DB) private readonly control: pg.Pool,
   ) {}
@@ -108,6 +110,7 @@ export class RecordsService {
       const id = randomUUID();
       await c.query(`INSERT INTO encounters (id, appointment_id, patient_id, doctor_id, branch_id, status) VALUES ($1,$2,$3,$4,$5,'OPEN')`,
         [id, appointmentId, a.patient_id, doctor.id, a.branch_id]);
+      await this.triage.copyIntoEncounter(c, appointmentId, id);
       await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: doctor.name, action: 'CREATE', resourceType: 'ENCOUNTER', resourceId: id, patientId: a.patient_id, purpose: 'TREATMENT' });
       return { created: true, encounter: await this.encounterDto(c, await this.encounterRow(c, id)) };
     });

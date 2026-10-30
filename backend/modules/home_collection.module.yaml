@@ -13,6 +13,7 @@ nav:
   - { key: lab-my-visits, label: My visits, zone: lab, href: /lab/visits, permissions: [home_visit:perform:own], audience: staff }
   - { key: home-areas-admin, label: Home collection, zone: admin, href: /admin/home-collection, permissions: [home_area:manage:tenant, admin:access:tenant] }
 defaultRoleGrants:
-  BRANCH_ADMIN: [home_area:manage:tenant, home_visit:assign:branch]
+  # the pincodes served and the visit fee are hospital-wide (review B-4)
+  BRANCH_ADMIN: [home_visit:assign:branch]
   LAB_TECH: [home_visit:assign:branch]
   PHLEBOTOMIST: [home_visit:perform:own]

@@ -105,3 +105,19 @@ export async function closeChatRequest(f: FormData) {
   return run(f, (token) => api(`/api/assistant/v1/assistant/handoffs/${encodeURIComponent(String(f.get('id')))}/close`, { token, body: { note: String(f.get('note') ?? '').trim() || null } }),
     (h) => `Chat request from ${h.name} closed`);
 }
+
+/** Nurse triage: numbers as numbers, blanks left out (review: nurse vitals and triage). */
+export async function recordTriage(f: FormData) {
+  const num = (k: string) => { const v = String(f.get(k) ?? '').trim().replace(',', '.'); return v ? Number(v) : undefined; };
+  const bp = String(f.get('bp') ?? '').trim() || undefined;
+  const vitals = Object.fromEntries(Object.entries({ bp, pulse: num('pulse'), tempC: num('tempC'), spo2: num('spo2'), respRate: num('respRate'), weightKg: num('weightKg'), heightCm: num('heightCm') }).filter(([, v]) => v !== undefined));
+  const version = f.get('version') ? Number(f.get('version')) : undefined;
+  const id = encodeURIComponent(String(f.get('appointmentId')));
+  const { accessToken } = await actionSession();
+  try {
+    await api(`/api/records/v1/appointments/${id}/triage`, { token: accessToken, method: 'PUT', body: { vitals, priority: f.get('priority'), chiefComplaint: String(f.get('chiefComplaint') ?? '').trim() || null, version } });
+  } catch (e) {
+    return go(`/desk/triage/${id}?back=${encodeURIComponent(back(f))}`, { error: errorText(e) });
+  }
+  return go(back(f), { ok: 'Vitals saved: the doctor will see them' });
+}

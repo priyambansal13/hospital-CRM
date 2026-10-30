@@ -213,8 +213,15 @@ export class ChatService {
   }
 
   async handoffs(status: 'OPEN' | 'DONE') {
-    const { rows } = await this.db.query(`SELECT * FROM handoffs WHERE status = $1 ORDER BY created_at ${status === 'OPEN' ? 'ASC' : 'DESC'} LIMIT 100`, [status]);
+    // open ones: emergencies first, then oldest first (review: desk alerts for chat requests)
+    const { rows } = await this.db.query(`SELECT * FROM handoffs WHERE status = $1 ORDER BY ${status === 'OPEN' ? "(reason = 'EMERGENCY') DESC, created_at ASC" : 'created_at DESC'} LIMIT 100`, [status]);
     return Promise.all(rows.map(async (h) => ({ ...toHandoff(h), transcript: (await this.messages(h.conversation_id)).map((m) => ({ role: m.role, kind: m.kind, text: m.text, at: m.createdAt })) })));
+  }
+
+  /** For the desk's alert banner (polled): how many are waiting, how many are emergencies, the oldest wait. No names. */
+  async handoffSummary() {
+    const { rows: [r] } = await this.db.query(`SELECT count(*)::int AS open, count(*) FILTER (WHERE reason = 'EMERGENCY')::int AS emergency, min(created_at) AS oldest FROM handoffs WHERE status = 'OPEN'`);
+    return { open: r.open, emergency: r.emergency, oldestAt: r.oldest, oldestMinutes: r.oldest ? Math.floor((Date.now() - new Date(r.oldest).getTime()) / 60_000) : null };
   }
 
   async closeHandoff(staffId: string, id: string, note: string | null) {

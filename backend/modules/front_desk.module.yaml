@@ -5,6 +5,7 @@ dependsOn: [appointments]
 services: [scheduling-service, patient-service, realtime-service, billing-service]
 permissions:
   - { code: appointment:checkin:branch, description: Check patients in and manage the queue }
+  - { code: visit:manage:branch, description: Start or finish visits for a doctor (doctors do their own) }
   - { code: walkin:create:branch, description: Book walk-in patients }
   - { code: patient:register:branch, description: Look up and register patients at the desk }
 features:

@@ -23,7 +23,7 @@ class EntitlementConsumers implements OnModuleInit {
         [EventTypes.staffJoined]: async (evt, db) => {
           const d = StaffJoined.parse(evt.data);
           await this.svc.rememberUser(db!, d.userId, d.email);
-          await this.svc.assignRoles(db!, d.userId, d.initialRoles);
+          await this.svc.assignRoles(db!, d.userId, d.initialRoles, d.branchId ?? null);
         },
       },
     });

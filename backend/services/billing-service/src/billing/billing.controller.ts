@@ -1,6 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, Post, Query, Res } from '@nestjs/common';
-import { CurrentActor, DomainError, forbidden, Idempotent, notFound, parse } from '@mc/nest-common';
-import { EntitlementsClient, RequireModule, RequirePermission } from '@mc/entitlements-sdk';
+import { AdminAudited, CurrentActor, DomainError, forbidden, Idempotent, notFound, parse } from '@mc/nest-common';
+import { EntitlementsClient, inBranch, RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { type Actor, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { z } from 'zod';
 import { verifyCheckoutSignature, gatewayConfig } from '../gateway/gateway.js';
@@ -14,7 +14,7 @@ const Verify = z.object({ orderId: z.string().min(5).max(80), paymentId: z.strin
 const SimPay = z.object({ orderId: z.string().min(5).max(80), outcome: z.enum(['success', 'failure']).default('success'), method: z.enum(['upi', 'card', 'netbanking', 'wallet']).default('upi') });
 const Collect = z.object({ sourceType: z.enum(['APPOINTMENT', 'LAB_ORDER']).default('APPOINTMENT'), sourceId: z.uuid(), method: z.enum(['CASH', 'UPI', 'CARD']), reference: z.string().trim().max(60).nullable().default(null) });
 const Refund = z.object({ amount: z.number().positive().max(10_000_000), reason: z.string().trim().min(3).max(200) });
-const List = z.object({ status: z.enum(['ISSUED', 'PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'VOID']).optional(), q: z.string().trim().max(60).optional(), date: z.iso.date().optional() });
+const List = z.object({ branchId: z.uuid().optional(), status: z.enum(['ISSUED', 'PAID', 'PARTIALLY_REFUNDED', 'REFUNDED', 'VOID']).optional(), q: z.string().trim().max(60).optional(), date: z.iso.date().optional() });
 
 /** Patients: their invoices, paying online. Staff: the billing desk (lists, counter payments, refunds). */
 @Controller('v1')
@@ -22,8 +22,15 @@ const List = z.object({ status: z.enum(['ISSUED', 'PAID', 'PARTIALLY_REFUNDED', 
 export class BillingController {
   constructor(private readonly db: TenantDbRouter, private readonly billing: BillingService, private readonly entitlements: EntitlementsClient) {}
 
-  private async staffCan(actor: Actor, permission: string) {
-    return actor.kind === 'staff' && (await this.entitlements.capabilities(TenantContext.require().id, actor)).permissions.includes(permission);
+  private caps(actor: Actor) {
+    return this.entitlements.capabilities(TenantContext.require().id, actor);
+  }
+
+  /** Staff holding the permission at a given branch (review B-1). */
+  private async staffAt(actor: Actor, permission: string) {
+    if (actor.kind !== 'staff') return () => false;
+    const caps = await this.caps(actor);
+    return (branchId: string) => inBranch(caps, permission, branchId);
   }
 
   @Get('me/invoices')
@@ -37,14 +44,14 @@ export class BillingController {
   @Get('invoices/:id')
   async get(@Param('id') invoiceId: string, @CurrentActor() actor: Actor) {
     const pool = await this.db.current();
-    const r = await this.billing.assertCanSee(pool, actor, id(invoiceId, 'invoice'), await this.staffCan(actor, 'invoice:read:branch'));
+    const r = await this.billing.assertCanSee(pool, actor, id(invoiceId, 'invoice'), await this.staffAt(actor, 'invoice:read:branch'));
     return this.billing.detail(pool, r);
   }
 
   @Get('invoices/:id/pdf')
   async pdf(@Param('id') invoiceId: string, @CurrentActor() actor: Actor, @Res({ passthrough: true }) reply: any) {
     const pool = await this.db.current();
-    const r = await this.billing.assertCanSee(pool, actor, id(invoiceId, 'invoice'), await this.staffCan(actor, 'invoice:read:branch'));
+    const r = await this.billing.assertCanSee(pool, actor, id(invoiceId, 'invoice'), await this.staffAt(actor, 'invoice:read:branch'));
     const body = await invoicePdf(TenantContext.require().name, await this.billing.detail(pool, r));
     reply.header('content-type', 'application/pdf').header('content-disposition', `inline; filename="${r.invoice_no}.pdf"`).header('cache-control', 'private, no-store');
     return body;
@@ -53,24 +60,27 @@ export class BillingController {
   /** Billing desk list for a day (invoices issued or paid that day), with the day's totals. */
   @Get('invoices')
   @RequirePermission('invoice:read:branch')
-  async list(@Query() query: unknown) {
+  async list(@Query() query: unknown, @CurrentActor() actor: Actor) {
     const q = parse(List, query);
+    // one branch (?branchId, checked by the guard), or every branch the person works at (review B-1)
+    const scope = q.branchId ? [q.branchId] : (await this.caps(actor)).branchScopes?.['invoice:read:branch'] ?? null;
     const tz = 'Asia/Kolkata';
     const pool = await this.db.current();
     const { rows: [{ day }] } = await pool.query(`SELECT to_char(coalesce($1::date, (now() AT TIME ZONE $2)::date), 'YYYY-MM-DD') AS day`, [q.date ?? null, tz]);
     const inDay = (col: string) => `(${col} AT TIME ZONE '${tz}')::date = $1::date`;
-    const args: unknown[] = [day];
-    let where = `(${inDay('i.issued_at')} OR ${inDay('i.paid_at')} OR EXISTS (SELECT 1 FROM refunds r WHERE r.invoice_id = i.id AND ${inDay('r.created_at')}))`;
+    const args: unknown[] = [day, scope];
+    const inScope = (alias: string) => `($2::uuid[] IS NULL OR ${alias}.branch_id = ANY($2))`;
+    let where = `${inScope('i')} AND (${inDay('i.issued_at')} OR ${inDay('i.paid_at')} OR EXISTS (SELECT 1 FROM refunds r WHERE r.invoice_id = i.id AND ${inDay('r.created_at')}))`;
     if (q.status) { args.push(q.status); where += ` AND i.status = $${args.length}`; }
     if (q.q) { args.push(`%${q.q.toLowerCase().replace(/[%_\\]/g, '')}%`); where += ` AND (lower(i.invoice_no) LIKE $${args.length} OR lower(i.patient_name) LIKE $${args.length} OR lower(i.patient_mrn) LIKE $${args.length})`; }
     const [{ rows }, { rows: [t] }] = await Promise.all([
       pool.query(`SELECT i.* FROM invoices i WHERE ${where} ORDER BY i.issued_at DESC LIMIT 200`, args),
       pool.query(`SELECT
-          coalesce((SELECT sum(amount) FROM payments WHERE status = 'CAPTURED' AND channel = 'ONLINE' AND ${inDay('captured_at')}), 0) AS online,
-          coalesce((SELECT sum(amount) FROM payments WHERE status = 'CAPTURED' AND channel = 'COUNTER' AND ${inDay('captured_at')}), 0) AS counter,
-          coalesce((SELECT sum(amount) FROM refunds WHERE status = 'PROCESSED' AND ${inDay('processed_at')}), 0) AS refunded,
-          coalesce((SELECT sum(total) FROM invoices WHERE status = 'ISSUED'), 0) AS outstanding,
-          (SELECT count(*) FROM refunds WHERE status = 'FAILED')::int AS failed_refunds`, [day]),
+          coalesce((SELECT sum(p.amount) FROM payments p JOIN invoices i ON i.id = p.invoice_id WHERE ${inScope('i')} AND p.status = 'CAPTURED' AND p.channel = 'ONLINE' AND ${inDay('p.captured_at')}), 0) AS online,
+          coalesce((SELECT sum(p.amount) FROM payments p JOIN invoices i ON i.id = p.invoice_id WHERE ${inScope('i')} AND p.status = 'CAPTURED' AND p.channel = 'COUNTER' AND ${inDay('p.captured_at')}), 0) AS counter,
+          coalesce((SELECT sum(r.amount) FROM refunds r JOIN invoices i ON i.id = r.invoice_id WHERE ${inScope('i')} AND r.status = 'PROCESSED' AND ${inDay('r.processed_at')}), 0) AS refunded,
+          coalesce((SELECT sum(i.total) FROM invoices i WHERE ${inScope('i')} AND i.status = 'ISSUED'), 0) AS outstanding,
+          (SELECT count(*) FROM refunds r JOIN invoices i ON i.id = r.invoice_id WHERE ${inScope('i')} AND r.status = 'FAILED')::int AS failed_refunds`, [day, scope]),
     ]);
     return {
       date: day,
@@ -116,20 +126,21 @@ export class BillingController {
   @Post('desk/collect')
   @Idempotent()
   @RequirePermission('payment:collect:branch')
-  collect(@Body() body: unknown, @CurrentActor() actor: Actor) {
+  async collect(@Body() body: unknown, @CurrentActor() actor: Actor) {
     const v = parse(Collect, body);
-    return this.billing.collectAtCounter(actor, { sourceType: v.sourceType, sourceId: v.sourceId }, v.method, v.reference);
+    return this.billing.collectAtCounter(actor, { sourceType: v.sourceType, sourceId: v.sourceId }, v.method, v.reference, await this.staffAt(actor, 'payment:collect:branch'));
   }
 
   /** Admin: a manual (goodwill / correction) refund on a paid invoice. */
   @Post('invoices/:id/refunds')
   @Idempotent()
+  @AdminAudited('REFUND')
   @RequirePermission('refund:create:branch')
   async refund(@Param('id') invoiceId: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
     const v = parse(Refund, body);
     return this.db.tx(async (c) => {
       const inv = await this.billing.invoice(c, id(invoiceId, 'invoice'), true);
-      if (!inv) throw notFound('invoice');
+      if (!inv || !(await this.staffAt(actor, 'refund:create:branch'))(inv.branch_id)) throw notFound('invoice');
       if (!['PAID', 'PARTIALLY_REFUNDED'].includes(inv.status)) throw new DomainError(422, 'NOTHING_PAID', `invoice is ${inv.status.toLowerCase()}`);
       const r = await this.billing.requestRefund(c, inv, v.amount, v.reason, null, actor.id);
       return { refundId: r?.id, status: r?.status, amount: v.amount };

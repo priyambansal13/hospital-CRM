@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Put } from '@nestjs/common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
-import { CurrentActor, parse, TenantPublic } from '@mc/nest-common';
+import { AdminAudited, CurrentActor, parse, TenantPublic } from '@mc/nest-common';
 import type { Actor } from '@mc/tenancy';
 import { z } from 'zod';
 import { PaymentAccountService } from './payment-account.service.js';
@@ -27,6 +27,7 @@ export class PaymentAccountController {
   }
 
   @Put('payment-account')
+  @AdminAudited('PAYOUT_ACCOUNT')
   @RequirePermission('settings:manage:tenant')
   connect(@Body() body: unknown, @CurrentActor() a: Actor) {
     return this.accounts.connect(a.email ?? a.id, parse(Connect, body));
