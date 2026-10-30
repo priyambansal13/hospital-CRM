@@ -6,7 +6,7 @@ import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
 import { type Contract, PlansService } from '../plans.service.js';
 import { calculate, type ChargeInput, type Invoice, monthlyTotal, remainingFraction, type UsageInput } from './calculator.js';
-import { RECURRING_GATEWAY, type RecurringGateway } from './gateway.js';
+import { type Mandate, RECURRING_GATEWAY, type RecurringGateway } from './gateway.js';
 import { loadPriceBook, type PriceBook, seedPriceBooks } from './pricebook.js';
 import { UsageService } from './usage.service.js';
 
@@ -370,7 +370,7 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
     const { rows: [due] } = await this.db.query(`SELECT count(*)::int n, coalesce(sum(total), 0) total FROM saas_invoices WHERE tenant_id = $1 AND status IN ('FAILED','OPEN')`, [tenantId]);
     return {
       status: s.status, now: this.now(s), trialEndsAt: s.trial_ends_at, periodStart: s.current_period_start, periodEnd: s.current_period_end,
-      cancelAtPeriodEnd: s.cancel_at_period_end, paymentMethod: s.payment_method ? { kind: s.payment_method.kind, brand: s.payment_method.brand ?? null, last4: s.payment_method.last4 ?? null } : null,
+      cardPayments: this.gateway.takesCards, cancelAtPeriodEnd: s.cancel_at_period_end, paymentMethod: s.payment_method ? { kind: s.payment_method.kind, brand: s.payment_method.brand ?? null, last4: s.payment_method.last4 ?? null } : null,
       coupon: s.coupon_code ? { code: s.coupon_code, invoicesLeft: s.coupon_invoices_left } : null, pendingChange: s.pending_change,
       pastDueSince: s.past_due_since, nextRetryAt: s.next_retry_at, graceEndsAt: s.grace_ends_at, suspendedAt: s.suspended_at,
       unpaid: { invoices: due.n, total: Number(due.total) },
@@ -379,15 +379,44 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
     };
   }
 
-  /** Save a card for renewals; if invoices are unpaid, they are charged at once (that is how a suspended hospital pays). */
-  async addCard(tenantId: string, card: { number: string; expiry: string; name: string }, by: string) {
-    const mandate = await this.gateway.authorise(card).catch((e) => { throw new DomainError(422, 'CARD_REFUSED', (e as Error).message); });
+  /**
+   * Add a card: a session on the gateway's hosted page (card details never reach MediCare, review B-6). The customer
+   * comes back to `returnUrl`, which must be on one of the hospital's own hosts (no open redirect).
+   */
+  async startCardSession(tenantId: string, returnUrl: string, by: string) {
+    if (!this.gateway.takesCards) throw new DomainError(422, 'CARDS_NOT_AVAILABLE', 'card payments are not set up yet: MediCare sends invoices and you pay by bank transfer');
+    const t = await this.placements.get(tenantId);
+    const host = new URL(returnUrl).hostname;
+    if (!t.hosts.includes(host)) throw new DomainError(422, 'BAD_RETURN_URL', 'the return address must be on the hospital\'s own site');
+    const id = randomUUID();
+    await this.db.query(`INSERT INTO card_sessions (id, tenant_id, gateway, status, created_by, expires_at) VALUES ($1,$2,$3,'PENDING',$4, now() + interval '30 minutes')`, [id, tenantId, this.gateway.name, by]);
+    const sep = returnUrl.includes('?') ? '&' : '?';
+    const { url } = await this.gateway.startMandate({ sessionId: id, returnUrl: `${returnUrl}${sep}session=${id}`, hospital: t.name });
+    return { sessionId: id, url };
+  }
+
+  /** Back from the gateway: what was authorised is asked of the gateway; then unpaid invoices are charged (a suspended hospital pays this way). */
+  async completeCardSession(tenantId: string, sessionId: string, by: string) {
+    const { rows: [cs] } = await this.db.query('SELECT * FROM card_sessions WHERE id = $1 AND tenant_id = $2', [sessionId, tenantId]);
+    if (!cs) throw new DomainError(404, 'NOT_FOUND', 'card session not found');
+    if (cs.status !== 'PENDING') throw new DomainError(409, 'SESSION_USED', 'this card was already saved; start again to change it');
+    if (new Date(cs.expires_at).getTime() < Date.now()) throw new DomainError(410, 'SESSION_EXPIRED', 'the card page timed out: try again');
+    let mandate: Mandate;
+    try {
+      mandate = await this.gateway.completeMandate(sessionId);
+    } catch (e) {
+      await this.db.query(`UPDATE card_sessions SET status = 'FAILED', error = $2, completed_at = now() WHERE id = $1`, [sessionId, (e as Error).message]);
+      throw new DomainError(422, 'CARD_REFUSED', (e as Error).message);
+    }
     return withTx(this.db, async (c) => {
       await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`billing:${tenantId}`]);
+      const { rowCount } = await c.query(`UPDATE card_sessions SET status = 'DONE', completed_at = now() WHERE id = $1 AND status = 'PENDING'`, [sessionId]);
+      if (!rowCount) throw new DomainError(409, 'SESSION_USED', 'this card was already saved');
       const s = await this.update(c, await this.sub(c, tenantId, true), { payment_method: { kind: 'CARD', brand: mandate.brand, last4: mandate.last4, mandateId: mandate.mandateId } });
       await this.plans.audit(c, by, 'PAYMENT_METHOD_SAVED', 'TENANT', tenantId, await this.plans.slug(tenantId), null, { brand: mandate.brand, last4: mandate.last4 });
+      const { rows: [due] } = await c.query(`SELECT count(*)::int n FROM saas_invoices WHERE tenant_id = $1 AND status IN ('FAILED','OPEN')`, [tenantId]);
       const paidUp = s.status === 'TRIALING' ? true : await this.collect(c, s);
-      return { brand: mandate.brand, last4: mandate.last4, paidUp };
+      return { brand: mandate.brand, last4: mandate.last4, paidUp, hadUnpaid: due.n > 0 };
     });
   }
 

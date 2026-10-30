@@ -1,6 +1,7 @@
 import { ZoneFrame, zoneCapabilities } from '@mc/features';
-import { Alert, Badge, Button, Card, Field, PageHeader, Table } from '@mc/ui';
-import { applyCoupon, payNow, saveCard, setCancel } from '@/lib/actions';
+import { Alert, Badge, Button, Card, PageHeader, Table } from '@mc/ui';
+import { applyCoupon, payNow, setCancel } from '@/lib/actions';
+import { startCard } from '@/lib/card-actions';
 import { day, get, inr, lastDay, STATUS, type Summary } from '@/lib/account';
 import { Flash } from '@/lib/flash';
 import { ZONES } from '@/lib/zones';
@@ -55,14 +56,12 @@ export default async function Subscription({ searchParams }: { searchParams: Pro
         </Card>
       ) : null}
       <Card title={s.paymentMethod?.kind === 'CARD' ? 'Change card' : 'Add a card'}>
-        <form action={saveCard} className="mc-form" aria-label="Card">
-          {s.unpaid.invoices ? <input type="hidden" name="hadUnpaid" value="1" /> : null}
-          <Field label="Card number" name="number" required inputMode="numeric" autoComplete="cc-number" placeholder="4111 1111 1111 1111" />
-          <Field label="Expiry (MM/YY)" name="expiry" required placeholder="12/30" autoComplete="cc-exp" pattern="[0-9]{2}/[0-9]{2}" />
-          <Field label="Name on card" name="name" required autoComplete="cc-name" />
-          <Button>Save card{s.unpaid.invoices ? ' and pay' : ''}</Button>
-        </form>
-        <p className="mc-meta" style={{ marginBottom: 0 }}>The card is kept by the payment gateway for monthly renewals; MediCare stores only the last 4 digits. Test mode: 4111 1111 1111 1111 pays; 4000 0000 0000 0002 is declined.</p>
+        {s.cardPayments ? (
+          <form action={startCard} aria-label="Card">
+            <p style={{ marginTop: 0 }}>You enter the card on the payment gateway&apos;s secure page; MediCare never sees the number and keeps only the last 4 digits.</p>
+            <Button>{s.paymentMethod?.kind === 'CARD' ? 'Change card' : `Add a card${s.unpaid.invoices ? ' and pay' : ''}`}</Button>
+          </form>
+        ) : <p style={{ margin: 0 }}>Card payments are not set up yet: MediCare sends invoices and you pay by bank transfer.</p>}
       </Card>
       {!s.coupon && ['TRIALING', 'ACTIVE'].includes(s.status) ? (
         <Card title="Coupon">

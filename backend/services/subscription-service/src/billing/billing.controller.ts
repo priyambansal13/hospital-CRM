@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post } from '@nestjs/common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { AdminAudited, CurrentActor, Internal, notFound, parse } from '@mc/nest-common';
 import { type Actor, TenantContext } from '@mc/tenancy';
@@ -6,8 +6,9 @@ import { z } from 'zod';
 import { BillingService } from './billing.service.js';
 import { UsageService } from './usage.service.js';
 
+const Uuid = z.uuid();
 const Code = z.string().trim().regex(/^[A-Z][A-Z0-9_]{2,39}$/);
-const Card = z.object({ number: z.string().trim().min(12).max(23), expiry: z.string().trim().regex(/^\d{2}\/\d{2}$/, 'MM/YY'), name: z.string().trim().min(2).max(80) });
+const CardSession = z.object({ returnUrl: z.url().max(500) });
 const ChangePlan = z.object({ plan: Code, addons: z.array(z.object({ code: Code, quantity: z.number().int().min(1).max(100).optional() })).max(20).default([]) });
 const Coupon = z.object({ code: z.string().trim().min(3).max(30) });
 const Cancel = z.object({ cancel: z.boolean() });
@@ -31,8 +32,13 @@ export class AccountController {
   @Post('change-plan')
   changePlan(@Body() body: unknown, @CurrentActor() a: Actor) { return this.billing.changePlan(this.tid(), parse(ChangePlan, body), who(a)); }
 
-  @Put('card')
-  card(@Body() body: unknown, @CurrentActor() a: Actor) { return this.billing.addCard(this.tid(), parse(Card, body), who(a)); }
+  /** Add a card on the payment gateway's own page (review B-6): returns the page to send the owner to. */
+  @Post('card-session')
+  cardSession(@Body() body: unknown, @CurrentActor() a: Actor) { return this.billing.startCardSession(this.tid(), parse(CardSession, body).returnUrl, who(a)); }
+
+  @Post('card-session/:id/complete')
+  @HttpCode(200)
+  completeCard(@Param('id') id: string, @CurrentActor() a: Actor) { return this.billing.completeCardSession(this.tid(), Uuid.parse(id), who(a)); }
 
   @Post('pay')
   pay(@CurrentActor() a: Actor) { return this.billing.payNow(this.tid(), who(a)); }
@@ -53,7 +59,6 @@ export class AccountController {
   meters() { return this.usage.meters(this.tid()); }
 }
 
-const Uuid = z.uuid();
 const tenant = (id: string) => { if (!Uuid.safeParse(id).success) throw notFound('hospital'); return id; };
 
 /** CLI and tests: the billing clock (dev only), runs on demand. */

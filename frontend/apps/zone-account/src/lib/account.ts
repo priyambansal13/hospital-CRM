@@ -8,6 +8,8 @@ export interface Estimate { quantities: { doctor: number; branch: number }; line
 export interface Summary {
   status: Status; now: string; trialEndsAt: string | null; periodStart: string | null; periodEnd: string | null; cancelAtPeriodEnd: boolean;
   paymentMethod: { kind: 'CARD' | 'OFFLINE'; brand: string | null; last4: string | null } | null;
+  /** the gateway takes cards (false: bank transfer only) */
+  cardPayments?: boolean;
   coupon: { code: string; invoicesLeft: number | null } | null;
   pendingChange: { plan: string; addons: { code: string; quantity: number }[]; requestedBy: string } | null;
   pastDueSince: string | null; nextRetryAt: string | null; graceEndsAt: string | null; suspendedAt: string | null;

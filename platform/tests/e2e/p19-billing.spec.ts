@@ -37,11 +37,13 @@ test.describe.serial('SaaS billing: trial → paid → failed renewal → suspen
       await expect(page.getByRole('status', { name: 'Subscription' })).toContainText('Free trial until', { timeout: 2000 });
     }).toPass({ timeout: 30_000 });
     await expect(page.getByText('free trial', { exact: true })).toBeVisible();
-    const card = page.getByRole('form', { name: 'Card' });
-    await card.getByLabel('Card number').fill('4111 1111 1111 1111');
-    await card.getByLabel('Expiry (MM/YY)').fill('12/30');
-    await card.getByLabel('Name on card').fill('Dr Smile');
-    await card.getByRole('button', { name: 'Save card' }).click();
+    // the card is entered on the payment gateway's page (simulated in dev), then the owner comes back (review B-6)
+    await page.getByRole('form', { name: 'Card' }).getByRole('button', { name: /Add a card/ }).click();
+    await expect(page.getByRole('heading', { name: 'Simulated gateway' })).toBeVisible();
+    await page.getByLabel('Card number').fill('4111 1111 1111 1111');
+    await page.getByLabel('Expiry (MM/YY)').fill('12/30');
+    await page.getByLabel('Name on card').fill('Dr Smile');
+    await page.getByRole('button', { name: 'Authorise card' }).click();
     await expect(page.locator('.mc-alert-success')).toContainText('Visa ending 1111 saved for renewals');
 
     // three login codes for patients: beyond the 2 SMS included this month
@@ -61,11 +63,12 @@ test.describe.serial('SaaS billing: trial → paid → failed renewal → suspen
 
   test('a declined renewal goes past due, then grace, then suspended: read only', async ({ page }) => {
     await staffLogin(page, BS, 'admin@brightsmile.test', '/account');
-    const card = page.getByRole('form', { name: 'Card' });
-    await card.getByLabel('Card number').fill('4000 0000 0000 0002');
-    await card.getByLabel('Expiry (MM/YY)').fill('11/29');
-    await card.getByLabel('Name on card').fill('Dr Smile');
-    await card.getByRole('button', { name: 'Save card' }).click();
+    await page.getByRole('form', { name: 'Card' }).getByRole('button', { name: /Change card/ }).click();
+    await expect(page.getByRole('heading', { name: 'Simulated gateway' })).toBeVisible();
+    await page.getByLabel('Card number').fill('4000 0000 0000 0002');
+    await page.getByLabel('Expiry (MM/YY)').fill('11/29');
+    await page.getByLabel('Name on card').fill('Dr Smile');
+    await page.getByRole('button', { name: 'Authorise card' }).click();
     await expect(page.locator('.mc-alert-success')).toContainText('ending 0002 saved');
 
     await advance('period-end');
@@ -93,11 +96,12 @@ test.describe.serial('SaaS billing: trial → paid → failed renewal → suspen
     await staffLogin(page, BS, 'admin@brightsmile.test', '/account');
     await expect(page.getByText('suspended: read only', { exact: true })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Payment due' })).toBeVisible();
-    const card = page.getByRole('form', { name: 'Card' });
-    await card.getByLabel('Card number').fill('5555 5555 5555 4444');
-    await card.getByLabel('Expiry (MM/YY)').fill('09/31');
-    await card.getByLabel('Name on card').fill('Dr Smile');
-    await card.getByRole('button', { name: 'Save card and pay' }).click();
+    await page.getByRole('form', { name: 'Card' }).getByRole('button', { name: /Change card/ }).click();
+    await expect(page.getByRole('heading', { name: 'Simulated gateway' })).toBeVisible();
+    await page.getByLabel('Card number').fill('5555 5555 5555 4444');
+    await page.getByLabel('Expiry (MM/YY)').fill('09/31');
+    await page.getByLabel('Name on card').fill('Dr Smile');
+    await page.getByRole('button', { name: 'Authorise card' }).click();
     await expect(page.locator('.mc-alert-success')).toContainText('open invoices paid');
     await expect(page.getByText('active', { exact: true })).toBeVisible();
 

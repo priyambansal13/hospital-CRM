@@ -58,6 +58,18 @@ const old = new Set(((await internal('GET', `/internal/tenants/${tid}/billing`))
 const fresh = (b) => (b.invoices ?? []).filter((i) => !old.has(i.id));
 check(reset.http === 200 && reset.status === 'TRIALING' && reset.plan?.code === 'CLINIC_STARTER', 'brightsmile: Clinic Starter, fresh 14-day trial');
 
+/**
+ * Add a card the way the owner does (review B-6): a session on the gateway's page (simulated here), the card typed on
+ * that page, then back to the hospital's site where the session is completed. Our API never sees the number.
+ */
+async function addCard(token, number, expiry) {
+  const st = await call('POST', '/api/subscription/v1/account/card-session', token, { returnUrl: `http://${HOST}:3400/account/card/return` });
+  if (!st.url) return st;
+  const page = await call('POST', `/api/subscription/v1/sim-gateway/mandate/${st.sessionId}`, null, { number, expiry, name: 'Dr Smile' });
+  if (page.code) return page;
+  return call('POST', `/api/subscription/v1/account/card-session/${st.sessionId}/complete`, token, {});
+}
+
 // ---- 1. the trial
 let c = await capsUntil(admin, (x) => x.billing?.status === 'TRIALING');
 check(!!c && c.nav.some((n) => n.zone === 'account'), 'capabilities: subscription TRIALING; the account zone is in the owner\'s menu');
@@ -66,8 +78,10 @@ check(s0.status === 200 && s0._body.status === 'TRIALING' && !s0.paymentMethod &
 const cmp = await call('GET', '/api/subscription/v1/account/plans', admin);
 check(cmp.plans?.some((p) => p.code === 'CLINIC_PRO' && p.monthly >= 9999) && !cmp.plans.some((p) => p.code === 'MEDICARE_HQ'), `plan picker priced for this hospital (${cmp.quantities?.doctor} doctors, ${cmp.quantities?.branch} branch)`);
 check((await call('GET', '/api/subscription/v1/account/subscription', await staffToken('admin@citycare.test', 'citycare'), undefined, 'citycare.localhost'))._body.status === 'ACTIVE', 'another hospital sees only its own subscription');
-check((await call('PUT', '/api/subscription/v1/account/card', admin, { number: '4111 1111 1111 1112', expiry: '12/30', name: 'Dr Smile' })).code === 'CARD_REFUSED', 'an invalid card number is refused');
-const card = await call('PUT', '/api/subscription/v1/account/card', admin, { number: '4111 1111 1111 1111', expiry: '12/30', name: 'Dr Smile' });
+check((await addCard(admin, '4111 1111 1111 1112', '12/30')).code === 'CARD_REFUSED', 'an invalid card number is refused (on the gateway\'s page)');
+check((await call('POST', '/api/subscription/v1/account/card-session', admin, { returnUrl: 'https://evil.example/steal' })).code === 'BAD_RETURN_URL', 'B-6 the card page returns only to the hospital\'s own site');
+check((await call('PUT', '/api/subscription/v1/account/card', admin, { number: '4111 1111 1111 1111', expiry: '12/30', name: 'x' })).status === 404, 'B-6 card numbers are no longer accepted by MediCare\'s API');
+const card = await addCard(admin, '4111 1111 1111 1111', '12/30');
 check(card.status === 200 && card.last4 === '1111' && card.brand === 'Visa', 'card saved for renewals (only the last 4 digits kept)');
 const cp = await call('POST', '/api/subscription/v1/account/coupon', admin, { code: 'welcome20' });
 check(cp.code === 'WELCOME20' && cp.invoices === 3, 'coupon WELCOME20: 20% off 3 invoices');
@@ -111,7 +125,7 @@ check(await alerted("This month's SMS messages allowance is used up", 100) && aw
 
 await relogin();
 // ---- 4. the renewal is declined → past due → retries → grace → suspended
-check((await call('PUT', '/api/subscription/v1/account/card', admin, { number: '4000 0000 0000 0002', expiry: '11/29', name: 'Dr Smile' })).last4 === '0002', 'the card is replaced by one the bank will decline');
+check((await addCard(admin, '4000 0000 0000 0002', '11/29')).last4 === '0002', 'the card is replaced by one the bank will decline');
 await internal('POST', `/internal/tenants/${tid}/billing/advance`, { to: 'period-end' });
 bill = await internal('GET', `/internal/tenants/${tid}/billing`);
 const renewal = fresh(bill).find((i) => i.kind === 'RENEWAL');
@@ -139,7 +153,7 @@ check((await call('POST', '/api/subscription/v1/account/change-plan', admin, { p
 
 await relogin();
 // ---- 5. the owner pays → active again
-const paid = await call('PUT', '/api/subscription/v1/account/card', admin, { number: '4111 1111 1111 1111', expiry: '10/31', name: 'Dr Smile' });
+const paid = await addCard(admin, '4111 1111 1111 1111', '10/31');
 bill = await internal('GET', `/internal/tenants/${tid}/billing`);
 check(paid.paidUp === true && fresh(bill).every((i) => i.status === 'PAID') && bill.unpaid.invoices === 0, `new card: every open invoice charged (₹${renewal?.total})`);
 c = await capsUntil(admin, (x) => x.billing?.status === 'ACTIVE' && x.modules.includes('appointments'));

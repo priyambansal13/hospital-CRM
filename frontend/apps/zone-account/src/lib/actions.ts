@@ -14,16 +14,6 @@ async function call<T>(path: string, method: string, body: unknown = {}): Promis
   return api<T>(`${A}${path}`, { token, method, body });
 }
 
-export async function saveCard(f: FormData) {
-  let r: { brand: string; last4: string; paidUp: boolean };
-  try {
-    r = await call('/card', 'PUT', { number: str(f, 'number'), expiry: str(f, 'expiry'), name: str(f, 'name') });
-  } catch (e) {
-    return go('', { error: message(e) });
-  }
-  return go('', r.paidUp ? { ok: `${r.brand} ending ${r.last4} saved for renewals${f.get('hadUnpaid') ? '; open invoices paid' : ''}` } : { error: `${r.brand} ending ${r.last4} saved, but the open invoices could not be charged: try another card` });
-}
-
 export async function payNow() {
   try {
     await call('/pay', 'POST');
