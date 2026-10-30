@@ -8,3 +8,6 @@ sideEffectsCache: false
 
 allowBuilds:
   '@confluentinc/kafka-javascript': true
+  # their install scripts are not needed (pure JS at runtime); declined explicitly so a clean install does not stop
+  '@google/genai': false
+  protobufjs: false

@@ -92,10 +92,12 @@
       "schema": "iam",
       "migrations": true,
       "extraSecretKeys": [
-        "MC_IAM_CLIENT_SECRET"
+        "MC_IAM_CLIENT_SECRET",
+        "SMTP_USER",
+        "SMTP_PASSWORD"
       ]
     },
-    "valuesJson": "{\"name\":\"iam-service\",\"port\":4402,\"schema\":\"iam\",\"migrations\":true,\"extraSecretKeys\":[\"MC_IAM_CLIENT_SECRET\"]}"
+    "valuesJson": "{\"name\":\"iam-service\",\"port\":4402,\"schema\":\"iam\",\"migrations\":true,\"extraSecretKeys\":[\"MC_IAM_CLIENT_SECRET\",\"SMTP_USER\",\"SMTP_PASSWORD\"]}"
   },
   {
     "name": "notification-service",
@@ -217,9 +219,12 @@
       "port": 4401,
       "schema": "tenant",
       "migrations": true,
-      "extraSecretKeys": []
+      "extraSecretKeys": [
+        "SMTP_USER",
+        "SMTP_PASSWORD"
+      ]
     },
-    "valuesJson": "{\"name\":\"tenant-service\",\"port\":4401,\"schema\":\"tenant\",\"migrations\":true,\"extraSecretKeys\":[]}"
+    "valuesJson": "{\"name\":\"tenant-service\",\"port\":4401,\"schema\":\"tenant\",\"migrations\":true,\"extraSecretKeys\":[\"SMTP_USER\",\"SMTP_PASSWORD\"]}"
   },
   {
     "name": "zone-shell",
