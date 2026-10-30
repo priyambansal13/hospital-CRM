@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Patch, Post, Put, Query } from '@nestjs/common';
 import { AdminAudited, DomainError, Internal, notFound, parse, TenantPublic } from '@mc/nest-common';
 import { RequirePermission } from '@mc/entitlements-sdk';
 import { TenantContext } from '@mc/tenancy';
@@ -33,8 +33,8 @@ export class InternalCatalogController {
 
   @Get('tenants')
   @Internal()
-  list() {
-    return this.catalog.list();
+  list(@Query('includeDeleted') includeDeleted?: string) {
+    return this.catalog.list({ includeDeleted: includeDeleted === 'true' });
   }
 
   @Get('tenants/:id')
@@ -48,6 +48,15 @@ export class InternalCatalogController {
   async status(@Param('id') id: string, @Body() body: unknown) {
     await this.provisioning.setStatus(id, parse(Status, body).status);
     return this.catalog.find(id);
+  }
+
+  /** Offboarding: destroy a deleted hospital's data after the retention period (review H-1; CLI `mc tenant purge`). */
+  @Post('tenants/:id/purge')
+  @Internal()
+  @HttpCode(200)
+  async purge(@Param('id') id: string, @Body() body: unknown) {
+    if (!z.uuid().safeParse(id).success) throw notFound('tenant');
+    return this.provisioning.purge(id, parse(z.object({ force: z.boolean().default(false) }), body ?? {}));
   }
 
   /** The in-cluster migration Job reports what it applied (same table the local `mc migrate` writes). */

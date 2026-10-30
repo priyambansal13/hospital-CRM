@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EventTypes, Topics, type TenantProvisioned } from '@mc/contracts';
-import { CONTROL_DB, conflict, DomainError } from '@mc/nest-common';
+import { CONTROL_DB, conflict, DomainError, isDev } from '@mc/nest-common';
 import { addToOutbox, envelope, serviceDbConfig, survive, withTx } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
@@ -103,10 +103,35 @@ export class ProvisioningService {
 
   async setStatus(id: string, status: TenantRow['status']) {
     await withTx(this.db, async (c) => {
-      const { rows } = await c.query('UPDATE tenants SET status = $2, updated_at = now() WHERE id = $1 RETURNING slug', [id, status]);
+      const { rows } = await c.query(`UPDATE tenants SET status = $2, updated_at = now(), deleted_at = CASE WHEN $2 = 'DELETED' THEN coalesce(deleted_at, now()) ELSE NULL END
+        WHERE id = $1 AND purged_at IS NULL RETURNING slug`, [id, status]);
       if (!rows[0]) throw new DomainError(404, 'NOT_FOUND', 'tenant not found');
       await addToOutbox(c, Topics.tenant, id, envelope(EventTypes.tenantUpdated, { tenantId: id, slug: rows[0].slug, status }, { tenantId: id, subject: id }));
     });
+  }
+
+  /**
+   * Offboarding (review H-1): destroy a deleted hospital's data once the retention period has passed. Documents and
+   * search indexes are removed, data keys destroyed (crypto-shredding: encrypted notes and chats in any backup become
+   * unreadable), then the database is dropped. Export it first (`mc tenant export`). Not reversible.
+   */
+  async purge(id: string, opts: { force?: boolean } = {}) {
+    const { rows: [t] } = await this.db.query('SELECT id, slug, status, db_name, deleted_at, purged_at FROM tenants WHERE id = $1', [id]);
+    if (!t) throw new DomainError(404, 'NOT_FOUND', 'tenant not found');
+    if (t.purged_at) return { tenantId: id, slug: t.slug, alreadyPurged: true };
+    assertPurgeable(t, { now: new Date(), days: Number(process.env.PURGE_AFTER_DAYS ?? 30), force: !!opts.force, dev: isDev() });
+    const done: Record<string, unknown> = {};
+    for (const [svc, port] of [['RECORDS', 4410], ['ASSISTANT', 4415], ['SEARCH', 4414]] as const) {
+      const base = process.env[`SVC_URL_${svc}`] ?? `http://localhost:${port}`;
+      const res = await fetch(`${base}/internal/tenants/${id}/purge-data/${t.slug}`, { method: 'POST', headers: { 'x-internal-token': process.env.INTERNAL_API_TOKEN ?? '' }, signal: AbortSignal.timeout(60_000) });
+      if (!res.ok) throw new DomainError(502, 'PURGE_FAILED', `${svc.toLowerCase()} could not purge (${res.status}): nothing else was removed after it; run again`);
+      done[svc.toLowerCase()] = await res.json();
+    }
+    if (!/^t_[a-z0-9_]+$/.test(t.db_name)) throw new Error(`bad db name ${t.db_name}`);
+    await this.db.query(`DROP DATABASE IF EXISTS ${t.db_name} WITH (FORCE)`);
+    await this.db.query('UPDATE tenants SET purged_at = now(), updated_at = now() WHERE id = $1', [id]);
+    this.log.warn(`${t.slug}: purged (database ${t.db_name} dropped, data keys destroyed)`);
+    return { tenantId: id, slug: t.slug, database: t.db_name, ...done };
   }
 
   async recordSchemaVersion(tenantId: string, service: string, version: string) {
@@ -117,4 +142,11 @@ export class ProvisioningService {
   async updateBranding(id: string, branding: Record<string, unknown>, name?: string) {
     await this.db.query(`UPDATE tenants SET branding = branding || $2::jsonb, name = coalesce($3, name), updated_at = now() WHERE id = $1`, [id, JSON.stringify(branding), name ?? null]);
   }
+}
+
+/** May this hospital's data be destroyed now? Only DELETED, only after the retention period (dev may force). */
+export function assertPurgeable(t: { status: string; deleted_at: Date | string | null }, o: { now: Date; days: number; force: boolean; dev: boolean }) {
+  if (t.status !== 'DELETED' || !t.deleted_at) throw new DomainError(409, 'NOT_DELETED', 'only a deleted hospital can be purged: delete it first');
+  const due = new Date(new Date(t.deleted_at).getTime() + o.days * 86_400_000);
+  if (due.getTime() > o.now.getTime() && !(o.force && o.dev)) throw new DomainError(409, 'RETENTION', `kept until ${due.toISOString().slice(0, 10)} (${o.days} days after deletion)`);
 }

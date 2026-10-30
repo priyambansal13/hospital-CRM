@@ -71,9 +71,23 @@ export class TenantDbRouter {
     await Promise.allSettled(all.map(async (p) => (await p).end()));
   }
 
-  private async open(tenantId: string): Promise<pg.Pool> {
+  /**
+   * Offboarding only (review H-1): read a DELETED hospital's database once more, to export it before it is purged.
+   * A separate short-lived pool, never cached, so normal requests keep refusing deleted hospitals.
+   */
+  async forExport<T>(tenantId: string, fn: (pool: pg.Pool) => Promise<T>): Promise<T> {
+    const pool = await this.open(tenantId, true);
+    try {
+      return await fn(pool);
+    } finally {
+      await pool.end();
+    }
+  }
+
+  private async open(tenantId: string, allowDeleted = false): Promise<pg.Pool> {
     const t: TenantPlacement = await this.placements.get(tenantId);
-    if (t.status !== 'ACTIVE' && t.status !== 'READ_ONLY') throw new TenantUnavailableError(tenantId, t.status);
+    const usable = t.status === 'ACTIVE' || t.status === 'READ_ONLY' || (allowDeleted && t.status === 'DELETED');
+    if (!usable) throw new TenantUnavailableError(tenantId, t.status);
     const pool = new pg.Pool({
       host: t.dbHost,
       port: t.dbPort,

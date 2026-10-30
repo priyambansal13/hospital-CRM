@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Module, type OnApplicationBootstrap, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
+import { InternalPurgeController } from './purge.controller.js';
 import { CoreModule, FieldCrypto, ModuleHooks, PLACEMENTS, retryInBackground } from '@mc/nest-common';
 import { EntitlementsClient, EntitlementsModule } from '@mc/entitlements-sdk';
 import { type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
@@ -55,7 +56,7 @@ class KnowledgeJobs implements OnModuleInit, OnApplicationBootstrap, OnApplicati
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'assistant', control: true, tenant: true, relay: false }), EntitlementsModule],
-  controllers: [ChatController, HandoffsController, KnowledgeController],
+  controllers: [InternalPurgeController, ChatController, HandoffsController, KnowledgeController],
   providers: [{ provide: LLM, useFactory: createLlm }, FieldCrypto, KbService, ChatService, KnowledgeJobs],
 })
 export class AppModule {}

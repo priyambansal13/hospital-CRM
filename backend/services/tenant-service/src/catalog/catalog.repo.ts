@@ -46,8 +46,8 @@ export class CatalogRepo implements PlacementSource {
     if (!rows[0]) throw new TenantNotFoundError(host);
     return toRow(rows[0]);
   }
-  async list(): Promise<TenantRow[]> {
-    const { rows } = await this.db.query(`${SELECT} WHERE t.status <> 'DELETED' GROUP BY t.id ORDER BY t.created_at`);
+  async list(opts: { includeDeleted?: boolean } = {}): Promise<TenantRow[]> {
+    const { rows } = await this.db.query(`${SELECT} ${opts.includeDeleted ? '' : "WHERE t.status <> 'DELETED'"} GROUP BY t.id ORDER BY t.created_at`);
     return rows.map(toRow);
   }
 }

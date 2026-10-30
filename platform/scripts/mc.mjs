@@ -337,7 +337,34 @@ async function tenant(action, args) {
   } else if (action === 'list') {
     const ts = await api(svcUrl('tenant'), '/internal/tenants');
     console.table(ts.map((t) => ({ slug: t.slug, name: t.name, status: t.status, db: t.dbName, hosts: t.hosts.join(' ') })));
-  } else fail('tenant create|list');
+  } else if (action === 'export') {
+    // offboarding (review H-1): the hospital's database (custom-format dump, restorable with pg_restore) and every
+    // document, with a manifest. Run before purge.
+    const slug = f._[0] ?? fail('usage: tenant export <slug> [--out dir]');
+    const t = (await api(svcUrl('tenant'), '/internal/tenants?includeDeleted=true')).find((x) => x.slug === slug) ?? fail(`no tenant ${slug}`);
+    const dir = join(f.out ?? join(PLATFORM, 'exports'), `${t.slug}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`);
+    mkdirSync(join(dir, 'documents'), { recursive: true });
+    const dump = execFileSync('docker', ['compose', '--env-file', ENV_FILE, '-f', join(INFRA, 'docker-compose.yml'), 'exec', '-T', 'postgres', 'pg_dump', '-U', 'postgres', '-Fc', t.dbName], { maxBuffer: 1 << 30 });
+    writeFileSync(join(dir, `${t.dbName}.dump`), dump);
+    const docs = await api(svcUrl('records'), `/internal/tenants/${t.id}/export/documents`);
+    for (const d of docs) {
+      const res = await fetch(d.url);
+      if (!res.ok) fail(`document ${d.id}: ${res.status}`);
+      writeFileSync(join(dir, 'documents', d.file), Buffer.from(await res.arrayBuffer()));
+    }
+    writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ hospital: { id: t.id, slug: t.slug, name: t.name, status: t.status }, exportedAt: new Date().toISOString(),
+      database: { file: `${t.dbName}.dump`, bytes: dump.length, restore: `pg_restore -d <new db> ${t.dbName}.dump` },
+      documents: docs.map(({ url: _url, ...d }) => d) }, null, 2));
+    log(`exported ${t.slug}: database ${(dump.length / 1e6).toFixed(1)} MB, ${docs.length} document(s) → ${dir}`);
+  } else if (action === 'purge') {
+    // offboarding (review H-1): destroys a DELETED hospital's data after the retention period. Not reversible.
+    const slug = f._[0] ?? fail('usage: tenant purge <slug> --confirm <slug> [--force (dev: skip the retention period)]');
+    if (f.confirm !== slug) fail(`this destroys ${slug}'s database, documents and data keys for good: repeat the slug with --confirm ${slug} (export it first: mc tenant export ${slug})`);
+    const ts = await api(svcUrl('tenant'), '/internal/tenants?includeDeleted=true');
+    const t = ts.find((x) => x.slug === slug) ?? fail(`no tenant ${slug}`);
+    const r = await api(svcUrl('tenant'), `/internal/tenants/${t.id}/purge`, { method: 'POST', body: { force: !!f.force } });
+    log(`purged ${slug}: ${JSON.stringify(r)}`);
+  } else fail('tenant create|list|export|purge');
 }
 
 async function tenantBySlug(slug) {

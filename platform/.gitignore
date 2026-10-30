@@ -6,3 +6,6 @@ infra/pgbouncer/generated/
 deploy/.rendered/
 .terraform/
 *.tfstate*
+
+# offboarding exports (patient data): never committed
+exports/

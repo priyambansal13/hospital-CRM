@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import {
-  CopyObjectCommand, CreateBucketCommand, DeleteObjectCommand, GetObjectCommand, HeadBucketCommand, HeadObjectCommand,
+  CopyObjectCommand, CreateBucketCommand, DeleteBucketCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command, GetObjectCommand, HeadBucketCommand, HeadObjectCommand,
   PutObjectCommand, PutPublicAccessBlockCommand, S3Client,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -23,6 +23,23 @@ export class ObjectStorage {
 
   bucketFor(slug: string) {
     return `${process.env.S3_BUCKET_PREFIX ?? 'medicare-dev-t-'}${slug}`.toLowerCase().replace(/[^a-z0-9-]/g, '-').slice(0, 63);
+  }
+
+  /** Offboarding (review H-1): every object of the hospital's bucket, then the bucket itself. Returns how many objects. */
+  async destroyBucket(bucket: string) {
+    if (!(await this.bucketExists(bucket))) return 0;
+    let n = 0;
+    for (let token: string | undefined; ;) {
+      const page = await this.s3.send(new ListObjectsV2Command({ Bucket: bucket, ContinuationToken: token }));
+      const keys = (page.Contents ?? []).map((o) => ({ Key: o.Key! }));
+      if (keys.length) await this.s3.send(new DeleteObjectsCommand({ Bucket: bucket, Delete: { Objects: keys, Quiet: true } }));
+      n += keys.length;
+      if (!page.IsTruncated) break;
+      token = page.NextContinuationToken;
+    }
+    await this.s3.send(new DeleteBucketCommand({ Bucket: bucket }));
+    this.ready.delete(bucket);
+    return n;
   }
 
   async bucketExists(bucket: string) {

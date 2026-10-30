@@ -82,6 +82,12 @@ export default async function Profile({ searchParams }: { searchParams: Promise<
           </form>
         </Card>
       ) : null}
+      {self ? (
+        <Card title="Your data">
+          <p style={{ marginTop: 0 }}>Download a copy of everything this hospital holds for you and your family: profile, visits, prescriptions, lab tests, bills, and who looked at your records.</p>
+          <a className="mc-btn mc-btn-ghost" href="/care/export" download>Download my data</a>
+        </Card>
+      ) : null}
     </ZoneFrame>
   );
 }

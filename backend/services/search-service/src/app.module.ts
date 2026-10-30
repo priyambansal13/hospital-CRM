@@ -1,4 +1,5 @@
 import { Injectable, Logger, Module, type OnModuleInit } from '@nestjs/common';
+import { InternalPurgeController } from './purge.controller.js';
 import { AvailabilityChanged, AppointmentChanged, DoctorChanged, EventTypes, Topics } from '@mc/contracts';
 import { ConsumerRegistry, CoreModule } from '@mc/nest-common';
 import { EntitlementsModule } from '@mc/entitlements-sdk';
@@ -47,7 +48,7 @@ class SearchConsumers implements OnModuleInit {
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'search', control: false, tenant: true, relay: false }), EntitlementsModule],
-  controllers: [SearchController, InternalSearchController],
+  controllers: [InternalPurgeController, SearchController, InternalSearchController],
   providers: [{ provide: OpenSearch, useFactory: () => new OpenSearch() }, IndexerService, SearchConsumers],
 })
 export class AppModule {}
