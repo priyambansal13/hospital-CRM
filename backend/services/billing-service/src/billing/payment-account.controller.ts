@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Put } from '@nestjs/common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
-import { AdminAudited, CurrentActor, parse, TenantPublic } from '@mc/nest-common';
+import { CurrentActor, parse, TenantPublic } from '@mc/nest-common';
 import type { Actor } from '@mc/tenancy';
 import { z } from 'zod';
 import { PaymentAccountService } from './payment-account.service.js';
@@ -12,6 +12,8 @@ const Connect = z.object({
   accountNumber: z.string().transform((s) => s.replace(/\s/g, '')),
   ifsc: z.string().trim().toUpperCase(),
   email: z.email(),
+  /** replacing an account: the code e-mailed by iam (POST /api/iam/v1/me/step-up) */
+  stepUpCode: z.string().trim().regex(/^\d{6}$/, '6 digits').nullable().default(null),
 });
 
 /** The hospital's payout account for patients' online payments (owner only: settings:manage:tenant). */
@@ -27,10 +29,16 @@ export class PaymentAccountController {
   }
 
   @Put('payment-account')
-  @AdminAudited('PAYOUT_ACCOUNT')
   @RequirePermission('settings:manage:tenant')
   connect(@Body() body: unknown, @CurrentActor() a: Actor) {
-    return this.accounts.connect(a.email ?? a.id, parse(Connect, body));
+    const { stepUpCode, ...input } = parse(Connect, body);
+    return this.accounts.connect(a, input, stepUpCode);
+  }
+
+  @Get('payment-account/history')
+  @RequirePermission('settings:manage:tenant')
+  history() {
+    return this.accounts.history();
   }
 
   /** For booking pages (signed out too): can patients pay online here? */

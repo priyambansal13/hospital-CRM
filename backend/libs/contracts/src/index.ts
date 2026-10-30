@@ -294,6 +294,13 @@ export const AuditEntry = z.object({
 });
 export type AuditEntry = z.infer<typeof AuditEntry>;
 
+/** The hospital's payout bank account was connected or replaced (review B-5): the owners are told. */
+export const PayoutAccountChanged = z.object({
+  change: z.enum(['CONNECTED', 'REPLACED']), by: z.string(), bankLast4: z.string().nullable(), ifsc: z.string().nullable(),
+  prevBankLast4: z.string().nullable(), holdUntil: z.iso.datetime({ offset: true }).nullable(),
+});
+export type PayoutAccountChanged = z.infer<typeof PayoutAccountChanged>;
+
 export const EventTypes = {
   tenantProvisioned: 'tenant.provisioned',
   tenantUpdated: 'tenant.updated',
@@ -339,6 +346,7 @@ export const EventTypes = {
   labResultsEntered: 'diagnostics.lab_order_results_entered',
   labReportPublished: 'diagnostics.report_published',
   labCriticalValue: 'diagnostics.critical_value',
+  payoutAccountChanged: 'billing.payout_account_changed',
   labCriticalEscalated: 'diagnostics.critical_escalated',
   labTatBreached: 'diagnostics.tat_breached',
   homeVisitAssigned: 'diagnostics.home_visit_assigned',

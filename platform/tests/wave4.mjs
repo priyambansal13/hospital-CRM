@@ -1,0 +1,85 @@
+#!/usr/bin/env node
+// Wave 4 of the flow review (docs/ROLE-FLOWS-AND-GAPS.md §6): production readiness that needs no provider accounts,
+// against the local gateway.
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const PLATFORM = join(dirname(fileURLToPath(import.meta.url)), '..');
+const env = Object.fromEntries(readFileSync(join(PLATFORM, '.env'), 'utf8').split('\n').filter((l) => l.includes('=')).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]));
+const G = 'http://localhost:61000';
+const KC = 'http://localhost:61180/realms/medicare/protocol/openid-connect/token';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const psql = (sql, db = 't_citycare') => execFileSync('docker', ['compose', '--env-file', join(PLATFORM, '.env'), '-f', join(PLATFORM, 'infra/docker-compose.yml'), 'exec', '-T', 'postgres', 'psql', '-qAt', '-U', 'postgres', '-d', db, '-c', sql], { encoding: 'utf8' }).trim();
+let failures = 0;
+const check = (ok, msg) => { console.log(`${ok ? '\x1b[32m✓' : '\x1b[31m✗'} ${msg}\x1b[0m`); if (!ok) failures++; };
+async function call(method, path, token, body, host = 'citycare.localhost') {
+  const r = await fetch(G + path, { method, headers: { 'x-tenant-host': host, 'idempotency-key': crypto.randomUUID(), ...(body ? { 'content-type': 'application/json' } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: body ? JSON.stringify(body) : undefined });
+  const j = r.http === 204 ? {} : await r.json().catch(() => ({}));
+  return { ...(Array.isArray(j) ? { list: j } : j), http: r.status };
+}
+async function staffToken(email, slug = 'citycare') {
+  const j = await (await fetch(KC, { method: 'POST', body: new URLSearchParams({ grant_type: 'password', client_id: 'mc-dev-cli', username: email, password: env.DEV_STAFF_PASSWORD, scope: `openid organization:${slug}` }) })).json();
+  if (!j.access_token) throw new Error(`login ${email}: ${JSON.stringify(j)}`);
+  return j.access_token;
+}
+const mail = async (q) => (await (await fetch(`http://localhost:61825/api/v1/search?query=${encodeURIComponent(q)}`)).json()).messages ?? [];
+const waitFor = async (fn, ms = 20000, every = 500) => { const end = Date.now() + ms; while (Date.now() < end) { const v = await fn(); if (v) return v; await sleep(every); } return undefined; };
+let seq = 0;
+async function patient(name) {
+  const phone = `+9184${String(Date.now()).slice(-5)}${seq++ % 10}${String(Math.floor(Math.random() * 90) + 10)}`;
+  await call('POST', '/api/iam/v1/auth/otp/request', null, { phone });
+  const code = await waitFor(async () => (await mail(`to:${phone.slice(1)}@sms.medicare.local`)).find((m) => /^\d{6} is your/.test(m.Snippet))?.Snippet.slice(0, 6), 10000, 300);
+  const token = (await call('POST', '/api/iam/v1/auth/otp/verify', null, { phone, code })).accessToken;
+  const self = await call('PUT', '/api/patient/v1/me/profile', token, { fullName: name, dob: '1975-05-05', gender: 'MALE' });
+  return { token, phone, self };
+}
+const SFX = Date.now().toString().slice(-6);
+const LETTERS = SFX.replace(/\d/g, (d) => 'ABCDEFGHIJ'[Number(d)]); // role codes are letters and _
+const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date());
+const dayPlus = (n) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(Date.now() + n * 86_400_000));
+
+
+
+const TID = psql('SELECT tenant_id FROM public.tenant_meta');
+const admin = await staffToken('admin@citycare.test');
+const desk = await staffToken('desk@citycare.test');
+
+// ======== B-5 payout account protection ========
+const acct = { businessName: 'CityCare Clinic Pvt Ltd', businessType: 'private_limited', pan: 'ABCDE1234F', ifsc: 'HDFC0001234', email: 'accounts@citycare.test' };
+let first = await call('PUT', '/api/billing/v1/payment-account', admin, { ...acct, accountNumber: '123456789012' });
+if (first.code === 'STEP_UP_REQUIRED') {
+  await call('POST', '/api/iam/v1/me/step-up', admin, { purpose: 'PAYOUT_ACCOUNT' });
+  const m = await waitFor(async () => (await mail('to:admin@citycare.test subject:"Your confirmation code"'))[0], 20000, 1000);
+  first = await call('PUT', '/api/billing/v1/payment-account', admin, { ...acct, accountNumber: '123456789012', stepUpCode: m.Subject.slice(-6) });
+}
+check(first.connected === true, 'payout account connected');
+const noCode = await call('PUT', '/api/billing/v1/payment-account', admin, { ...acct, accountNumber: '999988887777' });
+check(noCode.code === 'STEP_UP_REQUIRED', 'B-5 changing the payout account needs a confirmation code');
+check((await call('POST', '/api/iam/v1/me/step-up', desk, { purpose: 'PAYOUT_ACCOUNT' })).http === 200, 'any staff member can get a code for themselves (the permission is checked on the change)');
+check((await call('PUT', '/api/billing/v1/payment-account', desk, { ...acct, accountNumber: '999988887777', stepUpCode: '000000' })).http === 403, 'B-5 the desk cannot change it at all');
+const before = Date.now();
+await call('POST', '/api/iam/v1/me/step-up', admin, { purpose: 'PAYOUT_ACCOUNT' });
+const codeMail = await waitFor(async () => (await mail('to:admin@citycare.test subject:"Your confirmation code"')).find((x) => Date.parse(x.Created) >= before - 2000), 20000, 1000);
+check(!!codeMail, 'B-5 the code is e-mailed to the person (not shown in the app)');
+const code = codeMail.Subject.slice(-6);
+const wrong = code === '123456' ? '654321' : '123456';
+check((await call('PUT', '/api/billing/v1/payment-account', admin, { ...acct, accountNumber: '999988887777', stepUpCode: wrong })).code === 'WRONG_CODE', 'B-5 a wrong code is refused');
+const changed = await call('PUT', '/api/billing/v1/payment-account', admin, { ...acct, accountNumber: '999988887777', stepUpCode: code });
+check(changed.account?.bankLast4 === '7777' && !!changed.holdUntil, `B-5 changed: payouts held until ${changed.holdUntil}`);
+check((await call('PUT', '/api/billing/v1/payment-account', admin, { ...acct, accountNumber: '111122223333', stepUpCode: code })).code === 'STEP_UP_REQUIRED', 'B-5 a code works once');
+const hist = (await call('GET', '/api/billing/v1/payment-account/history', admin)).list ?? [];
+check(hist[0]?.change === 'REPLACED' && hist[0].bankLast4 === '7777' && hist[0].prevBankLast4 === '9012', 'B-5 the change is in the history (from ••9012 to ••7777)');
+check(!!(await waitFor(async () => (await mail('subject:"Payout account changed: bank account ending 7777"')).length > 0, 30000, 1000)), 'B-5 the owners are told by e-mail');
+// leave no hold behind for other suites (payments expects payouts to settle at once)
+psql(`UPDATE billing.payment_account SET payout_hold_until = NULL`);
+psql(`UPDATE billing.transfers SET status = 'SETTLED' WHERE status = 'ON_HOLD'`);
+
+// ======== A-1 / B-6 SaaS card payments ========
+check((await call('PUT', '/api/subscription/v1/account/card', admin, { number: '4111111111111111', expiry: '12/30', name: 'x' })).http === 404, 'B-6 MediCare\'s API no longer takes card numbers');
+const sub = await call('GET', '/api/subscription/v1/account/subscription', admin);
+check(sub.cardPayments === true, 'A-1 dev: the simulated gateway takes cards (production without keys: bank transfer only, see unit tests)');
+
+console.log(failures ? `\n\x1b[31m${failures} check(s) failed\x1b[0m` : '\n\x1b[32mwave 4: all checks passed\x1b[0m');
+process.exit(failures ? 1 : 0);

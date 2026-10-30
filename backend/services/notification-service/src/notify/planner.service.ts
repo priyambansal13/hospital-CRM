@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EntitlementsClient } from '@mc/entitlements-sdk';
-import { type AppointmentChanged, type BillingNotice, type DoctorAgenda, type HomeVisitChanged, type LabCriticalEscalated, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable } from '@mc/contracts';
+import { type AppointmentChanged, type BillingNotice, type DoctorAgenda, type PayoutAccountChanged, type HomeVisitChanged, type LabCriticalEscalated, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable } from '@mc/contracts';
 import { type Queryable, TenantContext } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_TEMPLATES } from './templates.js';
@@ -87,6 +87,27 @@ export class PlannerService {
     const t = TenantContext.require();
     const list = d.items.map((i) => `${fmt(d.date, i.time).time}  ${i.patientName}  (${i.mode === 'VIDEO' ? 'video' : i.branchName}, ${i.appointmentNo})`).join('\n');
     await this.plan(c, 'doctor_agenda', d.doctorUserId, { hospital: t.name, doctorName: d.doctorName, date: fmt(d.date).day, count: d.items.length, list, link: webLink(t, '/doctor/queue') }, d.doctorId, new Date(), `${d.doctorId}:${d.date}`, 'staff');
+  }
+
+  /**
+   * The payout bank account was connected or replaced (review B-5): every owner and settings admin is told, so a
+   * change nobody expected is noticed while the payouts are still on hold.
+   */
+  async onPayoutChanged(c: Queryable, p: PayoutAccountChanged, eventId: string) {
+    const t = TenantContext.require();
+    const ids = new Set<string>();
+    for (const perm of ['settings:manage:tenant', 'subscription:manage:tenant']) {
+      const res = await fetch(`${process.env.SVC_URL_ENTITLEMENT ?? 'http://localhost:4403'}/internal/tenants/${t.id}/users-with-permission/${perm}`, { headers: { 'x-internal-token': process.env.INTERNAL_API_TOKEN ?? '' } });
+      if (!res.ok) throw new Error(`entitlement-service ${res.status}`);
+      for (const u of ((await res.json()) as { userIds: string[] }).userIds) ids.add(u);
+    }
+    const vars = {
+      hospital: t.name, by: p.by, bankLast4: p.bankLast4 ?? '', ifsc: p.ifsc ?? '', changeWord: p.change === 'REPLACED' ? 'changed' : 'connected',
+      prevLine: p.prevBankLast4 && p.change === 'REPLACED' ? ` (was account ending ${p.prevBankLast4})` : '',
+      holdLine: p.holdUntil ? `For your safety, payouts to the new account are held until ${new Date(p.holdUntil).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' })}.` : '',
+      link: webLink(t, '/admin/settings'),
+    };
+    for (const u of ids) await this.plan(c, 'payout_account_changed', u, vars, randomUUID(), new Date(), `${eventId}:${u}`, 'staff');
   }
 
   /** A lab order past its promised report time: the lab at that branch (people who enter results). */

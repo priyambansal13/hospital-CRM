@@ -3,6 +3,7 @@ import { PLACEMENTS } from '@mc/nest-common';
 import { type PlacementSource, TenantContext } from '@mc/tenancy';
 import { createHash } from 'node:crypto';
 import { BillingService } from './billing.service.js';
+import { PaymentAccountService } from './payment-account.service.js';
 
 const shardOf = (id: string, n: number) => createHash('md5').update(id).digest().readUInt32BE(0) % n;
 
@@ -13,7 +14,7 @@ export class RefundJob implements OnApplicationBootstrap, OnApplicationShutdown 
   private timer?: NodeJS.Timeout;
   private running = false;
 
-  constructor(private readonly billing: BillingService, @Inject(PLACEMENTS) private readonly placements: PlacementSource) {}
+  constructor(private readonly billing: BillingService, private readonly accounts: PaymentAccountService, @Inject(PLACEMENTS) private readonly placements: PlacementSource) {}
 
   onApplicationBootstrap() {
     if (process.env.MC_DISABLE_JOBS === 'true') return;
@@ -34,6 +35,8 @@ export class RefundJob implements OnApplicationBootstrap, OnApplicationShutdown 
       for (const t of await this.placements.list()) {
         if (t.status !== 'ACTIVE' || shardOf(t.id, n) !== i) continue;
         total += await TenantContext.run(t, () => this.billing.submitRefunds()).catch((e) => { this.log.warn(`${t.slug}: ${(e as Error).message}`); return 0; });
+        // payouts held after a payout account change (review B-5) go out once the hold ends
+        await TenantContext.run(t, () => this.accounts.releaseHeld()).catch((e) => this.log.warn(`${t.slug}: release held payouts: ${(e as Error).message}`));
       }
       if (total) this.log.log(`submitted ${total} refund(s)`);
     } catch (e) {

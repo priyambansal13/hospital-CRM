@@ -40,6 +40,3 @@ export async function removeDomain(f: FormData) {
   return run((token) => api(`/api/tenant/v1/domains/${encodeURIComponent(str(f, 'host'))}`, { token, method: 'DELETE' }), `${str(f, 'host')} removed`);
 }
 
-export async function connectPayments(f: FormData) {
-  return run((token) => api('/api/billing/v1/payment-account', { token, method: 'PUT', body: { businessName: str(f, 'businessName'), businessType: str(f, 'businessType'), pan: str(f, 'pan'), accountNumber: str(f, 'accountNumber'), ifsc: str(f, 'ifsc'), email: str(f, 'email') } }), 'Bank account saved');
-}

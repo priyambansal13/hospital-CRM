@@ -2,34 +2,39 @@ import { getSession } from '@mc/auth';
 import { api } from '@mc/bff';
 import { hasFeature, ZoneFrame, zoneCapabilities } from '@mc/features';
 import { Upsell } from '@mc/features/plan';
-import { Badge, Button, Card, Field, PageHeader, Table } from '@mc/ui';
+import { Alert, Badge, Button, Card, Field, PageHeader, Table } from '@mc/ui';
 import { Flash } from '@/lib/flash';
 import { ZONES } from '@/lib/zones';
-import { addDomain, connectPayments, removeDomain, saveBranding, saveSetting, verifyDomain } from './actions';
+import { addDomain, removeDomain, saveBranding, saveSetting, verifyDomain } from './actions';
+import { savePayoutAccount, sendPayoutCode } from './payout-actions';
 
 export const dynamic = 'force-dynamic';
 
 interface Setting { key: string; moduleName: string; name: string; type: 'int' | 'enum' | 'bool'; default: unknown; min: number | null; max: number | null; allowed: string[] | null; planBounded: boolean; value: unknown; effective: unknown; adjusted: boolean; updatedBy: string | null }
 interface Domain { host: string; primary: boolean; status: 'PENDING' | 'ACTIVE'; custom: boolean; dns: { type: string; name: string; value: string; cname: { name: string; target: string } } | null }
-interface Account { connected: boolean; account: { businessName: string; bankLast4: string | null; ifsc: string | null; platformFeePercent: number; connectedAt: string } | null; transfers: { count: number; amount: number; platformFee: number } }
+interface Account { connected: boolean; holdUntil: string | null; account: { businessName: string; bankLast4: string | null; ifsc: string | null; platformFeePercent: number; connectedAt: string } | null; transfers: { count: number; amount: number; platformFee: number; onHold?: number } }
+interface Change { at: string; by: string; change: string; bankLast4: string | null; ifsc: string | null; prevBankLast4: string | null; holdUntil: string | null }
 interface Branding { name: string; branding: { primaryColor?: string; accentColor?: string; logoUrl?: string | null } }
 const inr = (n: number) => `₹${new Intl.NumberFormat('en-IN', { maximumFractionDigits: 2 }).format(n)}`;
+const when = (d: string) => new Date(d).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'Asia/Kolkata' });
 
 /** The hospital's own configuration: branding, settings within its plan, custom domain, payout account. */
-export default async function Settings({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string }> }) {
+export default async function Settings({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string; code?: string }> }) {
   const caps = await zoneCapabilities('admin', '/admin/settings');
+  const sp = await searchParams;
   const { accessToken: token } = (await getSession())!;
-  const [brand, settings, domains, account] = await Promise.all([
+  const [brand, settings, domains, account, changes] = await Promise.all([
     api<Branding>('/api/tenant/v1/public/branding', { token }),
     api<Setting[]>('/api/entitlement/v1/settings', { token }),
     api<Domain[]>('/api/tenant/v1/domains', { token }),
     caps.modules.includes('billing') ? api<Account>('/api/billing/v1/payment-account', { token }).catch(() => null) : Promise.resolve(null),
+    caps.modules.includes('billing') ? api<Change[]>('/api/billing/v1/payment-account/history', { token }).catch(() => [] as Change[]) : Promise.resolve([] as Change[]),
   ]);
   const customDomains = hasFeature(caps, 'core.custom_domain');
   return (
     <ZoneFrame zone="admin" path="/admin/settings" zones={ZONES}>
       <PageHeader title="Settings" subtitle="How your hospital looks and works. Some ranges come from your plan." />
-      <Flash {...await searchParams} />
+      <Flash ok={sp.ok} error={sp.error} />
       <Card title="Branding">
         <form action={saveBranding} className="mc-form" aria-label="Branding">
           <Field label="Name patients see" name="name" required defaultValue={brand.name} />
@@ -85,9 +90,18 @@ export default async function Settings({ searchParams }: { searchParams: Promise
             <p style={{ marginTop: 0 }}><Badge tone="success">connected</Badge> {account.account.businessName} · bank ••{account.account.bankLast4} ({account.account.ifsc}) · MediCare fee {account.account.platformFeePercent}%
               <span className="mc-meta"> · paid out so far: {inr(account.transfers.amount)} ({account.transfers.count} payments, fees {inr(account.transfers.platformFee)})</span></p>
           ) : <p style={{ marginTop: 0 }}>Not connected: patients pay at the hospital.</p>}
-          <details>
+          {account.holdUntil ? <Alert>The bank account was changed recently: payouts ({inr(account.transfers.onHold ?? 0)} so far) are held until {when(account.holdUntil)}, so an unexpected change can be undone first.</Alert> : null}
+          <details open={sp.code === 'sent'}>
             <summary>{account.connected ? 'Change bank account' : 'Connect a bank account'}</summary>
-            <form action={connectPayments} className="mc-form" aria-label="Payments" style={{ marginTop: 12 }}>
+            {account.connected ? (
+              // replacing the account needs a code e-mailed to you (review B-5)
+              <form action={sendPayoutCode} style={{ marginTop: 12 }}>
+                <p className="mc-meta" style={{ marginTop: 0 }}>To change it, we first e-mail you a confirmation code. Every owner is told about the change, and payouts to the new account wait {48} hours.</p>
+                <Button variant="ghost">{sp.code === 'sent' ? 'Send another code' : 'E-mail me a code'}</Button>
+              </form>
+            ) : null}
+            <form action={savePayoutAccount} className="mc-form" aria-label="Payments" style={{ marginTop: 12 }}>
+              {account.connected ? <Field label="Confirmation code (from the e-mail)" name="stepUpCode" required inputMode="numeric" pattern="\d{6}" /> : null}
               <Field label="Business name (as on PAN)" name="businessName" required defaultValue={account.account?.businessName ?? brand.name} />
               <label className="mc-field"><span>Business type</span><select name="businessType"><option value="proprietorship">Proprietorship</option><option value="partnership">Partnership</option><option value="private_limited">Private limited</option><option value="llp">LLP</option><option value="trust">Trust</option><option value="society">Society</option></select></label>
               <Field label="PAN" name="pan" required placeholder="ABCDE1234F" />
@@ -97,6 +111,12 @@ export default async function Settings({ searchParams }: { searchParams: Promise
               <Button>Save bank account</Button>
             </form>
           </details>
+          {changes.length ? (
+            <details style={{ marginTop: 12 }}>
+              <summary>Changes ({changes.length})</summary>
+              <ul className="mc-list">{changes.map((c) => <li key={c.at}>{when(c.at)}: {c.change === 'REPLACED' ? `changed from ••${c.prevBankLast4} to` : 'connected'} ••{c.bankLast4} ({c.ifsc}) by {c.by}</li>)}</ul>
+            </details>
+          ) : null}
         </Card>
       ) : null}
     </ZoneFrame>

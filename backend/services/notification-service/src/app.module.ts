@@ -1,5 +1,5 @@
 import { Inject, Injectable, Module, type OnApplicationBootstrap, type OnModuleInit } from '@nestjs/common';
-import { AppointmentChanged, DoctorAgenda, EventTypes, HomeVisitChanged, LabCriticalEscalated, LabCriticalValue, LabOrderChanged, LabReportPublished, PatientRegistered, PaymentSucceeded, PrescriptionIssued, RefundProcessed, Topics, WaitlistSlotAvailable, BillingNotice } from '@mc/contracts';
+import { AppointmentChanged, DoctorAgenda, EventTypes, PayoutAccountChanged, HomeVisitChanged, LabCriticalEscalated, LabCriticalValue, LabOrderChanged, LabReportPublished, PatientRegistered, PaymentSucceeded, PrescriptionIssued, RefundProcessed, Topics, WaitlistSlotAvailable, BillingNotice } from '@mc/contracts';
 import { ConsumerRegistry, CoreModule, PLACEMENTS, retryInBackground } from '@mc/nest-common';
 import { EntitlementsModule } from '@mc/entitlements-sdk';
 import { type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
@@ -45,6 +45,7 @@ class NotificationConsumers implements OnModuleInit, OnApplicationBootstrap {
       handlers: {
         [EventTypes.paymentSucceeded]: (e, db) => this.planner.onPayment(db!, PaymentSucceeded.parse(e.data)),
         [EventTypes.refundProcessed]: (e, db) => this.planner.onRefund(db!, RefundProcessed.parse(e.data)),
+        [EventTypes.payoutAccountChanged]: (e, db) => this.planner.onPayoutChanged(db!, PayoutAccountChanged.parse(e.data), e.id),
       },
     });
     const labMsg = (type: string) => (e: any, db: any) => this.planner.onLabOrder(db!, type, LabOrderChanged.parse(e.data), e.time);

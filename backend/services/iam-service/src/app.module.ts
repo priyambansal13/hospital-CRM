@@ -1,4 +1,5 @@
 import { Inject, Injectable, Logger, Module, type OnApplicationBootstrap, type OnApplicationShutdown, type OnModuleInit } from '@nestjs/common';
+import { StepUpController } from './stepup/step-up.js';
 import { EventTypes, TenantProvisioned, Topics } from '@mc/contracts';
 import { ConsumerRegistry, CoreModule, PLACEMENTS, retryInBackground } from '@mc/nest-common';
 import type { PlacementSource } from '@mc/tenancy';
@@ -54,7 +55,7 @@ class WebHostSweep implements OnApplicationBootstrap, OnApplicationShutdown {
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'iam', control: true, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [PatientAuthController, StaffController, InternalStaffController, InternalPersonsController],
+  controllers: [StepUpController, PatientAuthController, StaffController, InternalStaffController, InternalPersonsController],
   providers: [
     KeycloakAdmin, StaffService, TokenService, SmsSender,
     IamConsumers, WebHostSweep,
