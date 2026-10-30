@@ -36,3 +36,5 @@ seedDemo: false                       # create citycare + sunrise with synthetic
 # Filled by `mc k8s render <env>` from service metadata (generated.yaml):
 services: []                          # [{ name, port, schema, route, control, tenant }]
 zones: []                             # [{ name, basePath }]
+# Alerts (review H-3/H-4): a PrometheusRule for the Prometheus Operator; on once monitoring is installed in the cluster
+monitoring: { enabled: false, alertLabels: { release: kube-prometheus-stack } }

@@ -1,6 +1,7 @@
 # Filled per service by `mc k8s render <env>` (name, port, schema, migrations, extra secrets).
 name: ""
 port: 4400
+metricsPort: 9464             # Prometheus /metrics (review H-3)
 schema: ""
 migrations: true                 # run `node dist/migrate.js all` as a pre-install/pre-upgrade hook
 image:

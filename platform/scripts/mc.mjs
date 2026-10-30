@@ -15,6 +15,7 @@
 //   billing advance <slug> <trial-end|period-end|next-retry|grace-end|+Nd>  DEV: move the billing clock, run what is due
 //   module enable|disable|reset <slug> <module>   switch one module on/off outside the plan (reset = back to the plan)
 //   events reset <group>              replay a consumer group from the start (service must be stopped; dedupe makes it safe)
+//   events dlq | events replay <topic> dead-letter topics: counts and errors; send failed events back once
 //   dev                               run backend services + frontend zones (turbo dev in both repos)
 //   test tenancy                      cross-tenant leak test against every route of every service
 //   test race                         100 concurrent bookings for one slot: exactly one wins
@@ -369,6 +370,52 @@ async function tenant(action, args) {
   } else fail('tenant create|list|export|purge');
 }
 
+/** rpk inside the Redpanda container. */
+const rpk = (args, input) => execFileSync('docker', ['compose', '--env-file', ENV_FILE, '-f', join(INFRA, 'docker-compose.yml'), 'exec', '-T', 'redpanda', 'rpk', '-X', 'brokers=redpanda:9092', ...args], { encoding: 'utf8', input, maxBuffer: 1 << 28 });
+/** rpk -f json prints one pretty JSON object per message: split them back. */
+function jsonStream(text) {
+  const out = []; let buf = '';
+  for (const line of text.split('\n')) { buf += `${line}\n`; if (line === '}') { out.push(JSON.parse(buf)); buf = ''; } }
+  return out;
+}
+const dlqTopics = () => rpk(['topic', 'list']).split('\n').slice(1).map((l) => l.split(/\s+/)[0]).filter((t) => t.endsWith('.dlq'));
+const readDlq = (topic) => jsonStream(rpk(['topic', 'consume', topic, '-o', ':end', '-f', 'json']).trim());
+const header = (m, k) => (m.headers ?? []).find((h) => h.key === k)?.value ?? '';
+
+/**
+ * Dead-letter topics (review H-4): events that failed every retry. `events dlq` counts them per topic and groups the
+ * errors by consumer; `events replay <topic>` sends a DLQ's messages back to the original topic (filter with
+ * --consumer and --since). Consumers dedupe on the event id, so only a group that has not processed an event acts on
+ * it, and replaying the same messages twice is harmless.
+ */
+function dlqList(args) {
+  const f = flags(args);
+  for (const t of f.topic ? [f.topic.endsWith('.dlq') ? f.topic : `${f.topic}.dlq`] : dlqTopics()) {
+    const msgs = readDlq(t);
+    if (!msgs.length) continue;
+    const by = new Map();
+    for (const m of msgs) { const k = `${header(m, 'dlq-consumer')} · ${JSON.parse(m.value).type} · ${header(m, 'dlq-error').slice(0, 120)}`; by.set(k, (by.get(k) ?? 0) + 1); }
+    log(`${t}: ${msgs.length} message(s), oldest ${new Date(msgs[0].timestamp).toISOString().slice(0, 16)}`);
+    for (const [k, n] of [...by].sort((a, b) => b[1] - a[1]).slice(0, 10)) console.log(`   ${String(n).padStart(4)}  ${k}`);
+  }
+}
+
+function dlqReplay(args) {
+  const f = flags(args);
+  const topic = f._[0].replace(/\.dlq$/, '');
+  const max = Number(f.max ?? 1000);
+  let msgs = readDlq(`${topic}.dlq`);
+  if (f.consumer) msgs = msgs.filter((m) => header(m, 'dlq-consumer') === f.consumer);
+  if (f.since) msgs = msgs.filter((m) => m.timestamp >= Date.parse(f.since));
+  msgs = msgs.slice(0, max);
+  if (f['dry-run']) { log(`${msgs.length} message(s) would go back to ${topic}`); return; }
+  for (const m of msgs) {
+    const h = (m.headers ?? []).filter((x) => !x.key.startsWith('dlq-')).flatMap((x) => ['-H', `${x.key}:${x.value}`]);
+    rpk(['topic', 'produce', topic, '-k', m.key, ...h, '-f', '%v\n'], `${m.value}\n`);
+  }
+  log(`${msgs.length} message(s) replayed to ${topic}${f.consumer ? ` (failed in ${f.consumer})` : ''}`);
+}
+
 /**
  * Encryption keys (wave 4, KMS) in the services that encrypt (records: clinical text; assistant: chats):
  *   keys rotate <slug>   new data key version for one hospital (old ciphertexts keep decrypting)
@@ -561,7 +608,11 @@ const main = async () => {
     case 'module': return moduleCmd(sub, rest);
     case 'plan': return planCmd(sub, rest);
     case 'billing': return billingCmd(sub, rest);
-    case 'events': if (sub === 'reset' && rest[0]) return compose(['exec', '-T', 'redpanda', 'rpk', '-X', 'brokers=redpanda:9092', 'group', 'seek', rest[0], '--to', 'start']); return fail('events reset <group>');
+    case 'events':
+      if (sub === 'reset' && rest[0]) return compose(['exec', '-T', 'redpanda', 'rpk', '-X', 'brokers=redpanda:9092', 'group', 'seek', rest[0], '--to', 'start']);
+      if (sub === 'dlq') return dlqList(rest);
+      if (sub === 'replay' && rest[0]) return dlqReplay(rest);
+      return fail('events reset <group> | events dlq [--topic <t>] | events replay <topic> [--consumer <group>] [--since <iso date>] [--max N] [--dry-run]');
     case 'dev': return Promise.all([run('pnpm dev', BACKEND), existsSync(join(FRONTEND, 'package.json')) ? run('pnpm dev', FRONTEND) : null]);
     case 'test':
       if (sub === 'tenancy') return run(`node ${join(PLATFORM, 'tests/tenancy-leak.mjs')}`, PLATFORM);

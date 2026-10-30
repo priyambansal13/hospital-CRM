@@ -1,0 +1,38 @@
+{{- if .Values.monitoring.enabled }}
+# What wakes someone up (review H-3, H-4). Metrics come from every service's /metrics port (mc_* series).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: medicare-alerts
+  labels: {{- toYaml .Values.monitoring.alertLabels | nindent 4 }}
+spec:
+  groups:
+    - name: medicare.services
+      rules:
+        - alert: MedicareHighErrorRate
+          expr: |
+            sum by (job) (rate(mc_http_request_duration_seconds_count{status=~"5.."}[5m]))
+              / sum by (job) (rate(mc_http_request_duration_seconds_count[5m])) > 0.05
+          for: 10m
+          labels: { severity: page }
+          annotations: { summary: "{{`{{ $labels.job }}`}}: more than 5% of requests fail (5xx)" }
+        - alert: MedicareSlowRequests
+          expr: histogram_quantile(0.95, sum by (job, le) (rate(mc_http_request_duration_seconds_bucket[5m]))) > 2
+          for: 15m
+          labels: { severity: ticket }
+          annotations: { summary: "{{`{{ $labels.job }}`}}: 95th percentile above 2 s" }
+        - alert: MedicareEventsDeadLettered
+          expr: increase(mc_dlq_messages_total[15m]) > 0
+          labels: { severity: ticket }
+          annotations: { summary: "{{`{{ $labels.consumer }}`}} sent events to {{`{{ $labels.topic }}`}}.dlq: see mc events dlq, fix, then mc events replay" }
+        - alert: MedicareOutboxBacklog
+          expr: max by (job) (mc_outbox_pending) > 1000
+          for: 10m
+          labels: { severity: page }
+          annotations: { summary: "{{`{{ $labels.job }}`}}: events are not reaching Kafka (outbox backlog)" }
+        - alert: MedicareServiceNotReady
+          expr: kube_deployment_status_replicas_available{namespace="{{ .Release.Namespace }}"} == 0
+          for: 5m
+          labels: { severity: page }
+          annotations: { summary: "{{`{{ $labels.deployment }}`}}: no ready replica" }
+{{- end }}

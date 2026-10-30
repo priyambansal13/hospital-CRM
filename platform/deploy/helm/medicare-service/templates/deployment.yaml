@@ -16,6 +16,10 @@ spec:
       labels: {{- include "svc.labels" . | nindent 8 }}
       annotations:
         checksum/values: {{ toJson .Values | sha256sum | trunc 16 }}
+        # Prometheus scrape (review H-3): metrics on their own port, never through the API gateway
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "{{ .Values.metricsPort }}"
+        prometheus.io/path: /metrics
         {{- with .Values.podAnnotations }}{{ toYaml . | nindent 8 }}{{ end }}
     spec:
       serviceAccountName: {{ .Values.name }}
@@ -25,12 +29,14 @@ spec:
         - name: app
           image: {{ include "svc.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
-          ports: [{ name: http, containerPort: {{ .Values.port }} }]
+          ports: [{ name: http, containerPort: {{ .Values.port }} }, { name: metrics, containerPort: {{ .Values.metricsPort }} }]
           envFrom: [{ configMapRef: { name: {{ .Values.configMap }} } }]
           env: {{- include "svc.env" . | nindent 12 }}
-          readinessProbe: { httpGet: { path: /health, port: http }, periodSeconds: 5, failureThreshold: 3 }
-          livenessProbe: { httpGet: { path: /health, port: http }, initialDelaySeconds: 20, periodSeconds: 15, failureThreshold: 4 }
-          startupProbe: { httpGet: { path: /health, port: http }, periodSeconds: 3, failureThreshold: 40 }
+            - { name: METRICS_PORT, value: "{{ .Values.metricsPort }}" }
+          # ready: the database and Redis answer (out of the load balancer until they do); live: the process answers
+          readinessProbe: { httpGet: { path: /health/ready, port: http }, periodSeconds: 5, failureThreshold: 3 }
+          livenessProbe: { httpGet: { path: /health/live, port: http }, initialDelaySeconds: 20, periodSeconds: 15, failureThreshold: 4 }
+          startupProbe: { httpGet: { path: /health/live, port: http }, periodSeconds: 3, failureThreshold: 40 }
           resources: {{- toYaml .Values.resources | nindent 12 }}
           securityContext: {{- include "svc.securityContext" . | nindent 12 }}
           volumeMounts: [{ name: tmp, mountPath: /tmp }]

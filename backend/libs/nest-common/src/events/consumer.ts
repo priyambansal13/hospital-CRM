@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import { dlqMessages } from '../metrics.js';
 import { EventEnvelope } from '@mc/contracts';
 import { createConsumer, createProducer, type KafkaMessageIn, type Producer } from '@mc/kafka';
 import { type PlacementSource, TenantContext, type TenantDbRouter, TenantUnavailableError, withTx } from '@mc/tenancy';
@@ -88,6 +89,7 @@ export class EventConsumer {
   }
 
   private async toDlq(m: KafkaMessageIn, e: Error) {
+    dlqMessages.inc({ topic: m.topic, consumer: this.spec.group });
     await this.dlq?.send(`${m.topic}.dlq`, [{ key: m.key ?? '', value: m.value ?? '', headers: { ...m.headers, 'dlq-error': e.message.slice(0, 500), 'dlq-consumer': this.spec.group } }]);
   }
 }

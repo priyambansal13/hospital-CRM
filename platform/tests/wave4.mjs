@@ -47,6 +47,9 @@ const admin = await staffToken('admin@citycare.test');
 const desk = await staffToken('desk@citycare.test');
 
 // ======== B-5 payout account protection ========
+// the step-up rate limit (5 codes / 10 min) would trip when this suite is run several times in a row
+const redisCli = (...a) => execFileSync('docker', ['compose', '--env-file', join(PLATFORM, '.env'), '-f', join(PLATFORM, 'infra/docker-compose.yml'), 'exec', '-T', 'redis', 'redis-cli', '--no-auth-warning', '-a', env.REDIS_PASSWORD, ...a], { encoding: 'utf8' });
+for (const k of redisCli('--scan', '--pattern', 'stepup-rl:*').split('\n').filter(Boolean)) redisCli('DEL', k);
 const acct = { businessName: 'CityCare Clinic Pvt Ltd', businessType: 'private_limited', pan: 'ABCDE1234F', ifsc: 'HDFC0001234', email: 'accounts@citycare.test' };
 let first = await call('PUT', '/api/billing/v1/payment-account', admin, { ...acct, accountNumber: '123456789012' });
 if (first.code === 'STEP_UP_REQUIRED') {
@@ -117,6 +120,16 @@ const saved = await call('PUT', `/api/notification/v1/notification-templates/${s
 check(saved.providerTemplateId === 'msg91_flow_test' && saved.dltTemplateId === '1107161234567890123', 'A-2 an SMS template carries its DLT and provider template ids');
 check((await call('PUT', `/api/notification/v1/notification-templates/${sms.id}`, admin, { body: sms.body, active: true, dltTemplateId: 'abc' })).http === 400, 'A-2 DLT template ids are digits');
 await call('PUT', `/api/notification/v1/notification-templates/${sms.id}`, admin, { body: sms.body, active: true, providerTemplateId: null, dltTemplateId: null });
+
+// ======== H-3 health and metrics ========
+const live = await fetch('http://localhost:4405/health/live').then((r) => r.status);
+const ready = await fetch('http://localhost:4405/health/ready').then((r) => r.json());
+check(live === 200 && ready.status === 'up' && Object.values(ready.checks).every((v) => v === 'up') && 'redis' in ready.checks, `H-3 liveness and readiness (${Object.keys(ready.checks).join(', ')}) are separate probes`);
+await call('GET', `/api/scheduling/v1/appointments/${crypto.randomUUID()}`, admin);
+const prom = await fetch('http://localhost:9405/metrics').then((r) => r.text());
+check(/mc_http_request_duration_seconds_count\{method="GET",route="\/v1\/appointments\/:id",status="404"\}/.test(prom) && !/route="\/v1\/appointments\/[0-9a-f]{8}-/.test(prom), 'H-3 request metrics by route template (no ids or patient data in labels)');
+check(/mc_outbox_pending \d+/.test(prom) && prom.includes('mc_dlq_messages_total'), 'H-3/H-4 outbox backlog and dead-letter counters are exported');
+check((await fetch('http://localhost:61000/api/scheduling/metrics', { headers: { 'x-tenant-host': 'citycare.localhost' } })).status === 404, 'H-3 metrics are not reachable through the API gateway');
 
 console.log(failures ? `\n\x1b[31m${failures} check(s) failed\x1b[0m` : '\n\x1b[32mwave 4: all checks passed\x1b[0m');
 process.exit(failures ? 1 : 0);

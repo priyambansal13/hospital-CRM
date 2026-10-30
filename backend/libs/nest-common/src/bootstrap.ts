@@ -5,6 +5,7 @@ import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fa
 import { RequestContext } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { loadServiceEnv } from './env.js';
+import { httpDuration, startMetricsServer } from './metrics.js';
 
 export interface ServiceOptions {
   name: string;
@@ -29,7 +30,9 @@ export async function createService(module: Type<unknown>, opts: ServiceOptions)
   });
   const access = new Logger('http');
   fastify.addHook('onResponse', (req, reply, done) => {
-    if (req.url !== '/health') {
+    const route = req.routeOptions?.url ?? 'unmatched'; // the template, never the ids in the URL
+    if (!route.startsWith('/health')) httpDuration.observe({ method: req.method, route, status: String(reply.statusCode) }, reply.elapsedTime / 1000);
+    if (!req.url.startsWith('/health')) {
       const rc = RequestContext.current();
       access.log({ requestId: req.id, method: req.method, route: req.routeOptions?.url ?? req.url.split('?')[0], status: reply.statusCode, ms: Math.round(reply.elapsedTime), tenant: rc?.tenant?.slug, actor: rc?.actor?.kind });
     }
@@ -45,6 +48,7 @@ export async function bootstrapService(module: Type<unknown>, opts: ServiceOptio
   const app = await createService(module, opts);
   const port = Number(process.env.PORT ?? opts.port);
   await app.listen(port, '0.0.0.0');
+  startMetricsServer(opts.port);
   Logger.log(`${opts.name} on http://localhost:${port}`, 'Bootstrap');
   return app;
 }

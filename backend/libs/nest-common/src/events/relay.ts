@@ -3,6 +3,11 @@ import { createProducer, type Producer } from '@mc/kafka';
 import { type PlacementSource, type TenantDbRouter, withTx } from '@mc/tenancy';
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
+import { outboxPending, outboxPublished, retentionDeleted } from '../metrics.js';
+
+/** Retention (review H-5): published events and dedupe records are kept this long (days), then removed. */
+const OUTBOX_DAYS = () => Number(process.env.OUTBOX_RETENTION_DAYS ?? 7);
+const PROCESSED_DAYS = () => Number(process.env.PROCESSED_EVENTS_RETENTION_DAYS ?? 30);
 
 const shardOf = (id: string, count: number) => createHash('md5').update(id).digest().readUInt32BE(0) % count;
 
@@ -17,6 +22,7 @@ export class OutboxRelay {
   private timer?: NodeJS.Timeout;
   private running = false;
   private stopped = false;
+  private lastRetention = 0;
 
   constructor(
     private readonly opts: { control?: pg.Pool; router?: TenantDbRouter; placements: PlacementSource; intervalMs?: number },
@@ -43,15 +49,24 @@ export class OutboxRelay {
     if (this.running) return 0;
     this.running = true;
     let sent = 0;
+    let pending = 0;
+    // once an hour, also apply the retention rules (event payloads can carry personal data; review H-5)
+    const retention = Date.now() - this.lastRetention > 3_600_000;
+    if (retention) this.lastRetention = Date.now();
+    const pass = async (pool: pg.Pool) => {
+      sent += await this.flush(pool);
+      pending += Number((await pool.query('SELECT count(*) AS n FROM outbox WHERE published_at IS NULL')).rows[0].n);
+      if (retention) await this.retain(pool);
+    };
     try {
-      if (this.opts.control) sent += await this.flush(this.opts.control);
+      if (this.opts.control) await pass(this.opts.control);
       if (this.opts.router) {
         const count = Number(process.env.REPLICA_COUNT ?? 1);
         const index = Number(process.env.REPLICA_INDEX ?? 0);
         const tenants = (await this.opts.placements.list()).filter((t) => (t.status === 'ACTIVE' || t.status === 'READ_ONLY') && shardOf(t.id, count) === index);
         for (const t of tenants) {
           try {
-            sent += await this.flush(await this.opts.router.forTenant(t.id));
+            await pass(await this.opts.router.forTenant(t.id));
           } catch (e) {
             this.log.warn(`outbox ${t.slug}: ${(e as Error).message}`);
           }
@@ -60,7 +75,17 @@ export class OutboxRelay {
     } finally {
       this.running = false;
     }
+    outboxPending.set(pending);
+    if (sent) outboxPublished.inc(sent);
     return sent;
+  }
+
+  /** Published outbox rows after OUTBOX_RETENTION_DAYS, dedupe records after PROCESSED_EVENTS_RETENTION_DAYS. */
+  private async retain(pool: pg.Pool) {
+    const o = await pool.query('DELETE FROM outbox WHERE published_at < now() - make_interval(days => $1)', [OUTBOX_DAYS()]);
+    const p = await pool.query('DELETE FROM processed_events WHERE processed_at < now() - make_interval(days => $1)', [PROCESSED_DAYS()]).catch(() => ({ rowCount: 0 }));
+    if (o.rowCount) retentionDeleted.inc({ table: 'outbox' }, o.rowCount);
+    if (p.rowCount) retentionDeleted.inc({ table: 'processed_events' }, p.rowCount);
   }
 
   private async flush(pool: pg.Pool): Promise<number> {
