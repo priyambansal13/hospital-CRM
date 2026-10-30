@@ -1,7 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { CONTROL_DB } from '../tokens.js';
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import type pg from 'pg';
+import { CONTROL_DB } from '../tokens.js';
+import { type KeyWrapper, keyWrapperFromEnv } from './key-wrapper.js';
+import { keyVersionOf, open, seal } from './seal.js';
+
+export { keyVersionOf, open, seal } from './seal.js';
 
 /**
  * Field-level envelope encryption (docs/HLD.md §9, MULTI-TENANCY.md §5): every hospital has its own 256-bit data key
@@ -10,50 +14,24 @@ import type pg from 'pg';
  * hospital and still decrypt.
  *
  * Ciphertext layout: [1 byte format = 1][4 bytes key version][12 bytes IV][16 bytes tag][ciphertext]
- * KEK: MC_MASTER_KEY (32 bytes, base64url) locally and in staging (Secret Manager); a Cloud KMS wrap/unwrap adapter
- * can replace kekWrap/kekUnwrap without changing stored data keys' use.
+ * KEK: a KeyWrapper (key-wrapper.ts): MC_MASTER_KEY locally and in staging, or Cloud KMS (KEY_WRAPPER=gcp-kms).
+ * rotate() adds a data key version; rewrapAll() moves every data key to the current KEK.
  *
  * Each service that encrypts keeps its own `tenant_keys` table in its own control schema (records, assistant), so a
  * service only ever holds the data keys for what it stores. Needs CoreModule `control: true`.
  */
-const FORMAT = 1;
 
-function kek(): { key: Buffer; id: string } {
-  const raw = process.env.MC_MASTER_KEY;
-  if (!raw) throw new Error('MC_MASTER_KEY missing (run mc configure)');
-  const key = Buffer.from(raw, 'base64url');
-  if (key.length !== 32) throw new Error('MC_MASTER_KEY must be 32 bytes (base64url)');
-  return { key, id: `local:${createHash('sha256').update(key).digest('hex').slice(0, 12)}` };
-}
 
-export function seal(key: Buffer, plaintext: Buffer, aad: string, version: number): Buffer {
-  const iv = randomBytes(12);
-  const c = createCipheriv('aes-256-gcm', key, iv);
-  c.setAAD(Buffer.from(aad));
-  const body = Buffer.concat([c.update(plaintext), c.final()]);
-  const head = Buffer.alloc(5);
-  head.writeUInt8(FORMAT, 0);
-  head.writeUInt32BE(version, 1);
-  return Buffer.concat([head, iv, c.getAuthTag(), body]);
-}
-
-export function open(keyFor: (version: number) => Buffer, sealed: Buffer, aad: string): Buffer {
-  if (sealed.readUInt8(0) !== FORMAT) throw new Error('unknown ciphertext format');
-  const version = sealed.readUInt32BE(1);
-  const d = createDecipheriv('aes-256-gcm', keyFor(version), sealed.subarray(5, 17));
-  d.setAAD(Buffer.from(aad));
-  d.setAuthTag(sealed.subarray(17, 33));
-  return Buffer.concat([d.update(sealed.subarray(33)), d.final()]);
-}
-
-export const keyVersionOf = (sealed: Buffer) => sealed.readUInt32BE(1);
 
 @Injectable()
 export class FieldCrypto {
   private readonly keys = new Map<string, Map<number, Buffer>>();
   private readonly current = new Map<string, number>();
+  private wrapperCache?: KeyWrapper;
 
   constructor(@Inject(CONTROL_DB) private readonly control: pg.Pool) {}
+
+  private get wrapper() { return (this.wrapperCache ??= keyWrapperFromEnv()); }
 
   /** Provisioning: create the hospital's data key now (idempotent). */
   async ensureKey(tenantId: string) {
@@ -68,11 +46,10 @@ export class FieldCrypto {
   private async currentKey(tenantId: string): Promise<{ version: number; key: Buffer }> {
     let v = this.current.get(tenantId);
     if (v === undefined) {
-      const k = kek();
       const dek = randomBytes(32);
       // version 1 is created once; concurrent first uses converge on the stored one
       await this.control.query(`INSERT INTO tenant_keys (tenant_id, version, wrapped_dek, kek_id) VALUES ($1, 1, $2, $3) ON CONFLICT DO NOTHING`,
-        [tenantId, seal(k.key, dek, `dek:${tenantId}`, 0), k.id]);
+        [tenantId, await this.wrapper.wrap(dek, `dek:${tenantId}`), this.wrapper.id]);
       const { rows } = await this.control.query('SELECT max(version) AS v FROM tenant_keys WHERE tenant_id = $1', [tenantId]);
       v = Number(rows[0].v);
       this.current.set(tenantId, v);
@@ -83,9 +60,9 @@ export class FieldCrypto {
   private async keyVersion(tenantId: string, version: number): Promise<Buffer> {
     const cached = this.keys.get(tenantId)?.get(version);
     if (cached) return cached;
-    const { rows } = await this.control.query('SELECT wrapped_dek FROM tenant_keys WHERE tenant_id = $1 AND version = $2', [tenantId, version]);
+    const { rows } = await this.control.query('SELECT wrapped_dek, kek_id FROM tenant_keys WHERE tenant_id = $1 AND version = $2', [tenantId, version]);
     if (!rows[0]) throw new Error(`no data key v${version} for this hospital`);
-    const dek = open(() => kek().key, rows[0].wrapped_dek, `dek:${tenantId}`);
+    const dek = await this.wrapper.unwrap(rows[0].wrapped_dek, `dek:${tenantId}`, rows[0].kek_id);
     if (!this.keys.has(tenantId)) this.keys.set(tenantId, new Map());
     this.keys.get(tenantId)!.set(version, dek);
     return dek;
@@ -101,5 +78,32 @@ export class FieldCrypto {
     if (!sealed) return null;
     const key = await this.keyVersion(tenantId, keyVersionOf(sealed));
     return open(() => key, sealed, `${tenantId}:${aad}`).toString('utf8');
+  }
+
+  /**
+   * Data key rotation: a new version for this hospital; new writes use it, older ciphertexts keep decrypting with the
+   * version recorded in them (re-encrypting old rows is not needed for confidentiality going forward).
+   */
+  async rotate(tenantId: string) {
+    const dek = randomBytes(32);
+    const { rows: [r] } = await this.control.query(
+      `INSERT INTO tenant_keys (tenant_id, version, wrapped_dek, kek_id) SELECT $1, coalesce(max(version), 0) + 1, $2, $3 FROM tenant_keys WHERE tenant_id = $1 RETURNING version`,
+      [tenantId, await this.wrapper.wrap(dek, `dek:${tenantId}`), this.wrapper.id]);
+    this.current.set(tenantId, r.version);
+    this.keys.get(tenantId)?.set(r.version, dek);
+    return { tenantId, version: r.version as number };
+  }
+
+  /**
+   * KEK rotation: every data key not wrapped by the current master key is re-wrapped with it (the data keys and all
+   * ciphertexts stay the same). Afterwards the old master key can be retired.
+   */
+  async rewrapAll() {
+    const { rows } = await this.control.query('SELECT tenant_id, version, wrapped_dek, kek_id FROM tenant_keys WHERE kek_id <> $1', [this.wrapper.id]);
+    for (const r of rows) {
+      const dek = await this.wrapper.unwrap(r.wrapped_dek, `dek:${r.tenant_id}`, r.kek_id);
+      await this.control.query('UPDATE tenant_keys SET wrapped_dek = $3, kek_id = $4 WHERE tenant_id = $1 AND version = $2', [r.tenant_id, r.version, await this.wrapper.wrap(dek, `dek:${r.tenant_id}`), this.wrapper.id]);
+    }
+    return { rewrapped: rows.length, kek: this.wrapper.id };
   }
 }

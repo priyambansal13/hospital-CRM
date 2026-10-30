@@ -32,7 +32,9 @@
 //   test search                       "chest pain" → cardiologists by next available slot; test synonyms; isolation; fallback
 //   test assistant                    AI assistant: knowledge answers, emergencies without the model, red team, handoff
 //   test gaps                         wave 1 of the flow review (docs/ROLE-FLOWS-AND-GAPS.md): each fix as a user meets it
-//   test wave2 / wave3                waves 2 and 3 of the flow review
+//   test wave2 / wave3 / wave4        waves 2–4 of the flow review
+//   tenant export|purge <slug>        offboarding: export a hospital; destroy a deleted one's data (--confirm <slug>)
+//   keys rotate <slug> | keys rewrap  data key rotation; re-wrap data keys with the current master key / KMS
 //   test console                      platform console: plan builder, two-person approval, impact, move hospitals, audit
 //   k8s render <env>                  write deploy/environments/<env>/{generated.yaml,apps.json} from service/zone metadata
 //   k8s check <env>                   helm lint + render every app + kubeconform schema check (needs helm, docker)
@@ -367,6 +369,23 @@ async function tenant(action, args) {
   } else fail('tenant create|list|export|purge');
 }
 
+/**
+ * Encryption keys (wave 4, KMS) in the services that encrypt (records: clinical text; assistant: chats):
+ *   keys rotate <slug>   new data key version for one hospital (old ciphertexts keep decrypting)
+ *   keys rewrap          re-wrap every data key with the current master key (after changing MC_MASTER_KEY, keeping
+ *                        the old one in MC_MASTER_KEY_PREVIOUS; or after KEY_WRAPPER=gcp-kms)
+ */
+async function keysCmd(action, args) {
+  const f = flags(args);
+  const encrypting = ['records', 'assistant'];
+  if (action === 'rotate') {
+    const t = await tenantBySlug(f._[0] ?? fail('usage: keys rotate <slug>'));
+    for (const svc of encrypting) log(`${svc}: ${JSON.stringify(await api(svcUrl(svc), `/internal/tenants/${t.id}/keys/rotate`, { method: 'POST', body: {} }))}`);
+  } else if (action === 'rewrap') {
+    for (const svc of encrypting) log(`${svc}: ${JSON.stringify(await api(svcUrl(svc), '/internal/keys/rewrap', { method: 'POST', body: {} }))}`);
+  } else fail('keys rotate <slug> | keys rewrap');
+}
+
 async function tenantBySlug(slug) {
   const ts = await api(svcUrl('tenant'), '/internal/tenants');
   return ts.find((x) => x.slug === slug) ?? fail(`no tenant ${slug}`);
@@ -538,6 +557,7 @@ const main = async () => {
     case 'migrate': return migrate();
     case 'gateway': if (sub === 'sync') return gatewaySync(); return fail('gateway sync');
     case 'tenant': return tenant(sub, rest);
+    case 'keys': return keysCmd(sub, rest);
     case 'module': return moduleCmd(sub, rest);
     case 'plan': return planCmd(sub, rest);
     case 'billing': return billingCmd(sub, rest);
