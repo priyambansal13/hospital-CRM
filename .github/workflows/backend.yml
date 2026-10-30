@@ -55,17 +55,20 @@ jobs:
           node platform/scripts/mc.mjs db bootstrap
           node platform/scripts/mc.mjs migrate
           node platform/scripts/mc.mjs gateway sync
-      - name: start services and create two hospitals
+      - name: start services and seed the demo hospitals
         run: |
           for d in backend/services/*-service; do (cd $d && nohup node dist/main.js > /tmp/$(basename $d).log 2>&1 &); done
           sleep 15
-          node platform/scripts/mc.mjs tenant create citycare --name "CityCare Clinic"
-          node platform/scripts/mc.mjs tenant create sunrise --name "Sunrise Diagnostics"
+          node platform/scripts/mc.mjs seed demo
           sleep 10
       - run: cd backend && pnpm test:integration
-      - run: node platform/scripts/mc.mjs test assistant    # before the leak test: it leaves a chat the leak test aims at
-      - run: node platform/scripts/mc.mjs test tenancy
-      - run: node platform/scripts/mc.mjs test race
+      # API suites (review H-6). Order matters: the leak test aims at a chat, an encounter, a lab report and a home visit
+      # that the earlier suites leave behind.
+      - run: |
+          set -e
+          for t in assistant records documents lab results home tenancy race queue payments reminders search plans console billing onboarding gaps wave2 wave3 wave4; do
+            echo "::group::mc test $t"; node platform/scripts/mc.mjs test $t; echo "::endgroup::"
+          done
       - if: failure()
         run: tail -n 200 /tmp/*-service.log
 
