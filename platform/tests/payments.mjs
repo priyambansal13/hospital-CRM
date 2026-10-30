@@ -145,10 +145,18 @@ check(!!(await waitFor(async () => (await appt(desk, taken.id)).paymentStatus ==
 check((await call('POST', `/api/billing/v1/invoices/${counterInv.id}/refunds`, desk, { amount: 100, reason: 'goodwill' }, undefined, idem())).status === 403, 'a receptionist cannot issue refunds (403)');
 const manual = await call('POST', `/api/billing/v1/invoices/${counterInv.id}/refunds`, admin, { amount: 100, reason: 'Goodwill discount' }, undefined, idem());
 check(manual.status === 201, 'admin issues a ₹100 goodwill refund');
+// a counter refund waits for the desk to hand the money back (wave 3), then the invoice changes
+const handBack = async () => {
+  const r = await waitFor(async () => ((await call('GET', '/api/billing/v1/desk/refunds', desk))._body ?? []).find((x) => x.invoice.id === counterInv.id), 30000, 1000);
+  if (r) await call('POST', `/api/billing/v1/refunds/${r.id}/handed-back`, desk, { method: 'CASH' });
+  return r;
+};
+check(!!(await handBack()), 'the ₹100 is listed for the desk to hand back');
 check(!!(await waitFor(async () => (await invoice(admin, counterInv.id))._body.status === 'PARTIALLY_REFUNDED')), 'counter refund processed (cash handed back) → PARTIALLY_REFUNDED');
 const tooMuch = await call('POST', `/api/billing/v1/invoices/${counterInv.id}/refunds`, admin, { amount: 100000, reason: 'oops' }, undefined, idem());
 check(tooMuch.code === 'REFUND_TOO_LARGE', 'refund larger than what is left → 422');
 await call('POST', `/api/scheduling/v1/appointments/${taken.id}/cancel`, B.token, {});
+await handBack();
 const rest = await waitFor(async () => { const i = await invoice(admin, counterInv.id); return i._body.status === 'REFUNDED' && i; });
 check(rest?.amountRefunded === counterInv.total, `cancelling then refunds only what is left (₹${counterInv.total - 100}), no error loop`);
 

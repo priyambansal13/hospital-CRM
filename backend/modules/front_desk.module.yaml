@@ -17,4 +17,6 @@ nav:
 defaultRoleGrants:
   RECEPTIONIST: [appointment:checkin:branch, walkin:create:branch, patient:register:branch]
   NURSE: [appointment:checkin:branch]
+  # the lab books walk-ins for tests (D-3): it finds and registers patients too
+  LAB_TECH: [patient:register:branch]
   BRANCH_ADMIN: [appointment:checkin:branch, walkin:create:branch, patient:register:branch]

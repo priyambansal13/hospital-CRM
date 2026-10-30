@@ -5,7 +5,7 @@ import { Button, Card, Chip, PageHeader, TextArea } from '@mc/ui';
 import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
 import { book } from '@/lib/actions';
-import { age, type Board, branches, type Patient } from '@/lib/desk';
+import { age, type Board, branches, nextDays, type Patient } from '@/lib/desk';
 import { Flash } from '@/lib/flash';
 import { ZONES } from '@/lib/zones';
 
@@ -14,24 +14,29 @@ export const dynamic = 'force-dynamic';
 interface Slot { slotId: string; localTime: string; now: boolean }
 
 /** Book a visit for a patient at the desk: pick the doctor, then a time today or "join the queue now". */
-export default async function DeskBook({ searchParams }: { searchParams: Promise<{ patientId?: string; branch?: string; doctor?: string; ok?: string; error?: string }> }) {
+export default async function DeskBook({ searchParams }: { searchParams: Promise<{ patientId?: string; branch?: string; doctor?: string; date?: string; ok?: string; error?: string }> }) {
   const caps = await zoneCapabilities('desk', '/desk/book');
   const { accessToken: token } = (await getSession())!;
   const sp = await searchParams;
   const patient = sp.patientId ? await api<Patient>(`/api/patient/v1/desk/patients/${encodeURIComponent(sp.patientId)}`, { token }).catch((e) => (e instanceof ApiError && e.status === 404 ? null : Promise.reject(e))) : null;
   if (!patient) notFound();
   const { all, current } = await branches(token, sp.branch, caps, 'walkin:create:branch');
-  const board = current ? await api<Board>(`/api/scheduling/v1/desk/board?branchId=${current.id}`, { token }) : null;
+  // book ahead (E-2): today (walk-in or a time) or a later day (a time only)
+  const days = nextDays(14);
+  const date = days.find((d) => d.date === sp.date && d.date !== days[0].date)?.date;
+  const board = current ? await api<Board>(`/api/scheduling/v1/desk/board?branchId=${current.id}${date ? `&date=${date}` : ''}`, { token }) : null;
   const doctors = board?.doctors ?? [];
   const doctor = doctors.find((d) => d.id === sp.doctor) ?? (doctors.length === 1 ? doctors[0] : undefined);
-  const slots = doctor && current ? await api<Slot[]>(`/api/scheduling/v1/desk/doctors/${doctor.id}/slots?branchId=${current.id}`, { token }) : [];
-  const link = (q: Record<string, string>) => `/desk/book?${new URLSearchParams({ patientId: patient.id, ...(current ? { branch: current.id } : {}), ...q })}`;
+  const slots = doctor && current ? await api<Slot[]>(`/api/scheduling/v1/desk/doctors/${doctor.id}/slots?branchId=${current.id}${date ? `&date=${date}` : ''}`, { token }) : [];
+  const link = (q: Record<string, string>) => `/desk/book?${new URLSearchParams({ patientId: patient.id, ...(current ? { branch: current.id } : {}), ...(date ? { date } : {}), ...q })}`;
+  const dayLabel = days.find((d) => d.date === (date ?? days[0].date))!.label.toLowerCase();
 
   return (
     <ZoneFrame zone="desk" path="/desk/book" zones={ZONES}>
       <PageHeader title={`Book a visit for ${patient.fullName}`} subtitle={`${patient.mrn} · ${age(patient.dob)} years · ${patient.phone ?? 'no mobile'}`} />
       <Flash ok={sp.ok} error={sp.error} />
       {all.length > 1 ? <div className="mc-chips">{all.map((b) => <Chip key={b.id} href={`/desk/book?patientId=${patient.id}&branch=${b.id}`} active={b.id === current?.id}>{b.name}</Chip>)}</div> : null}
+      <div className="mc-chips" aria-label="Day">{days.map((d, i) => <Chip key={d.date} href={`/desk/book?${new URLSearchParams({ patientId: patient.id, ...(current ? { branch: current.id } : {}), ...(sp.doctor ? { doctor: sp.doctor } : {}), ...(i ? { date: d.date } : {}) })}`} active={i ? d.date === date : !date}>{d.label}</Chip>)}</div>
       <Card title="Doctor">
         {doctors.length ? (
           <div className="mc-chips">
@@ -44,7 +49,7 @@ export default async function DeskBook({ searchParams }: { searchParams: Promise
         ) : <p className="mc-muted">No doctors work at this branch.</p>}
       </Card>
       {doctor && current ? (
-        <Card title={`When? (${doctor.name}, today)`}>
+        <Card title={`When? (${doctor.name}, ${dayLabel})`}>
           <form action={book} className="mc-form">
             <input type="hidden" name="idempotencyKey" value={randomUUID()} />
             <input type="hidden" name="patientId" value={patient.id} />
@@ -53,21 +58,23 @@ export default async function DeskBook({ searchParams }: { searchParams: Promise
             <fieldset className="mc-fieldset mc-field-wide">
               <legend>Time</legend>
               <div className="mc-radios">
-                <label className="mc-radio">
-                  <input type="radio" name="pick" value="walkin" defaultChecked={!slots.some((s) => s.now)} required />
-                  <span>Join the queue now <span className="mc-meta">(walk-in, no booked time)</span></span>
-                </label>
+                {!date ? (
+                  <label className="mc-radio">
+                    <input type="radio" name="pick" value="walkin" defaultChecked={!slots.some((s) => s.now)} required />
+                    <span>Join the queue now <span className="mc-meta">(walk-in, no booked time)</span></span>
+                  </label>
+                ) : null}
                 {slots.map((s, i) => (
                   <label key={s.slotId} className="mc-radio">
-                    <input type="radio" name="pick" value={s.slotId} defaultChecked={s.now && i === 0} />
+                    <input type="radio" name="pick" value={s.slotId} defaultChecked={s.now && i === 0} required={!!date} />
                     <span>{s.localTime}{s.now ? <span className="mc-meta"> (now)</span> : null}</span>
                   </label>
                 ))}
               </div>
-              {!slots.length ? <small className="mc-muted">No free times left today: the patient can still join the queue.</small> : null}
+              {!slots.length ? <small className="mc-muted">{date ? 'No free times on this day: try another day.' : 'No free times left today: the patient can still join the queue.'}</small> : null}
             </fieldset>
             <TextArea label="Reason for visit (optional)" name="reason" rows={2} maxLength={500} />
-            <label className="mc-check mc-field-wide"><input type="checkbox" name="checkIn" defaultChecked /> <span>Check in now (patient is here)</span></label>
+            {!date ? <label className="mc-check mc-field-wide"><input type="checkbox" name="checkIn" defaultChecked /> <span>Check in now (patient is here)</span></label> : null}
             <Button>Book</Button>
           </form>
         </Card>

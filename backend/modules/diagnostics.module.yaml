@@ -10,6 +10,7 @@ permissions:
   - { code: lab_order:read:own, description: View own and family members' lab orders }
   - { code: lab_order:create:treating, description: Order lab tests for patients you are treating }
   - { code: lab_order:read:branch, description: See the lab worklist and lab orders }
+  - { code: lab_order:create:branch, description: Book lab tests for a patient at the counter or on the phone }
   - { code: lab_order:cancel:branch, description: Cancel lab orders that have no samples yet }
   - { code: report:read:branch, description: Open and print lab report PDFs }
   - { code: sample:collect:branch, description: Collect, receive and reject samples }
@@ -24,6 +25,7 @@ settings:
   - { key: diagnostics.max_advance_days, name: How far ahead patients can book a test (days), type: int, default: 30, min: 1, max: 90, planBounded: true }
 nav:
   - { key: lab-worklist, label: Worklist, zone: lab, href: /lab, permissions: [lab_order:read:branch], audience: staff }
+  - { key: lab-book, label: Book tests, zone: lab, href: /lab/book, permissions: [lab_order:create:branch], audience: staff }
   - { key: book-tests, label: Lab tests, zone: patient, href: /care/tests, permissions: [lab_order:create:own], audience: patient }
   - { key: my-lab-orders, label: My lab tests, zone: patient, href: /care/lab-orders, permissions: [lab_order:read:own], audience: patient }
   - { key: lab-pending, label: Pending results, zone: lab, href: /lab/pending, permissions: [result:enter:branch], audience: staff }
@@ -33,8 +35,8 @@ nav:
 defaultRoleGrants:
   PATIENT: [lab_order:create:own, lab_order:read:own]
   DOCTOR: [lab_order:create:treating, lab_order:read:treating]
-  LAB_TECH: [lab_order:read:branch, lab_order:cancel:branch, sample:collect:branch, result:enter:branch, report:read:branch]
+  LAB_TECH: [lab_order:read:branch, lab_order:create:branch, lab_order:cancel:branch, sample:collect:branch, result:enter:branch, report:read:branch]
   PATHOLOGIST: [lab_order:read:branch, result:enter:branch, report:verify:branch, report:read:branch]
-  RECEPTIONIST: [lab_order:read:branch]
+  RECEPTIONIST: [lab_order:read:branch, lab_order:create:branch]
   # prices are hospital-wide: the hospital admin sets them (review B-4)
-  BRANCH_ADMIN: [lab_order:read:branch, lab_order:cancel:branch, report:read:branch, critical:escalation:branch]
+  BRANCH_ADMIN: [lab_order:read:branch, lab_order:create:branch, lab_order:cancel:branch, report:read:branch, critical:escalation:branch]

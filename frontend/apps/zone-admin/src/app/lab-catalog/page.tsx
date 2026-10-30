@@ -22,7 +22,7 @@ export default async function LabCatalog({ searchParams }: { searchParams: Promi
       <Flash {...await searchParams} />
       <Card title="Packages">
         <Table rows={cat.packages} empty="No packages." columns={[
-          { header: 'Package', cell: (p) => <>{p.name}<br /><span className="mc-meta">{p.tests.length} tests · worth ₹{p.worth}</span></> },
+          { header: 'Package', cell: (p) => <><a href={`/admin/lab-catalog/package/${p.id}`}>{p.name}</a><br /><span className="mc-meta">{p.tests.length} tests · worth ₹{p.worth}</span></> },
           { header: 'Price and availability', cell: (p) => (
             <form action={savePackage} className="mc-inline" aria-label={`Edit ${p.name}`}>
               <input type="hidden" name="id" value={p.id} /><input type="hidden" name="name" value={p.name} />
@@ -36,7 +36,7 @@ export default async function LabCatalog({ searchParams }: { searchParams: Promi
       </Card>
       <Card title={`Tests (${cat.tests.length})`}>
         <Table rows={cat.tests} empty="No tests." columns={[
-          { header: 'Test', cell: (t) => <>{t.name}<br /><span className="mc-meta">{t.code} · {t.category} · {t.sampleType.toLowerCase()} · ~{t.turnaroundHours} h</span></> },
+          { header: 'Test', cell: (t) => <><a href={`/admin/lab-catalog/test/${t.id}`}>{t.name}</a><br /><span className="mc-meta">{t.code} · {t.category} · {t.sampleType.toLowerCase()} · ~{t.turnaroundHours} h</span></> },
           { header: 'Price, preparation, availability', cell: (t) => (
             <form action={saveTest} className="mc-inline" aria-label={`Edit ${t.name}`}>
               <input type="hidden" name="id" value={t.id} /><input type="hidden" name="name" value={t.name} />

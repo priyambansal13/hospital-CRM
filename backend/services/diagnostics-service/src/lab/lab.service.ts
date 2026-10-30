@@ -34,6 +34,11 @@ export function preparationFor(tests: { preparation: string | null; fasting_hour
   return parts.length ? parts.join('. ') : null;
 }
 
+/** Staff booking lab tests for a patient (D-3). */
+export const STAFF_BOOK = 'lab_order:create:branch';
+/** staff may book the collection time that started up to this long ago (the patient is at the counter) */
+const STAFF_LEAD_MINUTES = -30;
+
 @Injectable()
 export class LabService {
   constructor(
@@ -109,7 +114,8 @@ export class LabService {
   }
 
   /** Free collection times at a branch on a date (local), with how many places are left (lab visits or home visits). */
-  async slots(branchId: string, date: string, kind: Kind = 'LAB') {
+  /** `leadMinutes`: how soon a time may be; staff booking a patient who is at the counter use the slot running now. */
+  async slots(branchId: string, date: string, kind: Kind = 'LAB', leadMinutes?: number) {
     const c = await this.db.current();
     const { rows: [b] } = await c.query('SELECT * FROM branches WHERE id = $1 AND active', [branchId]);
     if (!b) throw notFound('branch');
@@ -121,7 +127,7 @@ export class LabService {
        SELECT to_char(local_ts, 'HH24:MI') AS local_time, (local_ts AT TIME ZONE $3) AS slot_at, capacity,
               (SELECT count(*) FROM lab_orders o WHERE o.branch_id = $1 AND o.collection_type = $6 AND o.slot_at = (local_ts AT TIME ZONE $3) AND o.status IN ${OCCUPYING})::int AS taken
        FROM win WHERE (local_ts AT TIME ZONE $3) > now() + make_interval(mins => $4) ORDER BY local_ts`,
-      [branchId, date, b.timezone, kind === 'HOME' ? LAB_POLICY.minHomeLeadMinutes : LAB_POLICY.minLeadMinutes, kind, kind === 'HOME' ? 'HOME' : 'AT_LAB']);
+      [branchId, date, b.timezone, leadMinutes ?? (kind === 'HOME' ? LAB_POLICY.minHomeLeadMinutes : LAB_POLICY.minLeadMinutes), kind, kind === 'HOME' ? 'HOME' : 'AT_LAB']);
     return { branch: { id: b.id, name: b.name }, date, slots: rows.map((r) => ({ slotAt: r.slot_at, localTime: r.local_time, left: Math.max(0, r.capacity - r.taken) })) };
   }
 
@@ -180,7 +186,7 @@ export class LabService {
    * the pincode decides the branch, every test must be one that can be collected at home, the visit fee is added
    * once, and the visit is (re)created unassigned.
    */
-  private async schedule(c: Queryable, actor: Actor, orderId: string, collection: Collection, slotAt: string, paymentMode: 'ONLINE' | 'AT_CLINIC') {
+  private async schedule(c: Queryable, actor: Actor, orderId: string, collection: Collection, slotAt: string, paymentMode: 'ONLINE' | 'AT_CLINIC', opts: { leadMinutes?: number } = {}) {
     const home = collection.type === 'HOME' ? collection : null;
     const { rows: [visit] } = await c.query('SELECT * FROM home_visits WHERE order_id = $1', [orderId]);
     if (visit && !home) throw conflict('HOME_ORDER', 'this order is collected at home; pick another home visit time (or cancel it)');
@@ -201,7 +207,7 @@ export class LabService {
     const { rows: [b] } = await c.query('SELECT * FROM branches WHERE id = $1 AND active', [branchId]);
     if (!b) throw notFound('branch');
     const slot = new Date(slotAt);
-    const lead = home ? LAB_POLICY.minHomeLeadMinutes : LAB_POLICY.minLeadMinutes;
+    const lead = opts.leadMinutes ?? (home ? LAB_POLICY.minHomeLeadMinutes : LAB_POLICY.minLeadMinutes);
     if (slot.getTime() < Date.now() + lead * 60_000) throw new DomainError(422, 'SLOT_TOO_SOON', 'pick a later time');
     // the hospital's setting, within its plan's bounds (default 30 days)
     const maxDays = await this.entitlements.setting(this.tid(), 'diagnostics.max_advance_days', LAB_POLICY.maxAdvanceDays);
@@ -279,6 +285,52 @@ export class LabService {
       return orderId;
     });
     return this.afterBooking(actor, id);
+  }
+
+  /**
+   * Staff book tests for a patient at the counter or on the phone (D-3): paper orders, walk-ins, patients without the
+   * app. Pay at the lab; the slot running now can be used for a patient who is here.
+   */
+  async bookByStaff(actor: Actor, v: { patientId: string; branchId: string; slotAt: string; items: ItemRef[] }) {
+    if (actor.kind !== 'staff') throw forbidden('STAFF_ONLY', 'staff only');
+    await this.atBranch(actor, STAFF_BOOK, v.branchId, 'branch');
+    const p = await this.patients.get(v.patientId);
+    const id = await this.db.tx(async (c) => {
+      const x = await this.expand(c, v.items);
+      const orderId = await this.insertOrder(c, p, { status: 'BOOKED', bookedBy: actor.id }, x);
+      await this.schedule(c, actor, orderId, { type: 'AT_LAB', branchId: v.branchId }, v.slotAt, 'AT_CLINIC', { leadMinutes: STAFF_LEAD_MINUTES });
+      const o = await this.row(c, orderId);
+      await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: actor.email ?? null, action: 'CREATE', resourceType: 'LAB_ORDER', resourceId: orderId, patientId: p.id, purpose: 'TREATMENT' });
+      await this.emit(c, EventTypes.labOrderBooked, o);
+      return orderId;
+    });
+    return this.dto(await this.db.current(), await this.row(await this.db.current(), id));
+  }
+
+  /** Staff give a time to tests a doctor ordered (AWAITING_BOOKING) or a rejected sample, for the patient (D-3). */
+  async scheduleByStaff(actor: Actor, orderId: string, v: { branchId: string; slotAt: string }) {
+    if (actor.kind !== 'staff') throw forbidden('STAFF_ONLY', 'staff only');
+    await this.atBranch(actor, STAFF_BOOK, v.branchId, 'branch');
+    await this.db.tx(async (c) => {
+      const o = await this.row(c, orderId, true);
+      if (!o) throw notFound('lab order');
+      if (!['AWAITING_BOOKING', 'SAMPLE_REJECTED'].includes(o.status)) throw conflict('ALREADY_BOOKED', `this order is ${o.status.toLowerCase().replace('_', ' ')}`);
+      await this.schedule(c, actor, orderId, { type: 'AT_LAB', branchId: v.branchId }, v.slotAt, 'AT_CLINIC', { leadMinutes: STAFF_LEAD_MINUTES });
+      await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: actor.email ?? null, action: 'UPDATE', resourceType: 'LAB_ORDER', resourceId: orderId, patientId: o.patient_id, purpose: 'TREATMENT', changes: ['scheduled'] });
+      await this.emit(c, EventTypes.labOrderBooked, await this.row(c, orderId));
+    });
+    const c = await this.db.current();
+    return this.dto(c, await this.row(c, orderId));
+  }
+
+  /** A patient's lab orders still waiting for a time (doctor-ordered, missed home visit, rejected sample): the desk books them. */
+  async waitingForTime(actor: Actor, patientId: string) {
+    await this.patients.get(patientId); // a patient of this hospital (404 otherwise)
+    const c = await this.db.current();
+    const { rows } = await c.query(`SELECT o.*, b.name AS branch_name, b.timezone FROM lab_orders o LEFT JOIN branches b ON b.id = o.branch_id
+      WHERE o.patient_id = $1 AND o.status IN ('AWAITING_BOOKING','SAMPLE_REJECTED') ORDER BY o.created_at DESC LIMIT 20`, [patientId]);
+    if (rows.length) await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: actor.email ?? null, action: 'READ', resourceType: 'LAB_ORDER', patientId, purpose: 'TREATMENT' });
+    return Promise.all(rows.map((o) => this.dto(c, o)));
   }
 
   /** The patient picks a time for tests their doctor ordered, or a new home visit after a missed one. */

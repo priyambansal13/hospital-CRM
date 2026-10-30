@@ -234,8 +234,14 @@ export class AppointmentsService {
   /** Move to another slot of the same doctor: new appointment row linked to the old one (docs/LLD.md §4.1). */
   async reschedule(actor: Actor, id: string, newSlotId: string) {
     const pool = await this.db.current();
-    const { row: a } = await this.assertAccess(pool, actor, id, 'appointment:cancel:branch');
+    const { row: a, as } = await this.assertAccess(pool, actor, id, 'appointment:cancel:branch');
     if (a.status !== 'CONFIRMED') throw conflict('INVALID_STATE_TRANSITION', `a ${a.status.toLowerCase()} appointment cannot be rescheduled`);
+    if (as === 'staff') {
+      // the desk moves a booking only to a branch it works at (review B-1, E-1)
+      const { rows: [ns] } = await pool.query('SELECT branch_id FROM slots WHERE id = $1', [newSlotId]);
+      const caps = await this.entitlements.capabilities(TenantContext.require().id, actor);
+      if (ns && !inBranch(caps, 'appointment:cancel:branch', ns.branch_id)) throw new DomainError(403, 'OUTSIDE_BRANCH', 'that time is at a branch you do not work at');
+    }
     if (a.reschedule_count >= POLICY.maxReschedules) throw new DomainError(422, 'RESCHEDULE_LIMIT_REACHED', `an appointment can be rescheduled at most ${POLICY.maxReschedules} times`);
     const cutoff = await this.cutoffHours();
     if (actor.kind === 'patient' && new Date(a.starts_at).getTime() - Date.now() < cutoff * 3600_000) {
@@ -446,7 +452,7 @@ export class AppointmentsService {
       patientName: a.patient_name, patientMrn: a.patient_mrn, doctorName: a.doctor_name, branchName: a.branch_name, localDate: a.local_date, localTime: a.local_time,
       mode: a.mode, fee: a.fee == null ? null : Number(a.fee), rescheduledFrom: a.rescheduled_from,
       tokenNo: a.token_no ?? null, source: a.source,
-      paymentMode: a.payment_mode, paymentStatus: a.payment_status, invoiceId: a.invoice_id ?? null,
+      paymentMode: a.payment_mode, paymentStatus: a.payment_status, invoiceId: a.invoice_id ?? null, doctorUserId: a.doctor_user_id ?? null,
       ...extra,
     };
     await addToOutbox(c, Topics.scheduling, a.id, envelope(type, data, { tenantId: TenantContext.require().id, subject: a.id }));

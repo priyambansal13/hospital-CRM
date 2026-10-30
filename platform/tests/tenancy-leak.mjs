@@ -135,6 +135,8 @@ const main = async () => {
   const verifyCode = psql(`SELECT verify_code FROM diagnostics.lab_reports ORDER BY verified_at LIMIT 1`);
   if (!reportOrderId || !alertId) throw new Error('fixture setup failed: no lab report / critical alert in citycare yet — run `mc test results` once');
   const visitId = psql(`SELECT id FROM diagnostics.home_visits ORDER BY updated_at LIMIT 1`);
+  // any refund of this hospital (the other hospital must not find it); a random id if there is none yet
+  const refundId = psql(`SELECT id FROM billing.refunds ORDER BY created_at LIMIT 1`) || crypto.randomUUID();
   const phlebId = psql(`SELECT user_id FROM diagnostics.phlebotomists ORDER BY created_at LIMIT 1`);
   // platform console (only MediCare HQ may use it): a real plan version and citycare's own id
   const controlPsql = (sql) => execFileSync('docker', ['compose', '--env-file', join(PLATFORM, '.env'), '-f', join(PLATFORM, 'infra/docker-compose.yml'), 'exec', '-T', 'postgres', 'psql', '-qAt', '-U', 'postgres', '-d', 'mc_control', '-c', sql], { encoding: 'utf8' }).trim();
@@ -208,6 +210,11 @@ const main = async () => {
     'records:GET /v1/patients/:patientId/timeline': { patientId: encounter.patientId },
     'patient:DELETE /v1/me/consents/:consentId': { consentId },
     'diagnostics:GET /v1/lab-orders/:id': { id: labOrderId },
+    // wave 3: staff booking (D-3), dispatcher (D-10), cash hand-back
+    'diagnostics:POST /v1/desk/lab-orders/:id/schedule': { id: labOrderId, body: { branchId: branch.id, slotAt: new Date(Date.now() + 86_400_000).toISOString() } },
+    'diagnostics:GET /v1/desk/patients/:patientId/lab-orders/waiting': { patientId: selfP.id },
+    'diagnostics:POST /v1/lab/home-visits/:id/missed': { id: visitId, body: { reason: 'leak test' } },
+    'billing:POST /v1/refunds/:id/handed-back': { id: refundId, body: {} },
     'diagnostics:POST /v1/lab-orders/:id/cancel': { id: labOrderId, body: {} },
     'diagnostics:POST /v1/lab-orders/:id/schedule': { id: labOrderId, body: { branchId: branch.id, slotAt: new Date(Date.now() + 86_400_000).toISOString() } },
     'diagnostics:PATCH /v1/admin/lab-tests/:id': { id: labTestId, body: { price: 1 } },

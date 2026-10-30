@@ -176,8 +176,17 @@ export const AppointmentChanged = z.object({
   invoiceId: z.uuid().nullable().optional(),
   /** set on cancellation: share of what was paid that goes back (cancellation policy, decided by scheduling) */
   refundPercent: z.number().int().min(0).max(100).nullable().optional(),
+  /** the doctor's login (same-day changes are e-mailed to them) */
+  doctorUserId: z.uuid().nullable().optional(),
 });
 export type AppointmentChanged = z.infer<typeof AppointmentChanged>;
+
+/** A doctor's list for the day, sent each morning (scheduling-service AgendaJob → notification e-mail). */
+export const DoctorAgenda = z.object({
+  doctorId: z.uuid(), doctorUserId: z.uuid(), doctorName: z.string(), date: z.string(),
+  items: z.array(z.object({ time: z.string(), patientName: z.string(), appointmentNo: z.string(), branchName: z.string(), mode: z.string() })),
+});
+export type DoctorAgenda = z.infer<typeof DoctorAgenda>;
 
 export const WaitlistSlotAvailable = z.object({ waitlistId: z.uuid(), patientId: z.uuid(), accountPersonId: z.uuid(), doctorId: z.uuid(), date: z.string(), slotId: z.uuid() });
 export type WaitlistSlotAvailable = z.infer<typeof WaitlistSlotAvailable>;
@@ -208,6 +217,8 @@ export type PaymentUnapplied = z.infer<typeof PaymentUnapplied>;
 export const PrescriptionIssued = z.object({
   prescriptionId: z.uuid(), prescriptionNo: z.string(), encounterId: z.uuid(), patientId: z.uuid(), accountPersonId: z.uuid(),
   patientName: z.string(), doctorId: z.uuid(), doctorName: z.string(), itemCount: z.number().int(),
+  /** the doctor wants to see the patient again on this date (a reminder goes out the day before) */
+  followUpOn: z.iso.date().nullable().optional(),
 });
 export type PrescriptionIssued = z.infer<typeof PrescriptionIssued>;
 
@@ -307,6 +318,7 @@ export const EventTypes = {
   appointmentNoShow: 'scheduling.appointment_no_show',
   appointmentPendingPayment: 'scheduling.appointment_pending_payment',
   appointmentExpired: 'scheduling.appointment_expired',
+  doctorAgenda: 'scheduling.doctor_agenda',
   paymentUnapplied: 'scheduling.payment_unapplied',
   paymentSucceeded: 'billing.payment_succeeded',
   refundProcessed: 'billing.refund_processed',

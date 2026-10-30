@@ -13,7 +13,9 @@ const RELATIONS = [['SELF', 'Phone owner (self)'], ['CHILD', 'Child'], ['SPOUSE'
 
 /** Find a patient by phone, MRN or name; register a walk-in if they are new. */
 export default async function DeskPatients({ searchParams }: { searchParams: Promise<{ q?: string; branch?: string; ok?: string; error?: string; highlight?: string }> }) {
-  await zoneCapabilities('desk', '/desk/patients');
+  const caps = await zoneCapabilities('desk', '/desk/patients');
+  // the lab's booking page (D-3), when the hospital has the lab and the person may book tests
+  const labBooking = caps.permissions.includes('lab_order:create:branch') && caps.modules.includes('diagnostics');
   const { accessToken: token } = (await getSession())!;
   const sp = await searchParams;
   const q = sp.q?.trim() ?? '';
@@ -54,7 +56,10 @@ export default async function DeskPatients({ searchParams }: { searchParams: Pro
               { header: 'Age', cell: (p) => `${age(p.dob)} y${p.gender ? ` · ${p.gender[0]}` : ''}` },
               { header: 'Mobile', cell: (p) => p.phone ?? '—' },
               { header: 'Relation', cell: (p) => (p.isSelf ? 'owner' : `${p.relation.toLowerCase()} of ${p.guardianName ?? '—'}`) },
-              { header: '', cell: (p) => <a className="mc-btn mc-btn-primary" href={`/desk/book?patientId=${p.id}${branch ? `&branch=${branch}` : ''}`} aria-label={`Book visit for ${p.fullName}`}>Book visit</a> },
+              { header: '', cell: (p) => <span className="mc-inline">
+                <a className="mc-btn mc-btn-primary" href={`/desk/book?patientId=${p.id}${branch ? `&branch=${branch}` : ''}`} aria-label={`Book visit for ${p.fullName}`}>Book visit</a>
+                {labBooking ? <a className="mc-btn mc-btn-ghost" href={`/lab/book?patientId=${p.id}`} aria-label={`Book lab tests for ${p.fullName}`}>Lab tests</a> : null}
+              </span> },
             ]}
           />
         </Card>

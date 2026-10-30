@@ -72,6 +72,14 @@ export class HomeDispatchController {
   assign(@Param('id') v: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
     return this.home.assign(actor, id(v, 'home visit'), parse(z.object({ phlebotomistId: z.uuid() }), body).phlebotomistId);
   }
+
+  /** The visit cannot happen: the patient is asked to pick a new time (D-10). */
+  @Post(':id/missed')
+  @HttpCode(200)
+  @RequirePermission('home_visit:assign:branch')
+  missed(@Param('id') v: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
+    return this.home.missByDispatcher(actor, id(v, 'home visit'), parse(z.object({ reason: z.string().trim().min(3).max(200) }), body).reason);
+  }
 }
 
 /** The phlebotomist's own visits. */

@@ -35,18 +35,22 @@ export class DeskController {
     return this.queue.board(branch, parse(Day, date));
   }
 
-  /** A doctor's open slots for the rest of today at a branch (including the one running now). */
+  /**
+   * A doctor's open slots at a branch on a day: today (the rest of it, including the slot running now) or a later date
+   * for booking ahead and moving bookings (E-1, E-2).
+   */
   @Get('doctors/:doctorId/slots')
   @RequirePermission('walkin:create:branch')
-  async todaySlots(@Param('doctorId') doctorId: string, @Query('branchId') branchId: string) { // branch checked by the guard (query)
+  async todaySlots(@Param('doctorId') doctorId: string, @Query('branchId') branchId: string, @Query('date') date?: string) { // branch checked by the guard (query)
+    const day = parse(Day, date) ?? null;
     const { rowCount } = await this.db.query('SELECT 1 FROM doctors WHERE id = $1 AND $2 = ANY(branch_ids)', [id(doctorId, 'doctor'), id(branchId, 'branch')]);
     if (!rowCount) throw notFound('doctor');
     const { rows } = await this.db.query(
       `SELECT s.id, s.starts_at, s.mode, to_char(s.starts_at AT TIME ZONE b.timezone, 'HH24:MI') local_time
        FROM slots s JOIN branches b ON b.id = s.branch_id
        WHERE s.doctor_id = $1 AND s.branch_id = $2 AND s.status = 'OPEN' AND s.mode = 'IN_PERSON' AND s.ends_at > now()
-         AND (s.starts_at AT TIME ZONE b.timezone)::date = (now() AT TIME ZONE b.timezone)::date
-       ORDER BY s.starts_at`, [id(doctorId, 'doctor'), id(branchId, 'branch')]);
+         AND (s.starts_at AT TIME ZONE b.timezone)::date = coalesce($3::date, (now() AT TIME ZONE b.timezone)::date)
+       ORDER BY s.starts_at`, [id(doctorId, 'doctor'), id(branchId, 'branch'), day]);
     return rows.map((r) => ({ slotId: r.id, startsAt: r.starts_at, localTime: r.local_time, mode: r.mode, now: new Date(r.starts_at).getTime() <= Date.now() }));
   }
 

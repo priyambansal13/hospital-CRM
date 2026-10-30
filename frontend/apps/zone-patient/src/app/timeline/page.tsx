@@ -18,7 +18,7 @@ const day = (iso: string) => new Intl.DateTimeFormat('en-IN', { day: 'numeric', 
 const KIND: Record<string, string> = { APPOINTMENT: 'Appointment', ENCOUNTER: 'Visit', PRESCRIPTION: 'Prescription', DOCUMENT: 'Document', REPORT: 'Report', LAB_ORDER: 'Lab test' };
 
 /** One place for a patient's health story: allergies, their documents, and the timeline of visits and results. */
-export default async function Timeline({ searchParams }: { searchParams: Promise<{ patientId?: string; ok?: string; error?: string }> }) {
+export default async function Timeline({ searchParams }: { searchParams: Promise<{ patientId?: string; beforeAt?: string; beforeId?: string; ok?: string; error?: string }> }) {
   const caps = await zoneCapabilities('patient', '/care/timeline');
   if (caps.actor.kind !== 'patient') return <ZoneFrame zone="patient" path="/care/timeline" zones={ZONES}><Alert tone="error">This page is for patients.</Alert></ZoneFrame>;
   const { accessToken: token } = (await getSession())!;
@@ -27,7 +27,8 @@ export default async function Timeline({ searchParams }: { searchParams: Promise
   const p = family.find((x) => x.id === sp.patientId) ?? family.find((x) => x.isSelf) ?? family[0];
   if (!p) return <ZoneFrame zone="patient" path="/care/timeline" zones={ZONES}><Card><p>Complete <a href="/care/profile">your profile</a> first.</p></Card></ZoneFrame>;
   const [tl, docs, allergies] = await Promise.all([
-    api<{ items: Item[] }>(`/api/records/v1/patients/${p.id}/timeline`, { token }),
+    // E-7: older entries, 30 at a time
+    api<{ items: Item[]; next: { at: string; id: string } | null }>(`/api/records/v1/patients/${p.id}/timeline${sp.beforeAt && sp.beforeId ? `?${new URLSearchParams({ beforeAt: sp.beforeAt, beforeId: sp.beforeId })}` : ''}`, { token }),
     api<Doc[]>(`/api/records/v1/patients/${p.id}/documents`, { token }),
     api<Allergy[]>(`/api/patient/v1/me/patients/${p.id}/allergies`, { token }),
   ]);
@@ -91,13 +92,20 @@ export default async function Timeline({ searchParams }: { searchParams: Promise
                   {i.kind === 'DOCUMENT' ? ` · ${i.summary.by === 'staff' ? 'added by the hospital' : 'uploaded by you'}` : ''}
                 </span>
               </div>
-              {i.kind === 'DOCUMENT' ? <a className="mc-btn mc-btn-ghost" href={`/care/documents/${i.refId}/download`}>Download</a>
+              {i.kind === 'DOCUMENT' ? <span className="mc-inline">
+                  <a className="mc-btn mc-btn-ghost" href={`/care/documents/${i.refId}/download`}>Download</a>
+                  {i.summary.by !== 'staff' ? <form action={removeDocument} className="mc-inline"><input type="hidden" name="patientId" value={p.id} /><input type="hidden" name="documentId" value={i.refId} /><Button variant="ghost">Remove</Button></form> : null}
+                </span>
                 : i.kind === 'PRESCRIPTION' ? <a className="mc-btn mc-btn-ghost" href={`/care/prescriptions/${i.refId}/pdf`}>PDF</a> : <span />}
             </li>
           ))}
         </ul>
       ) : <p className="mc-empty">Nothing yet.</p>}
-      <p className="mc-meta" style={{ marginTop: 16 }}><a href={path}>Refresh</a></p>
+      <p className="mc-meta" style={{ marginTop: 16 }}>
+        {tl.next ? <><a href={`/care/timeline?${new URLSearchParams({ patientId: p.id, beforeAt: tl.next.at, beforeId: tl.next.id })}`}>Older entries</a> · </> : null}
+        {sp.beforeAt ? <><a href={`/care/timeline?patientId=${p.id}`}>Newest</a> · </> : null}
+        <a href={path}>Refresh</a>
+      </p>
     </ZoneFrame>
   );
 }

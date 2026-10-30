@@ -4,12 +4,12 @@ export interface HomeAddress { line1: string; line2: string | null; landmark: st
 export interface HomeVisit {
   id: string; status: string; orderId: string; orderNo: string; orderStatus: string; paymentStatus: string; total: number;
   slotAt: string; localTime: string; localDate: string; branch: { id: string; name: string }; patient: { id: string; name: string; mrn: string; gender: string | null };
-  address: HomeAddress | null; phlebotomist: { id: string; name: string } | null; attempts: number; missedReason: string | null;
+  address: HomeAddress | null; phlebotomist: { id: string; name: string } | null; attempts: number; missedReason: string | null; overdue?: boolean;
   order?: LabOrder; log?: { status: string; by: string | null; note: string | null; at: string }[];
 }
 export interface Board {
   branch: { id: string; name: string }; date: string; visits: HomeVisit[];
-  totals: { unassigned: number; assigned: number; out: number; collected: number; missed: number };
+  totals: { overdue?: number; unassigned: number; assigned: number; out: number; collected: number; missed: number };
   phlebotomists: { id: string; name: string; visits: number }[];
 }
 export const VISIT: Record<string, { label: string; tone: 'neutral' | 'success' | 'warning' | 'danger' }> = {

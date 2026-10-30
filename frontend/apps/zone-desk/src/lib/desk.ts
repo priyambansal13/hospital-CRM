@@ -7,7 +7,7 @@ export interface Appt {
   id: string; appointmentNo: string; status: string; tokenNo: number | null; source: string; mode: string;
   patient: { id: string; name: string; mrn: string }; doctor: { id: string; name: string }; branch: { id: string; name: string };
   localDate: string; localTime: string; startsAt: string; reason: string | null; checkedInAt: string | null;
-  fee: number | null; paymentMode: string; paymentStatus: string;
+  fee: number | null; paymentMode: string; paymentStatus: string; invoiceId: string | null; rescheduleCount?: number;
 }
 export interface Board {
   branch: { id: string; name: string }; date: string;
@@ -51,4 +51,15 @@ export interface TriageSummary { priority: 'ROUTINE' | 'URGENT' | 'EMERGENCY'; r
 export async function triageSummary(token: string, caps: Capabilities, ids: string[]): Promise<Record<string, TriageSummary>> {
   if (!ids.length || !caps.modules.includes('emr') || !caps.permissions.includes('vitals:record:branch')) return {};
   return api<Record<string, TriageSummary>>(`/api/records/v1/triage-summary?appointmentIds=${ids.join(',')}`, { token }).catch(() => ({}));
+}
+
+/** Today and the next days, in India time (the desk's date chips). */
+export function nextDays(n = 7) {
+  const out: { date: string; label: string }[] = [];
+  for (let i = 0; i < n; i++) {
+    const d = new Date(Date.now() + i * 86_400_000);
+    const date = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(d);
+    out.push({ date, label: i === 0 ? 'Today' : i === 1 ? 'Tomorrow' : new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' }).format(d) });
+  }
+  return out;
 }

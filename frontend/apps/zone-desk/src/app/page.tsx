@@ -5,7 +5,7 @@ import { Badge, Button, Card, Chip, PageHeader, Table } from '@mc/ui';
 import { randomUUID } from 'node:crypto';
 import { LiveRefresh } from '@mc/ui/live';
 import { cancel, checkIn, collectPayment, noShow } from '@/lib/actions';
-import { type Appt, type Board, branches, chatSummary, STATUS, triageSummary } from '@/lib/desk';
+import { type Appt, type Board, branches, chatSummary, nextDays, STATUS, triageSummary } from '@/lib/desk';
 import { ChatAlert } from '@/lib/chat-alert';
 import { Flash } from '@/lib/flash';
 import { ZONES } from '@/lib/zones';
@@ -23,13 +23,17 @@ function Act({ action, id, label, back, variant = 'ghost' }: { action: (f: FormD
 }
 
 /** Today at one branch: every doctor's patients, check-in with token numbers, live as things change. */
-export default async function DeskBoard({ searchParams }: { searchParams: Promise<{ branch?: string; ok?: string; error?: string }> }) {
+export default async function DeskBoard({ searchParams }: { searchParams: Promise<{ branch?: string; date?: string; ok?: string; error?: string }> }) {
   const caps = await zoneCapabilities('desk', '/desk');
   const { accessToken: token } = (await getSession())!;
   const sp = await searchParams;
   const { all, current } = await branches(token, sp.branch, caps);
-  const board = current ? await api<Board>(`/api/scheduling/v1/desk/board?branchId=${current.id}`, { token }) : null;
-  const back = current ? `/desk?branch=${current.id}` : '/desk';
+  // other days to see what is booked ahead (E-2); actions that need the patient here are for today only
+  const days = nextDays(7);
+  const date = days.find((d) => d.date === sp.date && d.date !== days[0].date)?.date;
+  const isToday = !date;
+  const board = current ? await api<Board>(`/api/scheduling/v1/desk/board?branchId=${current.id}${date ? `&date=${date}` : ''}`, { token }) : null;
+  const back = current ? `/desk?branch=${current.id}${date ? `&date=${date}` : ''}` : '/desk';
   const chats = await chatSummary(token, caps);
   // nurses: vitals and triage for patients waiting (checked in)
   const canTriage = can(caps, 'vitals:record:branch') && caps.modules.includes('emr');
@@ -40,7 +44,7 @@ export default async function DeskBoard({ searchParams }: { searchParams: Promis
   const canCollect = can(caps, 'payment:collect:branch');
   const payment = (a: Appt) => {
     if (!a.fee || a.paymentStatus === 'NOT_DUE') return <span className="mc-muted">—</span>;
-    if (a.paymentStatus === 'PAID') return <Badge tone="success">{a.paymentMode === 'ONLINE' ? 'paid online' : 'paid'}</Badge>;
+    if (a.paymentStatus === 'PAID') return <span className="mc-inline"><Badge tone="success">{a.paymentMode === 'ONLINE' ? 'paid online' : 'paid'}</Badge>{a.invoiceId ? <a href={`/desk/receipt/${a.invoiceId}`} target="_blank" rel="noreferrer">Receipt</a> : null}</span>;
     if (a.paymentStatus !== 'UNPAID') return <Badge>{a.paymentStatus.toLowerCase().replace('_', ' ')}</Badge>;
     if (!canCollect || ['CANCELLED', 'NO_SHOW'].includes(a.status)) return <span>₹{a.fee} due</span>;
     return (
@@ -66,12 +70,14 @@ export default async function DeskBoard({ searchParams }: { searchParams: Promis
         subtitle={board ? `${board.branch.name} · ${fmtDay(board.date)}` : undefined}
         actions={<>
           {current ? <LiveRefresh src={`/desk/live?branchId=${current.id}`} /> : null}
+          {canCollect ? <a className="mc-btn mc-btn-ghost" href="/desk/collections">Collections</a> : null}
           {canBook && can(caps, 'patient:register:branch') ? <a className="mc-btn mc-btn-primary" href={`/desk/patients${current ? `?branch=${current.id}` : ''}`}>New walk-in</a> : null}
         </>}
       />
       <Flash ok={sp.ok} error={sp.error} />
       {chats ? <ChatAlert initial={chats} /> : null}
       {all.length > 1 ? <div className="mc-chips">{all.map((b) => <Chip key={b.id} href={`/desk?branch=${b.id}`} active={b.id === current?.id}>{b.name}</Chip>)}</div> : null}
+      <div className="mc-chips" aria-label="Day">{days.map((d, i) => <Chip key={d.date} href={`/desk?${new URLSearchParams({ ...(current ? { branch: current.id } : {}), ...(i ? { date: d.date } : {}) })}`} active={i ? d.date === date : isToday}>{d.label}</Chip>)}</div>
       {!board ? <Card><p className="mc-muted">No active branches yet.</p></Card> : (
         <>
           <div className="mc-grid">
@@ -93,10 +99,12 @@ export default async function DeskBoard({ searchParams }: { searchParams: Promis
                   {
                     header: '', cell: (a) => (
                       <span className="mc-inline">
-                        {a.status === 'CONFIRMED' && a.mode !== 'VIDEO' ? <Act action={checkIn} id={a.id} back={back} label="Check in" variant="primary" /> : null}
+                        {isToday && a.status === 'CONFIRMED' && a.mode !== 'VIDEO' ? <Act action={checkIn} id={a.id} back={back} label="Check in" variant="primary" /> : null}
+                        {isToday && a.status === 'NO_SHOW' ? <Act action={checkIn} id={a.id} back={back} label="Arrived late: check in" /> : null}
                         {triage[a.id] ? <Badge tone={PRIORITY[triage[a.id].priority].tone}>{PRIORITY[triage[a.id].priority].label}</Badge> : null}
                         {canTriage && a.status === 'CHECKED_IN' ? <a className="mc-btn mc-btn-ghost" href={`/desk/triage/${a.id}?back=${encodeURIComponent(back)}`}>{triage[a.id] ? 'Vitals ✓' : 'Vitals'}</a> : null}
-                        {(a.status === 'CONFIRMED' && due(a)) || a.status === 'CHECKED_IN' ? <Act action={noShow} id={a.id} back={back} label={a.status === 'CHECKED_IN' ? 'Left' : 'No-show'} /> : null}
+                        {a.status === 'CONFIRMED' && canCancel ? <a className="mc-btn mc-btn-ghost" href={`/desk/move/${a.id}?back=${encodeURIComponent(back)}`}>Move</a> : null}
+                        {isToday && ((a.status === 'CONFIRMED' && due(a)) || a.status === 'CHECKED_IN') ? <Act action={noShow} id={a.id} back={back} label={a.status === 'CHECKED_IN' ? 'Left' : 'No-show'} /> : null}
                         {a.status === 'CONFIRMED' && canCancel ? <Act action={cancel} id={a.id} back={back} label="Cancel" /> : null}
                       </span>
                     ),

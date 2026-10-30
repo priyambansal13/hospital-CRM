@@ -9,6 +9,7 @@ import { BillingClient } from './schedule/billing.client.js';
 import { HoldExpiryJob } from './schedule/hold-expiry.job.js';
 import { HorizonJob } from './schedule/horizon.job.js';
 import { NoShowJob } from './schedule/no-show.job.js';
+import { AgendaJob, InternalAgendaController } from './schedule/agenda.job.js';
 import { PatientsClient } from './schedule/patients.client.js';
 import { DeskController, InternalQueueController, QueueController } from './schedule/queue.controller.js';
 import { QueueService } from './schedule/queue.service.js';
@@ -75,7 +76,7 @@ class SchedulingConsumers implements OnModuleInit {
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'scheduling', control: false, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [UpcomingAppointmentsController, ScheduleController, AppointmentsController, InternalAppointmentsController, InternalNextSlotsController, DeskController, QueueController, InternalQueueController],
-  providers: [ScheduleService, AppointmentsService, QueueService, PatientsClient, BillingClient, HorizonJob, NoShowJob, HoldExpiryJob, SchedulingConsumers],
+  controllers: [InternalAgendaController, UpcomingAppointmentsController, ScheduleController, AppointmentsController, InternalAppointmentsController, InternalNextSlotsController, DeskController, QueueController, InternalQueueController],
+  providers: [ScheduleService, AppointmentsService, QueueService, PatientsClient, BillingClient, HorizonJob, NoShowJob, HoldExpiryJob, AgendaJob, SchedulingConsumers],
 })
 export class AppModule {}

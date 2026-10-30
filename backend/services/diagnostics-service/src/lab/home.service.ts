@@ -114,11 +114,14 @@ export class HomeService {
     const rows = await this.visitRows(c, `v.branch_id = $1 AND v.local_date = $2::date AND v.status <> 'CANCELLED' AND o.status NOT IN ('PENDING_PAYMENT','EXPIRED','CANCELLED')`, [branchId, day]);
     const { rows: people } = await c.query('SELECT user_id, name FROM phlebotomists WHERE active ORDER BY name');
     await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: actor.email ?? null, action: 'READ', resourceType: 'HOME_VISITS', purpose: 'TREATMENT' });
-    const visits = await Promise.all(rows.map((v) => this.visitDto(c, v)));
+    // not sent yet and the time has come (or is within the hour): flagged on the board (D-10)
+    const visits = (await Promise.all(rows.map((v) => this.visitDto(c, v)))).map((v) => ({
+      ...v, overdue: ['UNASSIGNED', 'ASSIGNED'].includes(v.status) && new Date(v.slotAt).getTime() < Date.now() + (v.status === 'UNASSIGNED' ? 60 : 0) * 60_000,
+    }));
     const count = (...s: string[]) => visits.filter((v) => s.includes(v.status)).length;
     return {
       branch: { id: b.id, name: b.name }, date: day, visits,
-      totals: { unassigned: count('UNASSIGNED'), assigned: count('ASSIGNED'), out: count('EN_ROUTE', 'ARRIVED'), collected: count('COLLECTED', 'HANDED_OVER'), missed: count('MISSED') },
+      totals: { overdue: visits.filter((v) => v.overdue).length, unassigned: count('UNASSIGNED'), assigned: count('ASSIGNED'), out: count('EN_ROUTE', 'ARRIVED'), collected: count('COLLECTED', 'HANDED_OVER'), missed: count('MISSED') },
       phlebotomists: people.map((p) => ({ id: p.user_id, name: p.name, visits: visits.filter((v) => v.phlebotomist?.id === p.user_id && v.status !== 'MISSED').length })),
     };
   }
@@ -134,7 +137,11 @@ export class HomeService {
     return this.db.tx(async (c) => {
       const v = await this.lockVisit(c, visitId);
       await this.lab.atBranch(actor, 'home_visit:assign:branch', v.branch_id, 'home visit');
-      if (!['UNASSIGNED', 'ASSIGNED'].includes(v.status)) throw conflict('INVALID_STATE_TRANSITION', `the visit is ${v.status.toLowerCase().replace('_', ' ')}`);
+      // on the way or at the door but cannot finish (fell ill, vehicle): someone else can be sent, until a tube is in (D-10)
+      if (['EN_ROUTE', 'ARRIVED'].includes(v.status)) {
+        const { rows: tubes } = await c.query(`SELECT 1 FROM samples WHERE order_id = $1 AND status = 'COLLECTED'`, [v.order_id]);
+        if (tubes[0]) throw conflict('PARTLY_COLLECTED', 'tubes are already collected: the same collector must bring them to the lab');
+      } else if (!['UNASSIGNED', 'ASSIGNED'].includes(v.status)) throw conflict('INVALID_STATE_TRANSITION', `the visit is ${v.status.toLowerCase().replace('_', ' ')}`);
       if (v.order_status !== 'BOOKED') throw conflict('INVALID_STATE_TRANSITION', v.order_status === 'PENDING_PAYMENT' ? 'the patient has not paid yet' : `the order is ${v.order_status.toLowerCase().replace('_', ' ')}`);
       const { rows: [p] } = await c.query('SELECT * FROM phlebotomists WHERE user_id = $1 AND active', [phlebotomistId]);
       if (!p) throw new DomainError(422, 'NOT_A_PHLEBOTOMIST', 'pick one of the phlebotomists');
@@ -185,14 +192,30 @@ export class HomeService {
 
   /** Patient not at home / refused / no sample: the order goes back to the patient to pick another home visit. */
   async miss(actor: Actor, visitId: string, reason: string) {
+    return this.db.tx(async (c) => this.markMissed(c, actor, await this.myVisit(c, actor, visitId, 'miss'), reason));
+  }
+
+  /**
+   * The dispatcher closes a visit that cannot happen (nobody available, the patient called, the collector cannot finish):
+   * same as a missed visit, the patient picks a new time (D-10).
+   */
+  async missByDispatcher(actor: Actor, visitId: string, reason: string) {
     return this.db.tx(async (c) => {
-      const v = await this.myVisit(c, actor, visitId, 'miss');
+      const v = await this.lockVisit(c, visitId);
+      await this.lab.atBranch(actor, 'home_visit:assign:branch', v.branch_id, 'home visit');
+      if (!['UNASSIGNED', 'ASSIGNED', 'EN_ROUTE', 'ARRIVED'].includes(v.status)) throw conflict('INVALID_STATE_TRANSITION', `the visit is ${v.status.toLowerCase().replace('_', ' ')}`);
+      return this.markMissed(c, actor, v, reason);
+    });
+  }
+
+  private async markMissed(c: Queryable, actor: Actor, v: any, reason: string) {
+    {
       const { rows: collected } = await c.query(`SELECT 1 FROM samples WHERE order_id = $1 AND status = 'COLLECTED'`, [v.order_id]);
       if (collected[0]) throw conflict('PARTLY_COLLECTED', 'some tubes are already collected; collect the rest or take them to the lab');
       await c.query(`UPDATE home_visits SET missed_reason = $2 WHERE id = $1`, [v.id, reason]);
       await c.query(`UPDATE lab_orders SET status = 'AWAITING_BOOKING', version = version + 1, updated_at = now() WHERE id = $1`, [v.order_id]);
       return this.step(c, actor, { ...v, missed_reason: reason }, 'MISSED', EventTypes.homeVisitMissed, reason);
-    });
+    }
   }
 
   /** Scan a tube at the patient's home (paid first); the last one completes the visit. */

@@ -1,31 +1,54 @@
-# Handoff: where work stopped (2026-10-30)
+# Handoff: where work stopped (2026-10-30, after wave 3)
 
 ## State
 - Phases 0–22 are built (Phase 22: AI foundation and the knowledge-only concierge, `ai-assistant-service` on 4415).
 - The flow review is in [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md). See §8 "Fix log" for details.
   - Wave 1 (15 gaps): fixed 2026-10-25.
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
+  - Wave 3 (front desk and lab completeness, screens for existing APIs, missing notifications): fixed 2026-10-30.
 - Tests:
   - `mc test gaps` covers wave 1.
   - `mc test wave2` covers wave 2 (45 checks).
-  - The tenancy leak test has 1015 checks and found 0 leaks.
-- Git: one repo for all three folders, at https://github.com/priyambansal13/hospital-CRM (`main`). Wave 2 is **not committed yet**.
+  - `mc test wave3` covers wave 3 (31 checks).
+  - The tenancy leak test has 1045 checks and found 0 leaks.
+- Git: one repo for all three folders, at https://github.com/priyambansal13/hospital-CRM (`main`).
+  - Waves 2 and 3 are pushed.
+  - CI workflows are in `.github/workflows` (backend, frontend, platform), with path filters.
+  - Image builds wait for the `GCP_WIF_PROVIDER` repo variable.
+  - The integration job is manual (workflow_dispatch).
 
-## Resume here: wave 3 (not started; ask first)
-§6 of ROLE-FLOWS-AND-GAPS.md lists wave 3, front-desk and lab completeness:
-- E-1 to E-3: reschedule, future dates and receipts at the desk.
-- D-3: staff booking of lab tests.
-- Handing back cash refunds.
-- D-12: undoing a no-show.
-- D-10: home-visit dispatcher fixes.
-- E-10: lab catalog editor.
-- E-4 and E-5: branch edit with time zone, and the home windows editor.
-- E-6 to E-8: patient screens for existing APIs.
-- The missing notifications (4.G).
+## Resume here: wave 4 (not started; ask first)
+Production readiness, alongside M7 (§6 of ROLE-FLOWS-AND-GAPS.md):
+- A-1: SaaS recurring adapter.
+- A-2: SMS provider with DLT templates.
+- B-5: payout account protection.
+- B-6: hosted card capture.
+- KMS.
+- H-3 and H-4: observability and DLQ tooling.
+- H-6: CI suites.
+- H-1: offboarding and export.
+- D-7: reactivation.
+- H-7: support access.
+- Real-provider runs: Razorpay, Route, ClamAV, Gemini. These need keys from the user.
 
-After wave 3:
-- wave 4: production integrations;
-- then Phase 23.
+Also open:
+- E-9: the doctor's form for amending diagnoses.
+- Owner and MediCare-staff notifications (4.G).
+
+Then Phase 23.
+
+## Wave 3 notes worth knowing
+- **Cash refunds:** a refund of a counter payment waits in `HAND_BACK` until the desk records "Handed back" (`/desk/collections`).
+- **Staff lab booking:**
+  - Page: `/lab/book` (permission `lab_order:create:branch`).
+  - Desk slots: `GET v1/desk/lab-slots` allows the slot running now.
+- **Doctor agenda:**
+  - `AgendaJob` in scheduling runs every 10 minutes.
+  - It sends from `AGENDA_HOUR` (7 by default) at the branch.
+  - It sends once per doctor per day (table `agenda_sent`).
+  - Test hook: `POST :4405/internal/tenants/:id/agenda {hour}`.
+- **Late check-in:** `POST desk/appointments/:id/check-in` also accepts a NO_SHOW of today (D-12).
+- **Lab catalog editor:** `PATCH admin/lab-tests/:id` takes `referenceRanges`, `turnaroundHours` and `fastingHours`; `PATCH admin/lab-packages/:id` takes `testCodes`.
 
 ## Wave 2 notes worth knowing
 - **Branch scoping:**

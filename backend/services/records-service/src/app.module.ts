@@ -80,7 +80,8 @@ class RecordsConsumers implements OnModuleInit {
     this.registry.register({
       group: 'records.timeline', topics: [Topics.scheduling],
       handlers: Object.fromEntries([EventTypes.appointmentBooked, EventTypes.appointmentCancelled, EventTypes.appointmentRescheduled, EventTypes.appointmentExpired,
-        EventTypes.appointmentCompleted, EventTypes.appointmentNoShow].map((t) => [t, tl])),
+        // checked in: a no-show undone by a late arrival (D-12) must not stay "no-show" on the patient's timeline
+        EventTypes.appointmentCompleted, EventTypes.appointmentNoShow, EventTypes.appointmentCheckedIn].map((t) => [t, tl])),
     });
     // timeline: lab orders (test names are fine here: the patient's own record)
     const labEntry = async (c: Queryable, data: unknown) => {

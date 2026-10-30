@@ -32,6 +32,7 @@
 //   test search                       "chest pain" → cardiologists by next available slot; test synonyms; isolation; fallback
 //   test assistant                    AI assistant: knowledge answers, emergencies without the model, red team, handoff
 //   test gaps                         wave 1 of the flow review (docs/ROLE-FLOWS-AND-GAPS.md): each fix as a user meets it
+//   test wave2 / wave3                waves 2 and 3 of the flow review
 //   test console                      platform console: plan builder, two-person approval, impact, move hospitals, audit
 //   k8s render <env>                  write deploy/environments/<env>/{generated.yaml,apps.json} from service/zone metadata
 //   k8s check <env>                   helm lint + render every app + kubeconform schema check (needs helm, docker)
@@ -534,7 +535,8 @@ const main = async () => {
       if (sub === 'assistant') return run(`node ${join(PLATFORM, 'tests/assistant.mjs')}`, PLATFORM);
       if (sub === 'gaps') return run(`node ${join(PLATFORM, 'tests/gaps.mjs')}`, PLATFORM);
       if (sub === 'wave2') return run(`node ${join(PLATFORM, 'tests/wave2.mjs')}`, PLATFORM);
-      return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2');
+      if (sub === 'wave3') return run(`node ${join(PLATFORM, 'tests/wave3.mjs')}`, PLATFORM);
+      return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2|wave3');
     case 'seed':
       if (sub !== 'demo') return fail('seed demo');
       for (const [slug, name, plan] of [['citycare', 'CityCare Clinic', 'HOSPITAL_ENTERPRISE'], ['sunrise', 'Sunrise Diagnostics', 'HOSPITAL_PRO'], ['medicare', 'MediCare HQ', 'MEDICARE_HQ']]) {

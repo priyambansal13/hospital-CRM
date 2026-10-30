@@ -4,6 +4,7 @@ import { ZoneFrame, zoneCapabilities } from '@mc/features';
 import { Badge, Button, Card, Field, PageHeader, Table } from '@mc/ui';
 import { Flash } from '@/lib/flash';
 import { ZONES } from '@/lib/zones';
+import { saveHomeWindows } from '../branches/edit-actions';
 import { saveArea } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -53,11 +54,34 @@ export default async function HomeCollection({ searchParams }: { searchParams: P
           { header: '', cell: (a) => (a.active ? <Badge tone="success">bookable</Badge> : <Badge>off</Badge>) },
         ]} />
       </Card>
-      {windows.map(({ branch, windows: w }) => (
-        <Card key={branch.id} title={`Home visit times · ${branch.name}`}>
-          <p className="mc-meta" style={{ marginTop: 0 }}>{w.length ? w.map((x) => `${DAYS[x.day]} ${x.start}–${x.end} (${x.slotMinutes}-min visits, ${x.capacity} at a time)`).join(' · ') : 'No home visit times: patients cannot book a home collection here.'}</p>
-        </Card>
-      ))}
+      {windows.map(({ branch, windows: w }) => {
+        const rows: (Win | null)[] = [...w, null, null, null];
+        return (
+          <Card key={branch.id} title={`Home visit times · ${branch.name}`}>
+            {/* E-5: edit the windows (was read-only) */}
+            <form action={saveHomeWindows} className="mc-form" aria-label={`Home visit times at ${branch.name}`}>
+              <input type="hidden" name="branchId" value={branch.id} />
+              <input type="hidden" name="rows" value={rows.length} />
+              <div className="mc-field-wide" style={{ overflowX: 'auto' }}>
+                <table className="mc-table">
+                  <thead><tr><th>Day</th><th>From</th><th>To</th><th>Visit length</th><th>At a time</th></tr></thead>
+                  <tbody>{rows.map((x, i) => (
+                    <tr key={i}>
+                      <td><select name={`day${i}`} defaultValue={x ? String(x.day) : ''} className="mc-select-sm" aria-label={`Day ${i + 1}`}><option value="">—</option>{[1, 2, 3, 4, 5, 6, 7].map((d) => <option key={d} value={d}>{DAYS[d]}</option>)}</select></td>
+                      <td><input type="time" name={`start${i}`} defaultValue={x?.start} className="mc-input-sm" aria-label={`From ${i + 1}`} /></td>
+                      <td><input type="time" name={`end${i}`} defaultValue={x?.end} className="mc-input-sm" aria-label={`To ${i + 1}`} /></td>
+                      <td><select name={`slot${i}`} defaultValue={String(x?.slotMinutes ?? 30)} className="mc-select-sm" aria-label={`Visit length ${i + 1}`}>{[15, 20, 30, 60].map((m) => <option key={m} value={m}>{m} min</option>)}</select></td>
+                      <td><input name={`cap${i}`} type="number" min={1} max={50} defaultValue={x?.capacity ?? 2} className="mc-input-sm" style={{ width: 70 }} aria-label={`At a time ${i + 1}`} /></td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+                <small className="mc-muted">Clear a row&apos;s day to remove it. Visits already booked keep their time.</small>
+              </div>
+              <Button variant="ghost">Save times</Button>
+            </form>
+          </Card>
+        );
+      })}
     </ZoneFrame>
   );
 }

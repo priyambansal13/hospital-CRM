@@ -29,6 +29,19 @@ const en: DefaultTemplate[] = [
   { key: 'lab_report_ready', channel: 'EMAIL', language: 'en', subject: 'Lab report ready: {{orderNo}}', body: 'Hello,\n\nThe lab report for {{patientName}} ({{orderNo}}) is ready{{amendedNote}}.\n\nView and download it securely: {{link}}\nPlease discuss the results with your doctor.\n\n{{hospital}}' },
   { key: 'lab_report_ready_doctor', channel: 'EMAIL', language: 'en', subject: 'Report ready: {{patientName}} ({{orderNo}})', body: 'Dr.,\n\nThe lab report for {{patientName}} ({{patientMrn}}, {{orderNo}}) you ordered is verified{{amendedNote}}. {{flagsLine}}\n\nOpen MediCare: {{link}}\n\n{{hospital}}' },
   { key: 'lab_critical_value', channel: 'EMAIL', language: 'en', subject: 'CRITICAL lab value: {{patientName}} ({{patientMrn}})', body: 'URGENT\n\nA critical value was entered for {{patientName}} ({{patientMrn}}, order {{orderNo}}): {{testName}}, {{parameter}}.\n\nOpen MediCare now to see the value and acknowledge: {{link}}\n\n{{hospital}} lab' },
+  // wave 3 (docs/ROLE-FLOWS-AND-GAPS.md 4.G)
+  { key: 'appointment_expired', channel: 'SMS', language: 'en', body: '{{hospital}}: the booking {{appointmentNo}} for {{patientName}} on {{when}} was released because the payment was not completed. Book again: {{link}}' },
+  { key: 'appointment_expired', channel: 'EMAIL', language: 'en', subject: 'Booking not completed: {{appointmentNo}}', body: 'Hello,\n\nThe payment for {{patientName}}\'s appointment with {{doctorName}} on {{when}} was not completed in time, so the time was released. Nothing was charged.\n\nBook again: {{link}}\n\n{{hospital}}' },
+  { key: 'lab_cancelled', channel: 'SMS', language: 'en', body: '{{hospital}}: lab tests {{orderNo}} for {{patientName}} are cancelled. {{refundLine}}' },
+  { key: 'lab_cancelled', channel: 'EMAIL', language: 'en', subject: 'Lab tests cancelled: {{orderNo}}', body: 'Hello,\n\nThe lab tests {{orderNo}} for {{patientName}} are cancelled. {{refundLine}}\n\nBook again any time: {{link}}\n\n{{hospital}}' },
+  { key: 'lab_expired', channel: 'SMS', language: 'en', body: '{{hospital}}: the lab booking {{orderNo}} for {{patientName}} was released because the payment was not completed. Book again: {{link}}' },
+  { key: 'lab_prep_reminder', channel: 'SMS', language: 'en', body: '{{hospital}}: reminder, {{patientName}}\'s lab visit is {{when}} at {{where}}. {{prep}}' },
+  { key: 'lab_prep_reminder', channel: 'EMAIL', language: 'en', subject: 'Before your lab visit {{when}}', body: 'Hello,\n\nA reminder for {{patientName}}\'s lab visit {{when}} at {{where}} (order {{orderNo}}).\n\n{{prep}}\n\nDetails: {{link}}\n\n{{hospital}}' },
+  { key: 'follow_up_reminder', channel: 'SMS', language: 'en', body: '{{hospital}}: {{doctorName}} asked to see {{patientName}} again on {{date}}. Book a time: {{link}}' },
+  { key: 'follow_up_reminder', channel: 'EMAIL', language: 'en', subject: 'Follow-up visit due {{date}}', body: 'Hello,\n\n{{doctorName}} asked to see {{patientName}} again on {{date}}. If you have not booked yet, pick a time: {{link}}\n\n{{hospital}}' },
+  { key: 'doctor_agenda', channel: 'EMAIL', language: 'en', subject: 'Your patients today ({{count}})', body: 'Good morning {{doctorName}},\n\nYour bookings for {{date}}:\n\n{{list}}\n\nWalk-ins join your queue during the day. Open MediCare: {{link}}\n\n{{hospital}}' },
+  { key: 'doctor_day_change', channel: 'EMAIL', language: 'en', subject: '{{change}} today: {{time}} {{patientName}}', body: '{{doctorName}},\n\n{{change}} for today: {{patientName}} at {{time}} ({{where}}, {{appointmentNo}}).\n\nYour queue: {{link}}\n\n{{hospital}}' },
+  { key: 'lab_tat_breached', channel: 'EMAIL', language: 'en', subject: 'Overdue: lab order {{orderNo}}', body: 'The report for lab order {{orderNo}} ({{tests}}) is past its promised time.\n\nPending results: {{link}}\n\n{{hospital}} lab' },
   { key: 'lab_critical_escalated', channel: 'EMAIL', language: 'en', subject: 'ESCALATED critical lab value: {{patientName}} ({{patientMrn}})', body: 'URGENT: not acknowledged for {{minutesOpen}} minutes\n\nA critical value for {{patientName}} ({{patientMrn}}, order {{orderNo}}): {{testName}}, {{parameter}}. {{orderedByLine}}\n\n{{action}}\nOpen MediCare: {{link}}\n\n{{hospital}} lab' },
   { key: 'home_visit_assigned', channel: 'SMS', language: 'en', body: '{{hospital}}: {{collector}} will collect the sample for {{patientName}} at home on {{when}} ({{orderNo}}). Details: {{link}}' },
   { key: 'home_visit_assigned', channel: 'EMAIL', language: 'en', subject: 'Home sample collection on {{when}}', body: 'Hello,\n\n{{collector}} from {{hospital}} will come to collect the sample for {{patientName}} on {{when}} (order {{orderNo}}).\nPlease keep the preparation instructions in mind; you can pay the collector if you have not paid yet.\n\nDetails: {{link}}\n\n{{hospital}}' },
@@ -59,13 +72,17 @@ const hi: DefaultTemplate[] = [
   { key: 'home_visit_assigned', channel: 'SMS', language: 'hi', body: '{{hospital}}: {{collector}} {{when}} को घर पर {{patientName}} का सैंपल लेने आएँगे ({{orderNo}})। विवरण: {{link}}' },
   { key: 'home_visit_en_route', channel: 'SMS', language: 'hi', body: '{{hospital}}: {{collector}} {{patientName}} का सैंपल लेने के लिए रास्ते में हैं ({{orderNo}})।' },
   { key: 'home_visit_missed', channel: 'SMS', language: 'hi', body: '{{hospital}}: आज {{patientName}} का सैंपल नहीं लिया जा सका ({{orderNo}})। कृपया नया समय चुनें: {{link}}' },
+  { key: 'appointment_expired', channel: 'SMS', language: 'hi', body: '{{hospital}}: भुगतान पूरा न होने के कारण {{patientName}} की {{when}} की बुकिंग {{appointmentNo}} रद्द हो गई। फिर से बुक करें: {{link}}' },
+  { key: 'lab_cancelled', channel: 'SMS', language: 'hi', body: '{{hospital}}: {{patientName}} की लैब जाँच {{orderNo}} रद्द कर दी गई है। {{refundLine}}' },
+  { key: 'lab_prep_reminder', channel: 'SMS', language: 'hi', body: '{{hospital}}: याद दिलाना, {{patientName}} की लैब जाँच {{when}} को {{where}} पर है। {{prep}}' },
+  { key: 'follow_up_reminder', channel: 'SMS', language: 'hi', body: '{{hospital}}: {{doctorName}} ने {{patientName}} को {{date}} को फिर दिखाने को कहा है। समय बुक करें: {{link}}' },
   { key: 'refund_initiated', channel: 'SMS', language: 'hi', body: '{{hospital}}: {{invoiceNo}} के {{amount}} वापस भेज दिए गए हैं। 5-7 कार्य दिवसों में आपके खाते में आ जाएँगे।' },
 ];
 
 export const DEFAULT_TEMPLATES = [...en, ...hi];
 
 /** Messages to hospital staff: email only (no SMS template on purpose). */
-export const STAFF_ONLY_KEYS = new Set(['lab_report_ready_doctor', 'lab_critical_value', 'lab_critical_escalated', 'home_visit_assigned_staff', 'billing_notice_staff']);
+export const STAFF_ONLY_KEYS = new Set(['lab_report_ready_doctor', 'lab_critical_value', 'lab_critical_escalated', 'doctor_agenda', 'doctor_day_change', 'lab_tat_breached', 'home_visit_assigned_staff', 'billing_notice_staff']);
 
 /** {{var}} replacement; missing values render as empty strings. */
 export function render(text: string, vars: Record<string, unknown>): string {

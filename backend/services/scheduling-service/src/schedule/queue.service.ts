@@ -93,11 +93,13 @@ export class QueueService {
   async checkIn(c: Queryable, actor: Actor, id: string) {
     const a = await this.load(c, id);
     assertInBranch(await this.caps(actor), CHECKIN, a.branch_id, 'appointment');
+    // late, or back after leaving: a no-show of today can still be checked in, keeping the slot and the payment (D-12)
+    const late = a.status === 'NO_SHOW';
     if (a.status === 'CHECKED_IN') throw conflict('ALREADY_CHECKED_IN', `already checked in${a.token_no ? ` (token ${a.token_no})` : ''}`);
-    if (a.status !== 'CONFIRMED') throw conflict('INVALID_STATE_TRANSITION', `a ${a.status.toLowerCase().replace('_', ' ')} appointment cannot be checked in`);
+    if (a.status !== 'CONFIRMED' && !late) throw conflict('INVALID_STATE_TRANSITION', `a ${a.status.toLowerCase().replace('_', ' ')} appointment cannot be checked in`);
     if (a.mode === 'VIDEO') throw new DomainError(422, 'VIDEO_VISIT', 'video visits do not check in at the desk');
     const { rows: [{ today }] } = await c.query(`SELECT a.local_date = ${TODAY_AT('a.branch_id')} AS today FROM appointments a WHERE a.id = $1`, [id]);
-    if (!today) throw new DomainError(422, 'NOT_TODAY', `this appointment is on ${a.local_date}; patients can only check in on the day`);
+    if (!today) throw new DomainError(422, 'NOT_TODAY', late ? 'a no-show of an earlier day cannot be checked in: book a new visit' : `this appointment is on ${a.local_date}; patients can only check in on the day`);
 
     const tokens = (await this.caps(actor)).features['front_desk.queue_tokens']?.enabled !== false;
     let token: number | null = null;
@@ -108,8 +110,8 @@ export class QueueService {
         [a.doctor_id, a.branch_id, a.local_date]);
       token = rows[0].last_token;
     }
-    return this.move(c, a, ['CONFIRMED'], 'CHECKED_IN', EventTypes.appointmentCheckedIn,
-      `token_no = $3, checked_in_at = now(), checked_in_by = $4`, [token, actor.id]);
+    return this.move(c, a, ['CONFIRMED', 'NO_SHOW'], 'CHECKED_IN', EventTypes.appointmentCheckedIn,
+      `token_no = $3, checked_in_at = now(), checked_in_by = $4, no_show_at = NULL`, [token, actor.id]);
   }
 
   /** Doctor calls the patient in. One visit at a time per doctor. Video visits start straight from CONFIRMED. */

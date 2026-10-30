@@ -300,8 +300,8 @@ export class BillingService {
     for (const r of claimed) {
       try {
         if (r.gateway === 'COUNTER') {
-          // cash/UPI/card at the counter: handed back at the desk, nothing to send
-          await this.db.tx((c) => this.refundProcessed(c, r.id, null));
+          // cash/UPI/card at the counter: nothing to send; the desk hands it back and records that (handedBack)
+          await this.db.query(`UPDATE refunds SET status = 'HAND_BACK' WHERE id = $1 AND status = 'SUBMITTING'`, [r.id]);
           done++;
           continue;
         }
@@ -321,6 +321,27 @@ export class BillingService {
       }
     }
     return done;
+  }
+
+  /** Counter refunds waiting to be handed back, at these branches (null = all), oldest first. */
+  async toHandBack(branches: string[] | null) {
+    const { rows } = await this.db.query(
+      `SELECT r.id, r.amount, r.reason, r.created_at, p.method, i.id AS invoice_id, i.invoice_no, i.patient_name, i.patient_mrn, i.branch_id
+       FROM refunds r JOIN payments p ON p.id = r.payment_id JOIN invoices i ON i.id = r.invoice_id
+       WHERE r.status = 'HAND_BACK' AND ($1::uuid[] IS NULL OR i.branch_id = ANY($1)) ORDER BY r.created_at LIMIT 200`, [branches]);
+    return rows.map((r) => ({ id: r.id, amount: money(r.amount), reason: r.reason, requestedAt: r.created_at, paidBy: r.method, invoice: { id: r.invoice_id, invoiceNo: r.invoice_no }, patient: { name: r.patient_name, mrn: r.patient_mrn }, branchId: r.branch_id }));
+  }
+
+  /** The money went back to the patient at the counter: the refund is done (the patient is told, the invoice updated). */
+  async handedBack(actor: Actor, refundId: string, method: 'CASH' | 'UPI' | 'CARD', at: (branchId: string) => boolean) {
+    return this.db.tx(async (c) => {
+      const { rows: [r] } = await c.query(`SELECT r.*, i.branch_id FROM refunds r JOIN invoices i ON i.id = r.invoice_id WHERE r.id = $1 FOR UPDATE OF r`, [refundId]);
+      if (!r || !at(r.branch_id)) throw notFound('refund');
+      if (r.status !== 'HAND_BACK') throw conflict('NOT_WAITING', r.status === 'PROCESSED' ? 'already handed back' : `the refund is ${String(r.status).toLowerCase()}`);
+      await c.query('UPDATE refunds SET handed_back_by = $2, handed_back_method = $3 WHERE id = $1', [refundId, actor.id, method]);
+      await this.refundProcessed(c, refundId, null);
+      return { refundId, status: 'PROCESSED', amount: money(r.amount) };
+    });
   }
 
   // ---------- webhooks ----------

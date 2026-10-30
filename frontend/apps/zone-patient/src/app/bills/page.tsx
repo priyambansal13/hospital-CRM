@@ -23,7 +23,7 @@ export default async function MyBills() {
           empty="No bills yet."
           columns={[
             { header: 'Date', cell: (b) => day(b.issuedAt) },
-            { header: 'Invoice', cell: (b) => <span data-testid={`bill-${b.invoiceNo}`}>{b.invoiceNo}</span> },
+            { header: 'Invoice', cell: (b) => <a href={`/care/bills/${b.id}`} data-testid={`bill-${b.invoiceNo}`}>{b.invoiceNo}</a> },
             { header: 'For', cell: (b) => <>{b.patient.name}<br /><span className="mc-meta">{b.description}</span></> },
             { header: 'Amount', cell: (b) => <>{inr(b.total)}{b.amountRefunded ? <><br /><span className="mc-meta">refunded {inr(b.amountRefunded)}</span></> : null}</> },
             { header: 'Status', cell: (b) => <Badge tone={INVOICE_STATUS[b.status]?.tone ?? 'neutral'}>{b.status === 'ISSUED' && b.paymentMode === 'AT_CLINIC' ? 'Pay at the hospital' : INVOICE_STATUS[b.status]?.label ?? b.status}</Badge> },

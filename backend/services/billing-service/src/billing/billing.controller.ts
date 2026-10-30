@@ -131,6 +131,21 @@ export class BillingController {
     return this.billing.collectAtCounter(actor, { sourceType: v.sourceType, sourceId: v.sourceId }, v.method, v.reference, await this.staffAt(actor, 'payment:collect:branch'));
   }
 
+  /** Desk: counter refunds to hand back to patients (cash, UPI or card), at the person's branches. */
+  @Get('desk/refunds')
+  @RequirePermission('payment:collect:branch')
+  async toHandBack(@CurrentActor() actor: Actor) {
+    return this.billing.toHandBack((await this.caps(actor)).branchScopes?.['payment:collect:branch'] ?? null);
+  }
+
+  @Post('refunds/:id/handed-back')
+  @HttpCode(200)
+  @RequirePermission('payment:collect:branch')
+  async handedBack(@Param('id') refundId: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
+    const { method } = parse(z.object({ method: z.enum(['CASH', 'UPI', 'CARD']).default('CASH') }), body ?? {});
+    return this.billing.handedBack(actor, id(refundId, 'refund'), method, await this.staffAt(actor, 'payment:collect:branch'));
+  }
+
   /** Admin: a manual (goodwill / correction) refund on a paid invoice. */
   @Post('invoices/:id/refunds')
   @Idempotent()

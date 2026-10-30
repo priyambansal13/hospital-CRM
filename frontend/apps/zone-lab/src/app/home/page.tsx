@@ -6,6 +6,7 @@ import { Badge, Button, Card, Chip, PageHeader, Table } from '@mc/ui';
 import { Flash } from '@/lib/flash';
 import { addressLine, type Board, VISIT } from '@/lib/home';
 import { assignVisit } from '@/lib/home-actions';
+import { visitMissed } from '@/lib/book-actions';
 import { ZONES } from '@/lib/zones';
 
 export const dynamic = 'force-dynamic';
@@ -37,7 +38,7 @@ export default async function HomeBoard({ searchParams }: { searchParams: Promis
       {board ? (
         <>
           <div className="mc-grid">
-            {([['To assign', board.totals.unassigned], ['Assigned', board.totals.assigned], ['Out now', board.totals.out], ['Collected', board.totals.collected], ['Missed', board.totals.missed]] as const).map(([label, n]) => (
+            {([['Overdue', board.totals.overdue ?? 0], ['To assign', board.totals.unassigned], ['Assigned', board.totals.assigned], ['Out now', board.totals.out], ['Collected', board.totals.collected], ['Missed', board.totals.missed]] as const).map(([label, n]) => (
               <Card key={label}><p className="mc-muted" style={{ margin: 0 }}>{label}</p><p className="mc-stat">{n}</p></Card>
             ))}
           </div>
@@ -48,7 +49,9 @@ export default async function HomeBoard({ searchParams }: { searchParams: Promis
               { header: 'Address', cell: (v) => <span className="mc-meta">{addressLine(v.address)}</span> },
               { header: 'Payment', cell: (v) => <Badge tone={v.paymentStatus === 'PAID' || v.paymentStatus === 'NOT_DUE' ? 'success' : 'warning'}>{v.paymentStatus === 'PAID' ? 'paid' : v.paymentStatus === 'NOT_DUE' ? 'no charge' : `₹${v.total} at home`}</Badge> },
               { header: 'Status', cell: (v) => <><Badge tone={VISIT[v.status]?.tone ?? 'neutral'}>{VISIT[v.status]?.label ?? v.status}</Badge>{v.phlebotomist ? <span className="mc-meta"> {v.phlebotomist.name}</span> : null}{v.missedReason ? <span className="mc-meta"> · {v.missedReason}</span> : null}</> },
-              { header: '', cell: (v) => (!readOnly && ['UNASSIGNED', 'ASSIGNED'].includes(v.status) && v.orderStatus === 'BOOKED' ? (
+              { header: '', cell: (v) => (!readOnly && ['UNASSIGNED', 'ASSIGNED', 'EN_ROUTE', 'ARRIVED'].includes(v.status) && v.orderStatus === 'BOOKED' ? (
+                <span className="mc-inline">
+                {v.overdue ? <Badge tone="danger">overdue</Badge> : null}
                 <form action={assignVisit} className="mc-inline" aria-label={`Assign ${v.orderNo}`}>
                   <input type="hidden" name="visitId" value={v.id} /><input type="hidden" name="back" value={back} />
                   <select name="phlebotomistId" aria-label="Phlebotomist" className="mc-select-sm" defaultValue={v.phlebotomist?.id ?? ''} required>
@@ -57,6 +60,13 @@ export default async function HomeBoard({ searchParams }: { searchParams: Promis
                   </select>
                   <Button>{v.phlebotomist ? 'Reassign' : 'Assign'}</Button>
                 </form>
+                {/* D-10: the visit cannot happen (nobody free, the patient called, the collector cannot finish) */}
+                <form action={visitMissed} className="mc-inline" aria-label={`Cannot visit ${v.orderNo}`}>
+                  <input type="hidden" name="id" value={v.id} /><input type="hidden" name="back" value={back} />
+                  <input name="reason" required minLength={3} placeholder="Why not" aria-label="Why the visit cannot happen" className="mc-input-sm" />
+                  <Button variant="ghost">Cannot visit</Button>
+                </form>
+                </span>
               ) : null) },
             ]} />
             {!board.phlebotomists.length ? <p className="mc-muted">No phlebotomists yet: add staff with the Phlebotomist role in Admin → Staff.</p> : null}

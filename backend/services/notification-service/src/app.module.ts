@@ -1,5 +1,5 @@
 import { Inject, Injectable, Module, type OnApplicationBootstrap, type OnModuleInit } from '@nestjs/common';
-import { AppointmentChanged, EventTypes, HomeVisitChanged, LabCriticalEscalated, LabCriticalValue, LabOrderChanged, LabReportPublished, PatientRegistered, PaymentSucceeded, PrescriptionIssued, RefundProcessed, Topics, WaitlistSlotAvailable, BillingNotice } from '@mc/contracts';
+import { AppointmentChanged, DoctorAgenda, EventTypes, HomeVisitChanged, LabCriticalEscalated, LabCriticalValue, LabOrderChanged, LabReportPublished, PatientRegistered, PaymentSucceeded, PrescriptionIssued, RefundProcessed, Topics, WaitlistSlotAvailable, BillingNotice } from '@mc/contracts';
 import { ConsumerRegistry, CoreModule, PLACEMENTS, retryInBackground } from '@mc/nest-common';
 import { EntitlementsModule } from '@mc/entitlements-sdk';
 import { type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
@@ -34,6 +34,8 @@ class NotificationConsumers implements OnModuleInit, OnApplicationBootstrap {
         [EventTypes.appointmentBooked]: appt(EventTypes.appointmentBooked),
         [EventTypes.appointmentRescheduled]: appt(EventTypes.appointmentRescheduled),
         [EventTypes.appointmentCancelled]: appt(EventTypes.appointmentCancelled),
+        [EventTypes.appointmentExpired]: appt(EventTypes.appointmentExpired),
+        [EventTypes.doctorAgenda]: (e, db) => this.planner.onDoctorAgenda(db!, DoctorAgenda.parse(e.data)),
         [EventTypes.waitlistSlotAvailable]: (e, db) => this.planner.onWaitlist(db!, { ...WaitlistSlotAvailable.parse(e.data), doctorName: (e.data as any).doctorName }, e.time),
       },
     });
@@ -50,7 +52,8 @@ class NotificationConsumers implements OnModuleInit, OnApplicationBootstrap {
       group: 'notification.lab',
       topics: [Topics.diagnostics],
       handlers: {
-        ...Object.fromEntries([EventTypes.labOrderBooked, EventTypes.labOrderOrdered, EventTypes.labOrderSampleRejected].map((t) => [t, labMsg(t)])),
+        ...Object.fromEntries([EventTypes.labOrderBooked, EventTypes.labOrderOrdered, EventTypes.labOrderSampleRejected, EventTypes.labOrderCancelled, EventTypes.labOrderExpired].map((t) => [t, labMsg(t)])),
+        [EventTypes.labTatBreached]: (e, db) => this.planner.onTatBreached(db!, LabOrderChanged.parse(e.data)),
         [EventTypes.labReportPublished]: (e, db) => this.planner.onLabReport(db!, LabReportPublished.parse(e.data)),
         [EventTypes.labCriticalValue]: (e, db) => this.planner.onCriticalValue(db!, LabCriticalValue.parse(e.data)),
         [EventTypes.labCriticalEscalated]: (e, db) => this.planner.onCriticalEscalated(db!, LabCriticalEscalated.parse(e.data)),

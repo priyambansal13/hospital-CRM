@@ -2,6 +2,7 @@ import { getSession } from '@mc/auth';
 import { ZoneFrame, zoneCapabilities } from '@mc/features';
 import { Alert, Button, Card, Field, PageHeader, Select, Table } from '@mc/ui';
 import { fmtDay, myPatients, RELATIONS } from '@/lib/booking';
+import { updateDependent } from '@/lib/family-actions';
 import { addDependent, saveNotificationPrefs, saveProfile } from '@/lib/booking-actions';
 import { api } from '@mc/bff';
 import { Flash } from '@/lib/flash';
@@ -56,6 +57,19 @@ export default async function Profile({ searchParams }: { searchParams: Promise<
               { header: 'Relation', cell: (p) => p.relation.charAt(0) + p.relation.slice(1).toLowerCase() },
               { header: 'Date of birth', cell: (p) => fmtDay(p.dob, { day: 'numeric', month: 'short', year: 'numeric' }) },
               { header: 'Record no.', cell: (p) => p.mrn },
+              // E-6: correct a family member's details
+              { header: '', cell: (p) => (
+                <details>
+                  <summary>Edit</summary>
+                  <form action={updateDependent} className="mc-form" aria-label={`Edit ${p.fullName}`}>
+                    <input type="hidden" name="id" value={p.id} /><input type="hidden" name="version" value={p.version} />
+                    <Field label="Full name" name="fullName" required defaultValue={p.fullName} />
+                    <Field label="Date of birth" name="dob" type="date" required defaultValue={p.dob} />
+                    <Select label="Relation" name="relation" options={RELATIONS} defaultValue={p.relation} />
+                    <Button>Save</Button>
+                  </form>
+                </details>
+              ) },
             ]}
           />
           <form action={addDependent} className="mc-form" style={{ marginTop: 16 }}>

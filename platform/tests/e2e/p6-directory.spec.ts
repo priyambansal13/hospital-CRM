@@ -52,7 +52,11 @@ test.describe.serial('doctor directory', () => {
     await expect(page.getByRole('heading', { name: 'Find a doctor' })).toBeVisible();
     await page.getByRole('link', { name: /Dermatology/ }).first().click();
     await expect(page.getByRole('heading', { name: 'Dermatology doctors' })).toBeVisible();
-    await expect(page.getByRole('link', { name: doctorName })).toBeVisible();
+    // search is updated by event a moment after publishing, and the page is rendered on the server: reload until it shows
+    await expect(async () => {
+      await page.reload();
+      await expect(page.getByRole('link', { name: doctorName })).toBeVisible({ timeout: 2_000 });
+    }).toPass({ timeout: 30_000 });
 
     // filters narrow results (language)
     await page.getByLabel('Language').selectOption('ta');

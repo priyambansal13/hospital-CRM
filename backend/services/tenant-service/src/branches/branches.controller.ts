@@ -10,7 +10,8 @@ const BranchFields = {
   name: z.string().trim().min(2).max(120),
   city: z.string().trim().min(2).max(80),
   address: z.object({ line1: z.string().max(200).optional(), pincode: z.string().max(10).optional() }),
-  timezone: z.string(),
+  // an IANA zone the runtime knows (slot times and "today" at the branch depend on it), E-4
+  timezone: z.string().refine((tz) => tz === 'UTC' || Intl.supportedValuesOf('timeZone').includes(tz), 'a time zone like Asia/Kolkata'),
 };
 export const CreateBranch = z.object({ ...BranchFields, address: BranchFields.address.default({}), timezone: BranchFields.timezone.default('Asia/Kolkata') });
 /** No defaults on update: a PATCH only changes the fields it sends. */

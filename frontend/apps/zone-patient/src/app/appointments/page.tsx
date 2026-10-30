@@ -1,4 +1,5 @@
 import { getSession } from '@mc/auth';
+import { leaveWaitlist } from '@/lib/family-actions';
 import { api } from '@mc/bff';
 import { ZoneFrame, zoneCapabilities } from '@mc/features';
 import { Alert, Badge, Button, Card, PageHeader } from '@mc/ui';
@@ -74,7 +75,12 @@ export default async function MyAppointmentsPage({ searchParams }: { searchParam
       {waitlist.length ? (
         <Card title="Waitlist">
           <ul style={{ margin: 0, paddingLeft: 18 }}>
-            {waitlist.map((w) => <li key={w.id}>{w.doctor.name} on {fmtDay(w.date)} for {w.patient.name}{w.notifiedAt ? ' · a time opened up, book it now' : ''}</li>)}
+            {waitlist.map((w) => (
+              <li key={w.id}>
+                {w.doctor.name} on {fmtDay(w.date)} for {w.patient.name}{w.notifiedAt ? ' · a time opened up, book it now' : ''}
+                <form action={leaveWaitlist} className="mc-inline" style={{ marginLeft: 8 }}><input type="hidden" name="id" value={w.id} /><Button variant="ghost">Leave</Button></form>
+              </li>
+            ))}
           </ul>
         </Card>
       ) : null}

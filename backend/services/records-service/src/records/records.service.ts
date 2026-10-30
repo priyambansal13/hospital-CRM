@@ -258,7 +258,7 @@ export class RecordsService {
       }
       const rx = await this.prescriptionDto(c, id);
       await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: doctor.name, action: 'CREATE', resourceType: 'PRESCRIPTION', resourceId: id, patientId: e.patient_id, purpose: 'TREATMENT', changes: v.allergyOverride ? ['allergy_override'] : null });
-      const data: PrescriptionIssued = { prescriptionId: id, prescriptionNo: no, encounterId, patientId: e.patient_id, accountPersonId: rx.accountPersonId, patientName: rx.patient.name, doctorId: doctor.id, doctorName: doctor.name, itemCount: v.items.length };
+      const data: PrescriptionIssued = { prescriptionId: id, prescriptionNo: no, encounterId, patientId: e.patient_id, accountPersonId: rx.accountPersonId, patientName: rx.patient.name, doctorId: doctor.id, doctorName: doctor.name, itemCount: v.items.length, followUpOn: rx.followUpOn };
       await addToOutbox(c, Topics.records, e.patient_id, envelope(EventTypes.prescriptionIssued, data, { tenantId: this.tid(), subject: id }));
       await this.timeline.upsert(c, { patientId: e.patient_id, kind: 'PRESCRIPTION', refId: id, occurredAt: rx.issuedAt, title: `Prescription ${no}`, summary: { items: v.items.length, doctor: doctor.name }, doctorId: doctor.id, branchId: e.branch_id });
       return rx;

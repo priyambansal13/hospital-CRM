@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EntitlementsClient } from '@mc/entitlements-sdk';
-import { type AppointmentChanged, type BillingNotice, type HomeVisitChanged, type LabCriticalEscalated, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable } from '@mc/contracts';
+import { type AppointmentChanged, type BillingNotice, type DoctorAgenda, type HomeVisitChanged, type LabCriticalEscalated, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable } from '@mc/contracts';
 import { type Queryable, TenantContext } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_TEMPLATES } from './templates.js';
@@ -68,7 +68,36 @@ export class PlannerService {
       await this.cancelPending(c, a.appointmentId);
       const key = a.reason === 'DOCTOR_UNAVAILABLE' ? 'appointment_cancelled_doctor' : 'appointment_cancelled';
       if (fresh && Date.parse(a.startsAt) > Date.now()) await this.plan(c, key, a.accountPersonId, vars, a.appointmentId, now);
+    } else if (type === EventTypes.appointmentExpired) {
+      // the online payment was not completed in time: the patient is told the time was released (4.G)
+      await this.cancelPending(c, a.appointmentId);
+      if (fresh) await this.plan(c, 'appointment_expired', a.accountPersonId, { ...vars, link: webLink(t, '/care/doctors') }, a.appointmentId, now, `${a.appointmentId}:expired`);
     }
+    // the doctor hears about bookings and cancellations for today (walk-ins appear in the queue anyway), 4.G
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+    if (fresh && a.doctorUserId && a.localDate === today && a.source !== 'WALK_IN' && Date.parse(a.startsAt) > Date.now()
+      && (type === EventTypes.appointmentBooked || type === EventTypes.appointmentCancelled)) {
+      const change = type === EventTypes.appointmentBooked ? 'New booking' : 'Cancelled';
+      await this.plan(c, 'doctor_day_change', a.doctorUserId, { ...vars, change, link: webLink(t, '/doctor/queue') }, a.appointmentId, now, `${a.appointmentId}:${type}:doctor`, 'staff');
+    }
+  }
+
+  /** The doctor's list for the day (scheduling AgendaJob), e-mailed in the morning. */
+  async onDoctorAgenda(c: Queryable, d: DoctorAgenda) {
+    const t = TenantContext.require();
+    const list = d.items.map((i) => `${fmt(d.date, i.time).time}  ${i.patientName}  (${i.mode === 'VIDEO' ? 'video' : i.branchName}, ${i.appointmentNo})`).join('\n');
+    await this.plan(c, 'doctor_agenda', d.doctorUserId, { hospital: t.name, doctorName: d.doctorName, date: fmt(d.date).day, count: d.items.length, list, link: webLink(t, '/doctor/queue') }, d.doctorId, new Date(), `${d.doctorId}:${d.date}`, 'staff');
+  }
+
+  /** A lab order past its promised report time: the lab at that branch (people who enter results). */
+  async onTatBreached(c: Queryable, o: LabOrderChanged) {
+    const t = TenantContext.require();
+    const q = o.branchId ? `?branchId=${o.branchId}` : '';
+    const res = await fetch(`${process.env.SVC_URL_ENTITLEMENT ?? 'http://localhost:4403'}/internal/tenants/${t.id}/users-with-permission/result:enter:branch${q}`, { headers: { 'x-internal-token': process.env.INTERNAL_API_TOKEN ?? '' } });
+    if (!res.ok) throw new Error(`entitlement-service ${res.status}`);
+    const { userIds } = (await res.json()) as { userIds: string[] };
+    const vars = { hospital: t.name, orderNo: o.orderNo, tests: o.testNames.slice(0, 4).join(', '), link: webLink(t, '/lab/pending') };
+    for (const u of userIds) await this.plan(c, 'lab_tat_breached', u, vars, o.orderId, new Date(), `${o.orderId}:tat:${u}`, 'staff');
   }
 
   /** billing.payment_succeeded → receipt; billing.refund_processed → "refund on its way". Not stale-sensitive: money. */
@@ -104,6 +133,13 @@ export class PlannerService {
     const t = TenantContext.require();
     const vars = { hospital: t.name, prescriptionNo: p.prescriptionNo, doctorName: p.doctorName, patientName: p.patientName, link: webLink(t, '/care/prescriptions') };
     await this.plan(c, 'prescription_ready', p.accountPersonId, vars, p.prescriptionId, new Date());
+    // the doctor asked to see the patient again: a reminder the day before, 9 AM India time (4.G)
+    if (p.followUpOn) {
+      const at = new Date(Date.parse(`${p.followUpOn}T03:30:00Z`) - 86_400_000);
+      if (at.getTime() > Date.now() + MIN_LEAD_MS) {
+        await this.plan(c, 'follow_up_reminder', p.accountPersonId, { ...vars, date: fmt(p.followUpOn).day, link: webLink(t, `/care/doctors/${p.doctorId}`) }, p.prescriptionId, at, `${p.prescriptionId}:follow-up`);
+      }
+    }
   }
 
   /** Lab orders: booked (with preparation, never test names), doctor-requested (book a time), sample to repeat. */
@@ -115,8 +151,19 @@ export class PlannerService {
       hospital: t.name, patientName: o.patientName, orderNo: o.orderNo, when: f?.when ?? '', where: o.collectionType === 'HOME' ? 'home (sample collection)' : o.branchName ?? 'the lab',
       prep: o.preparation ? `${o.preparation}.` : 'No special preparation needed.', doctorName: o.orderedByName ?? 'Your doctor', link: webLink(t, '/care/lab-orders'),
     };
-    const key = type === EventTypes.labOrderBooked ? 'lab_booked' : type === EventTypes.labOrderOrdered ? 'lab_ordered' : type === EventTypes.labOrderSampleRejected ? 'lab_recollect' : null;
-    if (key) await this.plan(c, key, o.accountPersonId, vars, o.orderId, new Date(), `${o.orderId}:${type}:${o.status}`);
+    if (type === EventTypes.labOrderCancelled || type === EventTypes.labOrderExpired) await this.cancelPending(c, o.orderId);
+    const refundLine = o.refundPercent ? `${o.refundPercent === 100 ? 'The full amount' : `${o.refundPercent}% of what was paid`} will be refunded.` : '';
+    const key = type === EventTypes.labOrderBooked ? 'lab_booked' : type === EventTypes.labOrderOrdered ? 'lab_ordered' : type === EventTypes.labOrderSampleRejected ? 'lab_recollect'
+      : type === EventTypes.labOrderCancelled ? 'lab_cancelled' : type === EventTypes.labOrderExpired ? 'lab_expired' : null;
+    if (key) await this.plan(c, key, o.accountPersonId, { ...vars, refundLine }, o.orderId, new Date(), `${o.orderId}:${type}:${o.status}`);
+    // preparation (fasting…) reminder 12 hours before a booked visit (HLD promise, 4.G); a new time replaces it
+    if (type === EventTypes.labOrderBooked && o.preparation && o.slotAt) {
+      const at = new Date(Date.parse(o.slotAt) - 12 * 3_600_000);
+      if (at.getTime() > Date.now() + MIN_LEAD_MS) {
+        await c.query(`UPDATE notifications SET status = 'CANCELLED', last_error = 'new lab time' WHERE related_id = $1 AND template_key = 'lab_prep_reminder' AND status = 'SCHEDULED'`, [o.orderId]);
+        await this.plan(c, 'lab_prep_reminder', o.accountPersonId, vars, o.orderId, at, `${o.orderId}:prep:${o.slotAt}`);
+      }
+    }
   }
 
   /** Home collection: who is coming and when, on the way, missed (patient); a new visit (the phlebotomist, email). */

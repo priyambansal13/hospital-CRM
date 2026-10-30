@@ -1,27 +1,25 @@
-# Platform CI: deployment manifests and infrastructure code. Not run yet (no remote); same commands as local.
+# Platform CI: deployment manifests and infrastructure code; same commands as local.
 name: platform-ci
 on:
   pull_request:
+    paths: ['platform/deploy/**', 'platform/scripts/**', 'backend/modules/**', '.github/workflows/platform.yml']
   push:
     branches: [main]
+    paths: ['platform/deploy/**', 'platform/scripts/**', 'backend/modules/**', '.github/workflows/platform.yml']
+  workflow_dispatch:
 jobs:
   deploy-manifests:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with: { path: platform }
-      - uses: actions/checkout@v4
-        with: { repository: ${{ github.repository_owner }}/medicare-backend, path: backend }
-      - uses: actions/checkout@v4
-        with: { repository: ${{ github.repository_owner }}/medicare-frontend, path: frontend }
       - uses: azure/setup-helm@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
       - run: node platform/scripts/mc.mjs k8s check staging          # helm lint + render + kubeconform
-      - run: git -C platform diff --exit-code deploy/environments    # generated files must be committed
+      - run: git diff --exit-code platform/deploy/environments       # generated files must be committed
   terraform:
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: deploy/terraform/gke-staging } }
+    defaults: { run: { working-directory: platform/deploy/terraform/gke-staging } }
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3

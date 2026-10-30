@@ -39,7 +39,8 @@ export default async function Branches({ searchParams }: { searchParams: Promise
           rows={branches}
           empty="No branches yet. Add your first location above."
           columns={[
-            { header: 'Name', cell: (b) => b.name },
+            { header: 'Name', cell: (b) => (manage ? <a href={`/admin/branches/${b.id}`}>{b.name}</a> : b.name) },
+            { header: 'Time zone', cell: (b) => <span className="mc-meta">{b.timezone}</span> },
             { header: 'City', cell: (b) => b.city },
             { header: 'Pincode', cell: (b) => b.address?.pincode ?? '—' },
             { header: 'Status', cell: (b) => <Badge tone={b.active ? 'success' : 'neutral'}>{b.active ? 'Active' : 'Inactive'}</Badge> },

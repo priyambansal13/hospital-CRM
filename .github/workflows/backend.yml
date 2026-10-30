@@ -1,9 +1,17 @@
-# Backend CI. Not run yet in GitHub (repos have no remote); every step is the same command used locally.
+# Backend CI (monorepo: runs when backend/ or the shared modules change); every step is the same command used locally.
 name: backend-ci
 on:
   pull_request:
+    paths: ['backend/**', '.github/workflows/backend.yml']
   push:
     branches: [main]
+    paths: ['backend/**', '.github/workflows/backend.yml']
+  workflow_dispatch:
+    inputs:
+      integration: { description: 'Also run the integration job (Docker stack, API suites)', type: boolean, default: false }
+
+defaults:
+  run: { working-directory: backend }
 
 jobs:
   checks:
@@ -12,8 +20,9 @@ jobs:
       - uses: actions/checkout@v4
         with: { fetch-depth: 0 }
       - uses: pnpm/action-setup@v4
+        with: { package_json_file: backend/package.json }
       - uses: actions/setup-node@v4
-        with: { node-version: 24, cache: pnpm }
+        with: { node-version: 24, cache: pnpm, cache-dependency-path: backend/pnpm-lock.yaml }
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
       - run: pnpm lint                 # oxlint + module boundaries
@@ -26,13 +35,13 @@ jobs:
         run: pnpm --filter @mc/ai-assistant-service exec vitest run src/evals.spec.ts
 
   integration:
+    # the whole local stack in Docker: manual for now (workflow_dispatch with integration=true)
     needs: checks
+    if: github.event_name == 'workflow_dispatch' && inputs.integration
     runs-on: ubuntu-latest
+    defaults: { run: { working-directory: . } }
     steps:
       - uses: actions/checkout@v4
-        with: { path: backend }
-      - uses: actions/checkout@v4
-        with: { repository: ${{ github.repository_owner }}/medicare-platform, path: platform }
       - uses: pnpm/action-setup@v4
         with: { package_json_file: backend/package.json }
       - uses: actions/setup-node@v4
@@ -62,16 +71,18 @@ jobs:
 
   list-services:
     runs-on: ubuntu-latest
-    outputs: { services: ${{ steps.ls.outputs.services }} }
+    outputs:
+      services: ${{ steps.ls.outputs.services }}
     steps:
       - uses: actions/checkout@v4
-      - id: ls   # from services/*/package.json "mc" metadata, never a hand-written list
+      - id: ls   # from backend/services/*/package.json "mc" metadata, never a hand-written list
         run: echo "services=$(node -e 'const fs=require(\"fs\");console.log(JSON.stringify(fs.readdirSync(\"services\").filter(d=>JSON.parse(fs.readFileSync(`services/${d}/package.json`)).mc?.kind===\"service\")))')" >> "$GITHUB_OUTPUT"
 
   images:
-    # one image per service from the shared Dockerfile; pushed to Artifact Registry on main (Workload Identity Federation)
+    # one image per service from the shared Dockerfile; pushed to Artifact Registry on main (Workload Identity Federation),
+    # once the GCP variables are set on the repo
     needs: [checks, list-services]
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.GCP_WIF_PROVIDER != ''
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -79,7 +90,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
-        with: { workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}, service_account: ${{ vars.GCP_CI_SA }} }
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_CI_SA }}
       - run: gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
       - run: |
           IMG=${{ vars.IMAGE_REGISTRY }}/${{ matrix.service }}:${{ github.sha }}

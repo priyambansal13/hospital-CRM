@@ -60,7 +60,7 @@ Four kinds of problem stand out:
 | 7 | Video consults bookable and payable, but no video exists **[verified]** | H · ✅ fixed (hidden until Phase 28) | 4.D |
 | 8 | X-ray/ECG-only orders can never reach IN_LAB, so they can never be reported **[verified]** | H · ✅ fixed | 4.D |
 | 9 | Staff cannot be deactivated, offboarded, re-invited or have credentials reset | H · ✅ fixed (wave 2) | 4.B |
-| 10 | Doctor-ordered lab tests (and any lab walk-in) cannot be booked by staff | H | 4.D |
+| 10 | Doctor-ordered lab tests (and any lab walk-in) cannot be booked by staff | H · ✅ fixed (wave 3) | 4.D |
 | 11 | Home or later-day sample recollection is a dead end | H · ✅ fixed | 4.D |
 | 12 | Deactivating a branch or unpublishing a doctor leaves future appointments booked, with no notice | H · ✅ fixed | 4.D |
 | 13 | Prescribing ignores recorded allergies; no prescription void; unsigned visits can be completed | H · ✅ allergy check and unsigned-visit rule fixed; prescription void still open | 4.C |
@@ -447,7 +447,7 @@ The review changes the order of work. Before Phase 23 (assistant booking tools),
 - C-2: critical-value escalation.
 - Desk alerts for chat requests.
 
-**Wave 3: front-desk and lab completeness.**
+**Wave 3: front-desk and lab completeness.** ✅ Done 2026-10-30 (see §8).
 - E-1 to E-3: reschedule, future dates and receipts at the desk.
 - D-3: staff booking of lab tests.
 - Cash refund hand-back.
@@ -513,7 +513,29 @@ Verified by `mc test wave2` (45 checks), the tenancy leak test (now 1015 checks,
 | C-2 critical values | Unacknowledged critical values escalate every 15 minutes (`CRITICAL_ESCALATE_MINUTES`): first the ordering doctor, then the branch's pathologists, then on-call at the branch (`critical:escalation:branch`, held by branch admins). Each level is e-mailed. Self-booked tests go straight to the pathologists; before, nobody was told. The new lab page "Critical values" lists outstanding ones. The lab can record "phoned through to X" with a read-back, which stops the escalation. The doctor's queue shows a red banner. Staff get e-mail only, because there is no staff SMS channel yet. |
 | Desk chat alerts | Every desk board shows a banner when patients are waiting for a call back. Emergencies are in red and listed first, and the browser tab shows the count. It refreshes every 20 seconds. The banner is in-app only: the assistant service has no event outbox yet. |
 
-**Next: wave 3** (front-desk and lab completeness), as listed in §6.
+### Wave 3: done 2026-10-30
+
+Verified by `mc test wave3` (31 checks), the tenancy leak test (1045 checks) and the full regression run.
+
+| Gap | What changed |
+|---|---|
+| E-1 move a booking | Desk "Move" on a booked visit: pick a day and a free time with the same doctor; the payment travels with it. Staff can move only to branches they work at. |
+| E-2 other days | Desk board and booking have day chips (today and the next week or two). A later day offers times only, with no walk-in and no check-in. |
+| E-3 receipts | "Receipt" next to paid visits on the board. New "Collections" page: the day's totals, the invoices with receipts, and refunds to hand back. |
+| Cash refund hand-back | Refunds of counter payments (cash, UPI QR, card machine) wait in `HAND_BACK` and are listed on Collections. "Handed back" completes them: the invoice is updated and the patient is told. Before, they were marked done at once. |
+| D-12 no-show | A no-show of today can be checked in ("Arrived late: check in"). It keeps the slot and the payment, and the timeline updates. |
+| D-3 staff lab booking | New permission `lab_order:create:branch` (receptionist, lab tech, branch admin). "Book tests" in the lab zone: find the patient, pick tests and a time (the slot running now is allowed for a patient who is there), pay at the lab. The same page gives a time to tests a doctor ordered and to rejected samples. The desk patient list links to it. Lab techs can now look patients up (`patient:register:branch`). |
+| D-10 dispatcher | Reassign a visit that is on the way or at the door, as long as no tube has been collected. "Cannot visit" closes a visit, and the patient is asked to pick a new time. Overdue visits are flagged on the board. |
+| E-10 catalog editor | Per test: reference ranges (per sex), critical limits (checked to lie outside the normal range), turnaround and fasting. Per package: which tests it contains. |
+| E-4 branch edit | Branch page with name, address and time zone. The time zone is validated against IANA zones. |
+| E-5 home windows | Home visit times can be edited per branch (they were read-only). |
+| E-6 to E-8 patient | **Family:** edit a family member's name, date of birth and relation. **Waitlist:** leave it. **Timeline:** "Older entries" paging, and remove your own uploads. **Bills:** a bill page with payments and each refund's status, including "collect it at the hospital counter". |
+| 4.G notifications | **Patients:** lab tests cancelled or expired; appointment released because the payment was not completed; a preparation reminder 12 hours before a lab visit with fasting or preparation (replaced if the time changes, dropped if cancelled); a follow-up reminder the day before the date on the prescription. **Doctors:** the day's list each morning (7 AM at the branch, `AgendaJob`), and same-day bookings and cancellations by e-mail. **Lab:** turnaround breaches e-mailed to the branch's result-entry staff. |
+
+Not in wave 3 and still open:
+- E-9: the doctor's form for amending diagnoses.
+- The hospital owner's and MediCare staff's notifications in 4.G.
+- Wave 4 (production integrations).
 
 ---
 
