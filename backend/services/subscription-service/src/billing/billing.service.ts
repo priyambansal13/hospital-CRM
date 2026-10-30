@@ -195,9 +195,11 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
     const contract = extra.contract ?? (await this.plans.current(s.tenant_id, c));
     const usage = extra.withUsage ? await this.unbilledUsage(c, s.tenant_id, monthOf(start), book, contract) : { inputs: [], keys: [] };
     const { rows: [cp] } = s.coupon_code && (s.coupon_invoices_left ?? 1) > 0 && kind !== 'PRORATION' ? await c.query('SELECT * FROM coupons WHERE code = $1', [s.coupon_code]) : { rows: [] };
+    // credit notes from support (H-7) come off the next regular invoice
+    const { rows: notes } = kind !== 'PRORATION' ? await c.query('SELECT id, amount, reason FROM saas_credits WHERE tenant_id = $1 AND applied_invoice_id IS NULL ORDER BY created_at FOR UPDATE', [s.tenant_id]) : { rows: [] };
     const inv: Invoice = calculate({
       ...(await this.priced(c, book, contract)), quantities: await this.quantities(s.tenant_id), fraction, periodLabel: label(start, end),
-      usage: usage.inputs, credits: extra.credits, gstPercent: book.gstPercent,
+      usage: usage.inputs, credits: [...(extra.credits ?? []), ...notes.map((n) => ({ description: `Credit: ${n.reason}`, amount: Number(n.amount) }))], gstPercent: book.gstPercent,
       coupon: cp ? { code: cp.code, percentOff: cp.percent_off == null ? null : Number(cp.percent_off), amountOff: cp.amount_off == null ? null : Number(cp.amount_off) } : null,
     });
     const id = randomUUID();
@@ -207,6 +209,7 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
       VALUES ($1,$2,$3,$4,$5,$6,'OPEN',$7,$8,$9,$10,$11,$12,$13)`,
       [id, number, s.tenant_id, kind, start, end, book.currency, inv.subtotal, inv.discount, inv.gst, inv.total, JSON.stringify({ ...inv, plan: { code: contract.plan.code, name: contract.plan.name, version: contract.plan.version }, priceBook: book.code }), this.now(s)]);
     for (const k of usage.keys) await c.query('UPDATE usage_counters SET billed_invoice_id = $4 WHERE tenant_id = $1 AND feature_key = $2 AND month = $3', [s.tenant_id, k.feature, k.month, id]);
+    if (notes.length) await c.query('UPDATE saas_credits SET applied_invoice_id = $2, applied_at = now() WHERE id = ANY($1)', [notes.map((n) => n.id), id]);
     if (cp) await c.query('UPDATE subscriptions SET coupon_invoices_left = CASE WHEN coupon_invoices_left IS NULL THEN NULL ELSE coupon_invoices_left - 1 END WHERE tenant_id = $1', [s.tenant_id]);
     return { id, number, total: inv.total };
   }
@@ -563,6 +566,34 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
       s = await this.setStatus(c, s, 'ACTIVE', {}, card ? { kind: 'PAYMENT_RECEIVED', amount: inv.total, invoiceNo: inv.number } : undefined);
       await this.plans.audit(c, by, 'REACTIVATED', 'TENANT', tenantId, await this.plans.slug(tenantId), { status: was }, { status: 'ACTIVE', offline: !card, reason: opts.reason ?? null });
       return { status: 'ACTIVE', invoice: { number: inv.number, total: inv.total, paid: card } };
+    });
+  }
+
+  // ---------- support actions (console, review H-7) ----------
+
+  /** A longer trial (sales or support): only while trialing, ending at most 60 days from today. */
+  async extendTrial(tenantId: string, days: number, by: string, reason: string) {
+    return withTx(this.db, async (c) => {
+      const s = await this.sub(c, tenantId, true);
+      if (s.status !== 'TRIALING' || !s.trial_ends_at) throw new DomainError(409, 'NOT_TRIALING', `the subscription is ${s.status.toLowerCase().replace('_', ' ')}: only a trial can be extended`);
+      const until = new Date(s.trial_ends_at.getTime() + days * D);
+      if (until.getTime() - this.now(s).getTime() > 60 * D) throw new DomainError(422, 'TRIAL_TOO_LONG', 'a trial can end at most 60 days from today');
+      const n = await this.update(c, s, { trial_ends_at: until, trial_warned_at: null });
+      await this.publishStatus(c, n);
+      await this.plans.audit(c, by, 'TRIAL_EXTENDED', 'TENANT', tenantId, await this.plans.slug(tenantId), { trialEndsAt: s.trial_ends_at }, { trialEndsAt: until }, reason);
+      return { trialEndsAt: until };
+    });
+  }
+
+  /** A credit note: taken off the hospital's next invoice (goodwill, an outage, a billing correction). */
+  async addCredit(tenantId: string, amount: number, by: string, reason: string) {
+    return withTx(this.db, async (c) => {
+      await this.sub(c, tenantId, true);
+      const id = randomUUID();
+      await c.query('INSERT INTO saas_credits (id, tenant_id, amount, reason, created_by) VALUES ($1,$2,$3,$4,$5)', [id, tenantId, amount, reason, by]);
+      await this.plans.audit(c, by, 'CREDIT_NOTE', 'TENANT', tenantId, await this.plans.slug(tenantId), null, { amount }, reason);
+      const { rows: [t] } = await c.query('SELECT coalesce(sum(amount), 0) AS open FROM saas_credits WHERE tenant_id = $1 AND applied_invoice_id IS NULL', [tenantId]);
+      return { id, amount, openCredit: Number(t.open) };
     });
   }
 

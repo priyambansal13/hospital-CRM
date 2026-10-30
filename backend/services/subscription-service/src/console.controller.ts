@@ -1,6 +1,6 @@
 import { Body, type CanActivate, Controller, Delete, Get, HttpCode, Injectable, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
-import { CurrentActor, notFound, parse } from '@mc/nest-common';
+import { CurrentActor, DomainError, notFound, parse } from '@mc/nest-common';
 import { type Actor, TenantContext } from '@mc/tenancy';
 import { z } from 'zod';
 import { BuilderService, type Who } from './builder.service.js';
@@ -58,7 +58,8 @@ export class ConsoleController {
 
   private async tenant(id: string) {
     if (!Uuid.safeParse(id).success) throw notFound('hospital');
-    const t = (await this.builder.hospitals()).find((h) => h.id === id);
+    // a hospital created moments ago may not be in the cached list yet: look again before saying "not found"
+    const t = (await this.builder.hospitals()).find((h) => h.id === id) ?? (await this.builder.hospitals({ fresh: true })).find((h) => h.id === id);
     if (!t) throw notFound('hospital');
     return t;
   }
@@ -227,6 +228,43 @@ export class ConsoleController {
   async reactivate(@Param('id') id: string, @Body() body: unknown, @CurrentActor() a: Actor) {
     const q = parse(z.object({ offline: z.boolean().default(false), reason: z.string().trim().min(5).max(300) }), body);
     return this.billing.reactivate((await this.tenant(id)).id, who(a).label, q);
+  }
+
+  // ---- support actions (review H-7)
+  @Post('hospitals/:id/trial')
+  @HttpCode(200)
+  @RequirePermission('customer:manage:tenant')
+  async extendTrial(@Param('id') id: string, @Body() body: unknown, @CurrentActor() a: Actor) {
+    const q = parse(z.object({ days: z.number().int().min(1).max(60), reason: z.string().trim().min(5).max(300) }), body);
+    return this.billing.extendTrial((await this.tenant(id)).id, q.days, who(a).label, q.reason);
+  }
+
+  @Post('hospitals/:id/credits')
+  @RequirePermission('customer:manage:tenant')
+  async credit(@Param('id') id: string, @Body() body: unknown, @CurrentActor() a: Actor) {
+    const q = parse(z.object({ amount: z.number().positive().max(1_000_000), reason: z.string().trim().min(5).max(300) }), body);
+    return this.billing.addCredit((await this.tenant(id)).id, q.amount, who(a).label, q.reason);
+  }
+
+  /**
+   * Take a hospital offline (abuse, a legal hold, the owner's request) or bring it back; deleting needs the slug typed
+   * again. Every action is in the platform audit log with the reason.
+   */
+  @Post('hospitals/:id/status')
+  @HttpCode(200)
+  @RequirePermission('customer:manage:tenant')
+  async setStatus(@Param('id') id: string, @Body() body: unknown, @CurrentActor() a: Actor) {
+    const t = await this.tenant(id);
+    if (t.plan?.internal) throw notFound('hospital');
+    const q = parse(z.object({ status: z.enum(['ACTIVE', 'SUSPENDED', 'DELETED']), reason: z.string().trim().min(5).max(300), confirmSlug: z.string().optional() }), body);
+    if (q.status === 'DELETED' && q.confirmSlug !== t.slug) throw new DomainError(422, 'CONFIRM_SLUG', `type the hospital's slug (${t.slug}) to delete it`);
+    const res = await fetch(`${process.env.SVC_URL_TENANT ?? 'http://localhost:4401'}/internal/tenants/${t.id}/status`, {
+      method: 'PATCH', headers: { 'content-type': 'application/json', 'x-internal-token': process.env.INTERNAL_API_TOKEN ?? '' }, body: JSON.stringify({ status: q.status }),
+    });
+    if (!res.ok) throw new DomainError(502, 'TENANT_SERVICE', `tenant-service ${res.status}`);
+    if (q.status === 'DELETED') await this.billing.close(t.id);
+    await this.plans.auditOnce(who(a).label, `HOSPITAL_${q.status}`, t.id, t.slug, q.reason);
+    return { id: t.id, slug: t.slug, status: q.status };
   }
 
   @Get('pricebook')

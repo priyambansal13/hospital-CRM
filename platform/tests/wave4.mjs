@@ -131,5 +131,37 @@ check(/mc_http_request_duration_seconds_count\{method="GET",route="\/v1\/appoint
 check(/mc_outbox_pending \d+/.test(prom) && prom.includes('mc_dlq_messages_total'), 'H-3/H-4 outbox backlog and dead-letter counters are exported');
 check((await fetch('http://localhost:61000/api/scheduling/metrics', { headers: { 'x-tenant-host': 'citycare.localhost' } })).status === 404, 'H-3 metrics are not reachable through the API gateway');
 
+// ======== H-7 console support actions ========
+if (bs) {
+  const sub = (path, body) => fetch(`http://localhost:4413/internal/tenants/${bs.id}/billing${path}`, { method: 'POST', headers: { 'x-internal-token': env.INTERNAL_API_TOKEN, 'content-type': 'application/json' }, body: JSON.stringify(body ?? {}) }).then((r) => r.json());
+  const support = await staffToken('support@medicare.test', 'medicare');
+  const C = (m, path, b) => call(m, `/api/subscription/v1/platform/hospitals/${bs.id}${path}`, support, b, 'medicare.localhost');
+  await sub('/reset-trial', { days: 14 });
+  const ext = await C('POST', '/trial', { days: 10, reason: 'pilot needs more time' });
+  check(!!ext.trialEndsAt && Date.parse(ext.trialEndsAt) > Date.now() + 23 * 86_400_000, 'H-7 support extended the trial by 10 days');
+  check((await C('POST', '/trial', { days: 60, reason: 'way too long' })).code === 'TRIAL_TOO_LONG', 'H-7 a trial can end at most 60 days from today');
+  const cr = await C('POST', '/credits', { amount: 500, reason: 'outage on 30 October' });
+  check(cr.openCredit === 500, 'H-7 credit note of ₹500 recorded');
+  const owner = await staffToken('admin@brightsmile.test', 'brightsmile');
+  const st = await call('POST', '/api/subscription/v1/account/card-session', owner, { returnUrl: 'http://brightsmile.localhost:3400/account/card/return' }, 'brightsmile.localhost');
+  await call('POST', `/api/subscription/v1/sim-gateway/mandate/${st.sessionId}`, null, { number: '4111 1111 1111 1111', expiry: '12/30', name: 'Dr Smile' }, 'brightsmile.localhost');
+  await call('POST', `/api/subscription/v1/account/card-session/${st.sessionId}/complete`, owner, {}, 'brightsmile.localhost');
+  await sub('/advance', { to: 'trial-end' });
+  const invs = (await call('GET', '/api/subscription/v1/account/invoices', owner, undefined, 'brightsmile.localhost')).list ?? [];
+  const first = await call('GET', `/api/subscription/v1/account/invoices/${invs[0]?.id}`, owner, undefined, 'brightsmile.localhost');
+  check((first.lines ?? []).some((l) => l.kind === 'CREDIT' && l.amount === -500 && /outage/.test(l.description)), 'H-7 the credit comes off the first invoice');
+  await sub('/reset-trial', { days: 14 });
+  // take a hospital offline and back; delete needs the slug
+  const tmp = `wfour${SFX}`;
+  execFileSync('node', [join(PLATFORM, 'scripts/mc.mjs'), 'tenant', 'create', tmp, '--name', `W4 ${SFX}`, '--plan', 'CLINIC_STARTER'], { stdio: 'ignore' });
+  const tid = JSON.parse(execFileSync('curl', ['-s', '-H', `x-internal-token: ${env.INTERNAL_API_TOKEN}`, 'http://localhost:4401/internal/tenants'], { encoding: 'utf8' })).find((t) => t.slug === tmp).id;
+  const S = (b) => call('POST', `/api/subscription/v1/platform/hospitals/${tid}/status`, support, b, 'medicare.localhost');
+  check((await S({ status: 'SUSPENDED', reason: 'legal hold requested' })).status === 'SUSPENDED', 'H-7 support took the hospital offline');
+  check((await call('GET', '/api/tenant/v1/public/branding', null, undefined, `${tmp}.localhost`)).http >= 400, 'H-7 an offline hospital does not answer');
+  check((await S({ status: 'ACTIVE', reason: 'legal hold lifted' })).status === 'ACTIVE', 'H-7 and brought it back');
+  check((await S({ status: 'DELETED', reason: 'customer left', confirmSlug: 'wrong' })).code === 'CONFIRM_SLUG', 'H-7 deleting needs the slug typed again');
+  check((await S({ status: 'DELETED', reason: 'test hospital, not needed', confirmSlug: tmp })).status === 'DELETED', 'H-7 deleted (data kept for the retention period)');
+}
+
 console.log(failures ? `\n\x1b[31m${failures} check(s) failed\x1b[0m` : '\n\x1b[32mwave 4: all checks passed\x1b[0m');
 process.exit(failures ? 1 : 0);

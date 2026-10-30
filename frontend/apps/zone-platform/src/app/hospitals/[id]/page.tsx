@@ -1,4 +1,5 @@
 import { api, ApiError } from '@mc/bff';
+import { supportAction } from '@/lib/support-actions';
 import { reactivateHospital } from '@/lib/reactivate-actions';
 import { can, ZoneFrame, zoneCapabilities } from '@mc/features';
 import { Alert, Badge, Button, Card, PageHeader, Table } from '@mc/ui';
@@ -196,6 +197,37 @@ export default async function HospitalPage({ params, searchParams }: { params: P
           { header: 'What', cell: (a) => <>{a.action.toLowerCase().replaceAll('_', ' ')}{a.note ? <div className="mc-meta">{a.note}</div> : null}</> },
         ]} />
       </Card>
+      {manage ? (
+        // support actions (review H-7); each needs a reason, kept in the platform audit log
+        <Card title="Support actions">
+          {billing?.status === 'TRIALING' ? (
+            <form action={supportAction} className="mc-inline" aria-label="Extend trial" style={{ marginBottom: 12 }}>
+              <input type="hidden" name="hospitalId" value={h.id} /><input type="hidden" name="op" value="trial" />
+              <input name="days" type="number" min={1} max={60} defaultValue={14} aria-label="Days" className="mc-input-sm" style={{ width: 70 }} />
+              <input name="reason" required minLength={5} placeholder="Why" aria-label="Reason" className="mc-input-sm" />
+              <button className="mc-btn mc-btn-ghost">Extend trial</button>
+            </form>
+          ) : null}
+          <form action={supportAction} className="mc-inline" aria-label="Credit note" style={{ marginBottom: 12 }}>
+            <input type="hidden" name="hospitalId" value={h.id} /><input type="hidden" name="op" value="credit" />
+            <input name="amount" type="number" min={1} step="0.01" required placeholder="₹" aria-label="Amount" className="mc-input-sm" style={{ width: 90 }} />
+            <input name="reason" required minLength={5} placeholder="Why (e.g. outage on 3 Nov)" aria-label="Reason" className="mc-input-sm" />
+            <button className="mc-btn mc-btn-ghost">Add credit</button>
+          </form>
+          <form action={supportAction} className="mc-inline" aria-label="Online status" style={{ marginBottom: 12 }}>
+            <input type="hidden" name="hospitalId" value={h.id} /><input type="hidden" name="op" value={h.status === 'SUSPENDED' ? 'activate' : 'suspend'} />
+            <input name="reason" required minLength={5} placeholder="Why" aria-label="Reason" className="mc-input-sm" />
+            <button className="mc-btn mc-btn-ghost">{h.status === 'SUSPENDED' ? 'Bring back online' : 'Take offline'}</button>
+          </form>
+          <form action={supportAction} className="mc-inline" aria-label="Delete hospital">
+            <input type="hidden" name="hospitalId" value={h.id} /><input type="hidden" name="op" value="delete" />
+            <input name="reason" required minLength={5} placeholder="Why" aria-label="Reason" className="mc-input-sm" />
+            <input name="confirmSlug" required placeholder={`type ${h.slug}`} aria-label="Confirm slug" className="mc-input-sm" />
+            <button className="mc-btn mc-btn-danger">Delete</button>
+          </form>
+          <p className="mc-meta">Deleting keeps the data for the retention period (30 days); it is then purged with <code>mc tenant purge</code>.</p>
+        </Card>
+      ) : null}
     </ZoneFrame>
   );
 }

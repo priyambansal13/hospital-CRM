@@ -281,7 +281,8 @@ export class BuilderService {
 
   // ---------- hospitals ----------
 
-  async hospitals() {
+  async hospitals(opts: { fresh?: boolean } = {}) {
+    if (opts.fresh) this.placements.invalidate?.();
     const { rows } = await this.db.query(`SELECT c.tenant_id, p.code, p.name, p.internal, pv.version, pv.status version_status, c.starts_at, c.overrides,
         (SELECT coalesce(json_agg(a.code ORDER BY a.code), '[]') FROM contract_addons ca JOIN addons a ON a.id = ca.addon_id WHERE ca.contract_id = c.id) addons
       FROM contracts c JOIN plan_versions pv ON pv.id = c.plan_version_id JOIN plans p ON p.id = pv.plan_id WHERE c.status = 'ACTIVE'`);

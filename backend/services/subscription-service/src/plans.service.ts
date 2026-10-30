@@ -283,6 +283,11 @@ export class PlansService implements OnModuleInit, OnApplicationBootstrap {
   }
 
   /** Append to the platform audit log (same transaction as the change). */
+  /** One audit entry outside a transaction (console actions that call other services). */
+  async auditOnce(actor: string, action: string, tenantId: string, label: string, note: string) {
+    await this.audit(this.db, actor, action, 'TENANT', tenantId, label, null, null, note);
+  }
+
   async audit(c: Queryable, actor: string, action: string, targetType: string, targetId: string, label: string | null, before: unknown, after: unknown, note?: string | null) {
     await c.query(`INSERT INTO platform_audit (actor, action, target_type, target_id, target_label, before, after, note) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
       [actor, action, targetType, targetId, label, before == null ? null : JSON.stringify(before), after == null ? null : JSON.stringify(after), note ?? null]);
