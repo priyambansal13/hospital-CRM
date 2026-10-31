@@ -39,14 +39,8 @@ export default async function ConfirmBooking({ params, searchParams }: { params:
     <ZoneFrame zone="patient" path={path} zones={ZONES}>
       <PageHeader title="Confirm your appointment" />
       <Flash ok={sp.ok} error={sp.error} />
-      <Card title="Appointment">
-        <dl className="mc-summary">
-          <dt>Doctor</dt><dd>{slot.doctor.name}</dd>
-          <dt>When</dt><dd>{fmtDay(slot.localDate, { weekday: 'long', day: 'numeric', month: 'long' })}, {fmtTime(slot.localTime)}</dd>
-          <dt>Where</dt><dd>{slot.mode === 'VIDEO' ? 'Video consultation' : slot.branch.name}</dd>
-          <dt>Fee</dt><dd>{slot.fee != null ? `${inr(slot.fee)}${online ? '' : ', pay at the hospital'}` : 'Pay at the hospital'}</dd>
-        </dl>
-      </Card>
+      <div className="mc-split">
+      <div className="mc-split-main">
       {!self ? (
         <Card title="First, tell us about you">
           <p className="mc-muted" style={{ marginTop: 0 }}>We need a few details once to create your hospital record.</p>
@@ -108,6 +102,22 @@ export default async function ConfirmBooking({ params, searchParams }: { params:
           </Card>
         </>
       )}
+      </div>
+      <aside className="mc-split-side mc-split-form" aria-label="Your appointment">
+        <Card title="Appointment">
+          <div className="mc-doccard-top" style={{ marginBottom: 14 }}>
+            <span className="mc-avatar" aria-hidden>{slot.doctor.name.replace(/^Dr\.?\s*/i, '').split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase()}</span>
+            <div><strong>{fmtDay(slot.localDate, { weekday: 'long', day: 'numeric', month: 'long' })}</strong><div className="mc-kpi-value" style={{ fontSize: '1.6rem' }}>{fmtTime(slot.localTime)}</div></div>
+          </div>
+          <dl className="mc-summary">
+            <dt>Doctor</dt><dd>{slot.doctor.name}</dd>
+            <dt>When</dt><dd>{fmtDay(slot.localDate, { weekday: 'long', day: 'numeric', month: 'long' })}, {fmtTime(slot.localTime)}</dd>
+            <dt>Where</dt><dd>{slot.mode === 'VIDEO' ? 'Video consultation' : slot.branch.name}</dd>
+            <dt>Fee</dt><dd>{slot.fee != null ? `${inr(slot.fee)}${online ? '' : ', pay at the hospital'}` : 'Pay at the hospital'}</dd>
+          </dl>
+        </Card>
+      </aside>
+      </div>
     </ZoneFrame>
   );
 }

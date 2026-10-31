@@ -136,6 +136,14 @@ h3 { letter-spacing: -.01em; }
 .mc-stat { font-size: 2.1rem; font-weight: 800; margin: 0; letter-spacing: -.03em; }
 .mc-section-title { margin: 18px 0 8px; font-size: .8rem; color: var(--faint); font-weight: 800; text-transform: uppercase; letter-spacing: .08em; }
 
+/* two columns: the work and, beside it, what you read while doing it (or a form beside its list) */
+.mc-split { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 20px; align-items: start; }
+.mc-split-main, .mc-split-side { display: grid; gap: 20px; min-width: 0; align-content: start; }
+.mc-split-side > .mc-section-title { margin: 6px 0 -8px; }
+.mc-split-side .mc-card { padding: 16px; }
+.mc-split-form { position: sticky; top: 80px; }
+@media (max-width: 1100px) { .mc-split { grid-template-columns: 1fr; } .mc-split-form { position: static; } }
+
 /* KPI tiles */
 .mc-kpis { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
 .mc-kpi { position: relative; overflow: hidden; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 18px; box-shadow: var(--shadow); text-decoration: none; color: inherit; display: grid; gap: 4px; transition: transform .15s, box-shadow .15s, border-color .15s; animation: mc-rise .3s ease both; }
@@ -214,6 +222,7 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--brand); width:
 .mc-table { width: 100%; border-collapse: collapse; font-size: 14px; }
 .mc-table th { text-align: left; color: var(--muted); font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--surface-2); position: sticky; top: 0; }
 .mc-table td { padding: 11px 12px; border-bottom: 1px solid var(--border); }
+.mc-table td a { white-space: nowrap; } /* invoice and record numbers stay on one line */
 .mc-table tbody tr:last-child td { border-bottom: 0; }
 .mc-table tbody tr { transition: background .12s; }
 .mc-table tbody tr:hover { background: color-mix(in srgb, var(--brand) 4%, transparent); }

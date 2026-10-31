@@ -36,30 +36,37 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
     <ZoneFrame zone="admin" path="/admin/staff" zones={ZONES}>
       <PageHeader title="Staff" subtitle="People who can sign in to this hospital's portals." />
       <Flash {...await searchParams} />
-      {can(caps, 'staff:invite:tenant') && roles.length ? (
-        <Card title="Invite a staff member">
-          <form action={inviteStaff} className="mc-form">
-            <input type="hidden" name="idempotencyKey" value={randomUUID()} />
-            <Field label="Full name" name="name" required placeholder="Dr. Asha Rao" />
-            <Field label="Email" name="email" type="email" required autoComplete="off" />
-            <Select label="Role" name="role" required options={roles.filter((r) => r.code !== 'PATIENT').map((r) => ({ value: r.code, label: r.name }))} />
-            {branchOptions.length > 1 || mine !== null ? <Select label="Works at" name="branchId" options={branchOptions} /> : null}
-            <Button>Send invite</Button>
-          </form>
+      {/* the list is the page; adding sits beside it */}
+      <div className="mc-split">
+        <div className="mc-split-main">
+        <Card title={`Staff (${staff.length})`}>
+          <Table
+            rows={staff}
+            empty="No staff yet."
+            columns={[
+              { header: 'Name', cell: (s) => <a href={`/admin/staff/${s.userId}`}>{s.name}</a> },
+              { header: 'Email', cell: (s) => s.email },
+              { header: 'Roles', cell: (s) => (rolesByUser[s.userId] ?? []).map((r) => roleName[r] ?? r).join(', ') || '—' },
+              { header: 'Status', cell: (s) => <Badge tone={s.status === 'ACTIVE' ? 'success' : s.status === 'DISABLED' ? 'danger' : 'warning'}>{s.status === 'DISABLED' ? 'deactivated' : s.status.toLowerCase()}</Badge> },
+            ]}
+          />
         </Card>
-      ) : null}
-      <Card title={`Staff (${staff.length})`}>
-        <Table
-          rows={staff}
-          empty="No staff yet."
-          columns={[
-            { header: 'Name', cell: (s) => <a href={`/admin/staff/${s.userId}`}>{s.name}</a> },
-            { header: 'Email', cell: (s) => s.email },
-            { header: 'Roles', cell: (s) => (rolesByUser[s.userId] ?? []).map((r) => roleName[r] ?? r).join(', ') || '—' },
-            { header: 'Status', cell: (s) => <Badge tone={s.status === 'ACTIVE' ? 'success' : s.status === 'DISABLED' ? 'danger' : 'warning'}>{s.status === 'DISABLED' ? 'deactivated' : s.status.toLowerCase()}</Badge> },
-          ]}
-        />
-      </Card>
+        </div>
+        <aside className="mc-split-side" aria-label="Invite staff">
+        {can(caps, 'staff:invite:tenant') && roles.length ? (
+          <Card title="Invite a staff member">
+            <form action={inviteStaff} className="mc-form">
+              <input type="hidden" name="idempotencyKey" value={randomUUID()} />
+              <Field label="Full name" name="name" required placeholder="Dr. Asha Rao" />
+              <Field label="Email" name="email" type="email" required autoComplete="off" />
+              <Select label="Role" name="role" required options={roles.filter((r) => r.code !== 'PATIENT').map((r) => ({ value: r.code, label: r.name }))} />
+              {branchOptions.length > 1 || mine !== null ? <Select label="Works at" name="branchId" options={branchOptions} /> : null}
+              <Button>Send invite</Button>
+            </form>
+          </Card>
+        ) : null}
+        </aside>
+      </div>
     </ZoneFrame>
   );
 }

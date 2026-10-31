@@ -54,7 +54,7 @@ export default async function Consult({ params, searchParams }: { params: Promis
         actions={<a className="mc-btn mc-btn-ghost" href="/doctor/queue">Back to queue</a>}
       />
       <Flash ok={sp.ok} error={sp.error} />
-      {copilot && appt.status !== 'COMPLETED' ? <CopilotPanel token={token} appointmentId={appointmentId} back={path} /> : null}
+      {copilot && !enc && appt.status !== 'COMPLETED' ? <CopilotPanel token={token} appointmentId={appointmentId} back={path} /> : null}
       {!enc ? (
         <Card title="Start the visit notes">
           <form action={startVisit}>
@@ -63,7 +63,8 @@ export default async function Consult({ params, searchParams }: { params: Promis
           </form>
         </Card>
       ) : (
-        <>
+        <div className="mc-split">
+          <div className="mc-split-main">
           {scribe ? <ScribePanel token={token} enc={{ ...enc, scribeConsent: enc.scribeConsent ?? null }} back={path} /> : null}
           <Card title={`Visit · ${enc.status.toLowerCase()}`}>
             <form action={saveDraft} className="mc-form">
@@ -151,8 +152,6 @@ export default async function Consult({ params, searchParams }: { params: Promis
             </Card>
           )}
 
-          <AllergyPanel allergies={allergies} patientId={enc.patient.id} back={path} canAdd />
-
           <Card title="Prescription">
             {enc.prescriptions.map((rx) => (
               <p key={rx.id}><strong>{rx.prescriptionNo}</strong>: {rx.items.map((i) => `${i.drugName}${i.strength ? ` ${i.strength}` : ''} ${i.dosage}${i.durationDays ? ` × ${i.durationDays}d` : ''}`).join(', ')} · <a href={`/doctor/prescriptions/${rx.id}/pdf`}>PDF</a></p>
@@ -223,6 +222,11 @@ export default async function Consult({ params, searchParams }: { params: Promis
             </Card>
           ) : null}
 
+          </div>
+          {/* beside the notes: what the doctor reads while writing */}
+          <aside className="mc-split-side" aria-label="Patient background">
+          {copilot && appt.status !== 'COMPLETED' ? <CopilotPanel token={token} appointmentId={appointmentId} back={path} /> : null}
+          <AllergyPanel allergies={allergies} patientId={enc.patient.id} back={path} canAdd />
           <DocumentsPanel token={token} patientId={enc.patient.id} />
           <h2 className="mc-section-title">Previous visits</h2>
           {chart ? (
@@ -230,7 +234,8 @@ export default async function Consult({ params, searchParams }: { params: Promis
               ? chart.encounters.filter((e) => e.id !== enc.id).map((e) => <EncounterCard key={e.id} e={e} />)
               : <p className="mc-empty">First visit with this hospital.</p>
           ) : <Alert tone="error">History could not be loaded.</Alert>}
-        </>
+          </aside>
+        </div>
       )}
     </ZoneFrame>
   );

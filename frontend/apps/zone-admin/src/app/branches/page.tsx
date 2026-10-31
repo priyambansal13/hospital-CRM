@@ -23,43 +23,50 @@ export default async function Branches({ searchParams }: { searchParams: Promise
     <ZoneFrame zone="admin" path="/admin/branches" zones={ZONES}>
       <PageHeader title="Branches" subtitle="Locations where your hospital sees patients." />
       <Flash {...await searchParams} />
-      {manage ? (
-        <Card title="Add a branch">
-          <form action={createBranch} className="mc-form">
-            <input type="hidden" name="idempotencyKey" value={randomUUID()} />
-            <Field label="Name" name="name" required placeholder="Sector 44" />
-            <Field label="City" name="city" required placeholder="Gurugram" />
-            <Field label="Pincode" name="pincode" inputMode="numeric" pattern="\d{6}" placeholder="122003" />
-            <Button>Add branch</Button>
-          </form>
+      {/* the list is the page; adding sits beside it */}
+      <div className="mc-split">
+        <div className="mc-split-main">
+        <Card title={`All branches (${branches.length})`}>
+          <Table
+            rows={branches}
+            empty="No branches yet. Add your first location above."
+            columns={[
+              { header: 'Name', cell: (b) => (manage ? <a href={`/admin/branches/${b.id}`}>{b.name}</a> : b.name) },
+              { header: 'Time zone', cell: (b) => <span className="mc-meta">{b.timezone}</span> },
+              { header: 'City', cell: (b) => b.city },
+              { header: 'Pincode', cell: (b) => b.address?.pincode ?? '—' },
+              { header: 'Status', cell: (b) => <Badge tone={b.active ? 'success' : 'neutral'}>{b.active ? 'Active' : 'Inactive'}</Badge> },
+              ...(manage ? [{
+                header: 'Action',
+                cell: (b: Branch) => (
+                  <form action={setBranchActive}>
+                    <input type="hidden" name="id" value={b.id} />
+                    <input type="hidden" name="version" value={b.version} />
+                    <input type="hidden" name="active" value={String(!b.active)} />
+                    <input type="hidden" name="upcoming" value={upcoming[b.id] ?? 0} />
+                    {b.active && upcoming[b.id] ? <label className="mc-check"><input type="checkbox" name="confirm" required /> Cancel {upcoming[b.id]} upcoming appointment{upcoming[b.id] === 1 ? '' : 's'}</label> : null}
+                    <Button variant="ghost">{b.active ? 'Deactivate' : 'Activate'}</Button>
+                  </form>
+                ),
+              }] : []),
+            ]}
+          />
         </Card>
-      ) : null}
-      <Card title={`All branches (${branches.length})`}>
-        <Table
-          rows={branches}
-          empty="No branches yet. Add your first location above."
-          columns={[
-            { header: 'Name', cell: (b) => (manage ? <a href={`/admin/branches/${b.id}`}>{b.name}</a> : b.name) },
-            { header: 'Time zone', cell: (b) => <span className="mc-meta">{b.timezone}</span> },
-            { header: 'City', cell: (b) => b.city },
-            { header: 'Pincode', cell: (b) => b.address?.pincode ?? '—' },
-            { header: 'Status', cell: (b) => <Badge tone={b.active ? 'success' : 'neutral'}>{b.active ? 'Active' : 'Inactive'}</Badge> },
-            ...(manage ? [{
-              header: 'Action',
-              cell: (b: Branch) => (
-                <form action={setBranchActive}>
-                  <input type="hidden" name="id" value={b.id} />
-                  <input type="hidden" name="version" value={b.version} />
-                  <input type="hidden" name="active" value={String(!b.active)} />
-                  <input type="hidden" name="upcoming" value={upcoming[b.id] ?? 0} />
-                  {b.active && upcoming[b.id] ? <label className="mc-check"><input type="checkbox" name="confirm" required /> Cancel {upcoming[b.id]} upcoming appointment{upcoming[b.id] === 1 ? '' : 's'}</label> : null}
-                  <Button variant="ghost">{b.active ? 'Deactivate' : 'Activate'}</Button>
-                </form>
-              ),
-            }] : []),
-          ]}
-        />
-      </Card>
+        </div>
+        <aside className="mc-split-side" aria-label="Add a branch">
+        {manage ? (
+          <Card title="Add a branch">
+            <form action={createBranch} className="mc-form">
+              <input type="hidden" name="idempotencyKey" value={randomUUID()} />
+              <Field label="Name" name="name" required placeholder="Sector 44" />
+              <Field label="City" name="city" required placeholder="Gurugram" />
+              <Field label="Pincode" name="pincode" inputMode="numeric" pattern="\d{6}" placeholder="122003" />
+              <Button>Add branch</Button>
+            </form>
+          </Card>
+        ) : null}
+        </aside>
+      </div>
     </ZoneFrame>
   );
 }
