@@ -656,7 +656,7 @@ flowchart LR
 - **Citation check** (`copilot/summary.ts`): a line is kept only if it cites at least one real reference, every reference exists, and every number in it appears in the cited facts; the rest are dropped and counted. Citations link to the record (visit anchor on the chart, prescription PDF, lab result page, allergy panel).
 - **Kept:** `clinical_drafts` (summary encrypted, sources as ids and types only, dropped-line count, model and prompt version, the doctor's rating, reason and encrypted comment). Asking again supersedes the old draft. Nothing is written into the medical record.
 - **Fixed on the way:** date-only values (prescription follow-up, date of birth, document issue date) were shown a day early wherever the service runs east of UTC (`dateOnly()` in nest-common); the tracing preload's signal handler could hold a stopping service open (removed).
-- **Tests:** `mc test copilot` (28 checks), `p24-copilot.spec.ts`, unit tests for the citation check and the dev writer.
+- **Tests:** `mc test copilot` (27 checks), `p24-copilot.spec.ts`, unit tests for the citation check and the dev writer.
 - **Not yet:** a run against real Gemini; "ask the chart" and the result-review two-liner (AI-AGENTS.md §5.1); summaries made automatically at check-in (the doctor asks for one).
 
 ### Phase 25: Ambient scribe + WhatsApp

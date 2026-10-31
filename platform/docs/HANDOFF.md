@@ -14,11 +14,11 @@
   - `mc test wave3` covers wave 3 (31 checks).
   - `mc test wave4` covers wave 4 (48 checks).
   - `mc test wave5` covers wave 5 (15 checks).
-  - `mc test concierge` is the Phase 23 booking-task eval (28 checks); `mc test copilot` covers Phase 24 (report explainer and pre-visit summary). Run both before the leak test, which uses a card and a summary they leave.
+  - `mc test concierge` is the Phase 23 booking-task eval (28 checks); `mc test copilot` covers Phase 24 (report explainer and pre-visit summary, 27 checks). Run both before the leak test, which uses a card and a summary they leave.
   - The tenancy leak test has 1108 checks and found 0 leaks.
 - Git: one repo for all three folders, at https://github.com/priyambansal13/hospital-CRM (`main`).
   - Everything up to Phase 24 is pushed.
-  - CI workflows are in `.github/workflows` (backend, frontend, platform), with path filters. They pass on GitHub, as does the security workflow (2026-10-31, Phase 23 commit 71bf620).
+  - CI workflows are in `.github/workflows` (backend, frontend, platform), with path filters. They pass on GitHub, as does the security workflow (2026-10-31, Phase 24 commit c7e1a07).
   - Image builds wait for the `GCP_WIF_PROVIDER` repo variable.
   - The integration job is manual (workflow_dispatch).
 
