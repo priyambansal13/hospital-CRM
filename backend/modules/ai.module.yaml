@@ -1,10 +1,12 @@
 # AI assistant (docs/AI-AGENTS.md; IMPLEMENTATION-PLAN.md Phase 22): the patients' Care Concierge, knowledge-only for
 # now (hospital FAQs, policies, test preparation), with the emergency check in code before any model call and a
 # human handoff to the front desk. Phase 23: tools (find doctors and times, my appointments, lab tests) and Confirm
-# cards for booking, moving and cancelling (the patient's tap runs the normal booking API).
+# cards for booking, moving and cancelling (the patient's tap runs the normal booking API). Phase 24: the report
+# explainer (structured lab values; critical values are never explained first) and the doctor's pre-visit summary
+# (every line cites the record it came from; nothing enters the medical record).
 key: ai
 name: AI assistant
-version: 2
+version: 3
 dependsOn: [core]
 services: [ai-assistant-service]
 lifecycle: [assistant]
@@ -12,14 +14,18 @@ permissions:
   - { code: assistant:chat:own, description: Chat with the hospital's AI assistant }
   - { code: knowledge:manage:tenant, description: Edit what the AI assistant knows (FAQs, policies, emergency information) }
   - { code: assistant_handoff:manage:branch, description: See chats patients handed to a person and close them }
+  - { code: copilot:use:own, description: Use the AI copilot for own patients (pre-visit summary) }
 features:
   - { key: ai.concierge, name: AI assistant messages, type: METERED, unit: messages }
   - { key: ai.booking, name: Booking from the AI assistant, type: BOOLEAN }
+  - { key: ai.reports, name: Lab report explainer, type: BOOLEAN }
+  - { key: ai.copilot, name: Doctor copilot (pre-visit summary), type: BOOLEAN }
 nav:
   - { key: assistant-chat, label: Ask us, zone: patient, href: /care/assistant, permissions: [assistant:chat:own], audience: patient }
   - { key: assistant-handoffs, label: Chat requests, zone: desk, href: /desk/assistant, permissions: [assistant_handoff:manage:branch], audience: staff }
   - { key: knowledge-admin, label: Assistant knowledge, zone: admin, href: /admin/knowledge, permissions: [knowledge:manage:tenant, admin:access:tenant] }
 defaultRoleGrants:
   PATIENT: [assistant:chat:own]
+  DOCTOR: [copilot:use:own]
   RECEPTIONIST: [assistant_handoff:manage:branch]
   BRANCH_ADMIN: [assistant_handoff:manage:branch, knowledge:manage:tenant]

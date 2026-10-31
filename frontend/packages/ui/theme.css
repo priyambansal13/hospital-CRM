@@ -158,3 +158,10 @@ h2 { font-size: 1.05rem; margin: 0 0 12px; }
 .mc-chat-form textarea { width: 100%; font: inherit; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); color: var(--text); resize: vertical; }
 .mc-chat-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 @media (max-width: 600px) { .mc-chat-msg { max-width: 95%; } .mc-chat-log { max-height: 65vh; padding: 12px; } }
+
+/* Doctor copilot (Phase 24): a draft with citations to the record */
+.mc-copilot section h3 { margin: 12px 0 4px; font-size: .95rem; }
+.mc-copilot ul { margin: 0; padding-left: 18px; }
+.mc-copilot li { margin: 2px 0; }
+.mc-cite { font-size: 12px; color: var(--brand); white-space: nowrap; margin-left: 2px; }
+.mc-copilot-rate { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }

@@ -1,7 +1,7 @@
 import { type Allergy, allergyConflicts } from './allergy-check.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { type BreakGlassGranted, EventTypes, type PrescriptionIssued, Topics } from '@mc/contracts';
-import { conflict, CONTROL_DB, DomainError, forbidden, notFound } from '@mc/nest-common';
+import { conflict, CONTROL_DB, DomainError, forbidden, notFound, dateOnly } from '@mc/nest-common';
 import { type Actor, addToOutbox, envelope, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import type pg from 'pg';
@@ -23,7 +23,7 @@ const age = (dob: string | Date | null) => {
   if (n.getUTCMonth() < d.getUTCMonth() || (n.getUTCMonth() === d.getUTCMonth() && n.getUTCDate() < d.getUTCDate())) y--;
   return y;
 };
-export const toPatient = (p: any) => ({ id: p.id, name: p.name, mrn: p.mrn, dob: p.dob ? new Date(p.dob).toISOString().slice(0, 10) : null, age: age(p.dob), gender: p.gender });
+export const toPatient = (p: any) => ({ id: p.id, name: p.name, mrn: p.mrn, dob: dateOnly(p.dob), age: age(p.dob), gender: p.gender });
 
 @Injectable()
 export class RecordsService {
@@ -85,7 +85,7 @@ export class RecordsService {
     ]);
     return {
       id: p.id, prescriptionNo: p.prescription_no, encounterId: p.encounter_id, issuedAt: p.issued_at,
-      followUpOn: p.follow_up_on ? new Date(p.follow_up_on).toISOString().slice(0, 10) : null,
+      followUpOn: dateOnly(p.follow_up_on),
       advice: await this.crypto.decrypt(this.tid(), `prescriptions.advice:${p.id}`, p.advice_enc),
       doctor: { id: p.doctor_id, name: p.doctor_name },
       patient: { id: p.patient_id, name: p.patient_name, mrn: p.mrn, age: age(p.dob), gender: p.gender },

@@ -30,7 +30,7 @@ export interface ChatActions {
   reject?: (actionId: string) => Promise<{ action: ActionCard } | Err>;
 }
 
-const SUGGESTIONS = ['What are the visiting hours?', 'Do I need to fast before a blood test?', 'I need a skin doctor tomorrow morning', 'My appointments', 'मिलने का समय क्या है?'];
+const SUGGESTIONS = ['What are the visiting hours?', 'Do I need to fast before a blood test?', 'I need a skin doctor tomorrow morning', 'My appointments', 'What does my latest report mean?', 'मिलने का समय क्या है?'];
 const isErr = (x: unknown): x is Err => !!x && typeof x === 'object' && 'error' in x;
 
 function Emergency({ m }: { m: ChatMessage }) {

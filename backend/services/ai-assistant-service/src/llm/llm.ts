@@ -18,6 +18,10 @@ export interface GenerateRequest {
   system: string;
   turns: Turn[];
   tools?: ToolDecl[];
+  /** 'copilot' = the stronger model for clinical summaries (GEMINI_COPILOT_MODEL) */
+  purpose?: 'chat' | 'copilot';
+  /** structured output: the reply is JSON matching this schema */
+  responseSchema?: Record<string, unknown>;
   /** low for chat, high for clinical drafting */
   thinking?: 'minimal' | 'low' | 'medium' | 'high';
   maxOutputTokens?: number;
@@ -39,6 +43,7 @@ export interface GenerateResult {
 export interface LlmClient {
   readonly name: string;
   readonly chatModel: string;
+  readonly copilotModel: string;
   readonly embedModel: string;
   generate(req: GenerateRequest): Promise<GenerateResult>;
   /** Unit-length vectors of EMBED_DIM numbers; `kind` lets providers optimise for queries vs documents. */

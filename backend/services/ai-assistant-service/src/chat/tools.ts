@@ -34,11 +34,12 @@ const URLS = {
   scheduling: () => process.env.SVC_URL_SCHEDULING ?? 'http://localhost:4405',
   diagnostics: () => process.env.SVC_URL_DIAGNOSTICS ?? 'http://localhost:4412',
   patient: () => process.env.SVC_URL_PATIENT ?? 'http://localhost:4406',
+  records: () => process.env.SVC_URL_RECORDS ?? 'http://localhost:4410',
 };
 
 export class ToolError extends Error {}
 
-/** A call to another service as the patient (their token, their hospital). */
+/** A call to another service as the signed-in person (their token, their hospital): patients here, doctors in the copilot. */
 export async function asPatient<T>(ctx: Pick<ToolContext, 'actor' | 'tenant'>, base: keyof typeof URLS, path: string, init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}): Promise<T> {
   const res = await fetch(`${URLS[base]()}${path}`, {
     method: init.method ?? (init.body ? 'POST' : 'GET'),
@@ -202,6 +203,36 @@ export const TOOLS: Record<string, Tool & { needs: (caps: Capabilities) => boole
     },
   },
 
+  list_my_reports: {
+    needs: (c) => c.modules.includes('diagnostics') && c.permissions.includes('lab_order:read:own') && !!c.features['ai.reports']?.enabled,
+    decl: { name: 'list_my_reports', description: 'The patient\'s (and their family\'s) lab reports that are ready (verified), newest first.', parameters: { type: 'object', properties: {} } },
+    async run(_args, ctx) {
+      const orders = await asPatient<{ id: string; orderNo: string; status: string; patient: { name: string }; tests: { name: string }[]; collectedAt: string | null; createdAt: string; orderedBy: { name: string } | null }[]>(ctx, 'diagnostics', '/v1/me/lab-orders');
+      const ready = orders.filter((o) => o.status === 'REPORT_PUBLISHED').slice(0, 5);
+      return { reports: ready.map((o) => ({ orderId: o.id, orderNo: o.orderNo, patient: o.patient.name, tests: o.tests.map((t) => t.name), date: localDate(new Date(o.collectedAt ?? o.createdAt)), orderedBy: o.orderedBy?.name ?? null })) };
+    },
+  },
+
+  explain_report: {
+    needs: (c) => c.modules.includes('diagnostics') && c.permissions.includes('lab_order:read:own') && !!c.features['ai.reports']?.enabled,
+    decl: {
+      name: 'explain_report',
+      description: 'The structured values of one verified lab report (from list_my_reports): each value with its unit, normal range and flag, so you can explain in simple words what is outside the range and what the test measures. Never diagnose; end with "discuss with your doctor".',
+      parameters: { type: 'object', properties: { orderId: { type: 'string' } }, required: ['orderId'] },
+    },
+    async run(args, ctx) {
+      type Param = { parameter: string; unit: string | null; refLow: number | null; refHigh: number | null; value: string | null; flag: string | null; critical: boolean };
+      const sheet = await asPatient<{ order: { orderNo: string; patient: { name: string }; orderedBy: { name: string } | null }; collectedAt: string | null; tests: { name: string; parameters: Param[] }[] }>(ctx, 'diagnostics', `/v1/lab-orders/${encodeURIComponent(String(args.orderId))}/results`);
+      // a critical value is never explained by the assistant: the lab calls the doctor first (docs/AI-AGENTS.md §4.4)
+      if (sheet.tests.some((t) => t.parameters.some((p) => p.critical))) return { criticalHeld: true, orderNo: sheet.order.orderNo };
+      const range = (p: Param) => (p.refLow != null && p.refHigh != null ? `${p.refLow}–${p.refHigh}` : p.refHigh != null ? `up to ${p.refHigh}` : p.refLow != null ? `from ${p.refLow}` : null);
+      return {
+        criticalHeld: false, orderNo: sheet.order.orderNo, patient: sheet.order.patient.name, date: sheet.collectedAt ? localDate(new Date(sheet.collectedAt)) : null, orderedBy: sheet.order.orderedBy?.name ?? null,
+        tests: sheet.tests.map((t) => ({ test: t.name, values: t.parameters.filter((p) => p.value != null).map((p) => ({ name: p.parameter, value: p.value, unit: p.unit, normalRange: range(p), flag: p.flag ?? 'NORMAL' })) })),
+      };
+    },
+  },
+
   propose_booking: {
     needs: (c) => c.modules.includes('appointments') && c.permissions.includes('appointment:create:own') && !!c.features['ai.booking']?.enabled,
     decl: {
@@ -286,3 +317,5 @@ export function toolsFor(caps: Capabilities): Tool[] {
     return true;
   });
 }
+
+export const asUser = asPatient;

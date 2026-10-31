@@ -14,6 +14,7 @@ const WEEKDAYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'frida
 const BOOK = /\b(doctor|doctors|dr|appointment|book|consult|consultation|specialist|checkup|check-up|see someone)\b|डॉक्टर/;
 const CANCEL = /\bcancel\b|रद्द/;
 const MOVE = /\b(reschedule|postpone|move my|change (?:the )?time|shift my)\b/;
+const REPORT = /\b(report|reports|result|results)\b|रिपोर्ट/;
 const MINE = /\b(my appointments?|my bookings?|when is my|upcoming appointments?)\b/;
 const LAB = /\b(test|tests|hba1c|thyroid|cbc|lipid|sugar|blood work|package|packages)\b/;
 // preparation questions are answered from the hospital information (test preparation), not the catalog
@@ -55,6 +56,19 @@ export function optionsFrom(r: SearchResult): (Slot & { doctor: string })[] {
   for (let i = 0; i < max && out.length < 3; i++) for (const d of r.doctors) if (d.slots[i] && out.length < 3) out.push({ ...d.slots[i], doctor: d.name });
   return out;
 }
+
+/** What a few common tests measure (the dev model's stand-in for the model's own knowledge). */
+const MEASURES: [RegExp, string][] = [
+  [/hba1c/i, 'HbA1c shows your average blood sugar over about the last 3 months.'],
+  [/glucose|sugar/i, 'Blood glucose is the amount of sugar in your blood.'],
+  [/haemoglobin|hemoglobin|^hb$/i, 'Haemoglobin carries oxygen in your blood.'],
+  [/tsh/i, 'TSH is a hormone that controls the thyroid gland.'],
+  [/cholesterol|ldl|hdl|triglyceride/i, 'This is one of the fats in your blood.'],
+  [/creatinine|urea/i, 'This shows how well your kidneys clear waste.'],
+  [/platelet/i, 'Platelets help your blood clot.'],
+  [/wbc|white/i, 'White blood cells fight infection.'],
+];
+const measures = (name: string) => MEASURES.find(([re]) => re.test(name))?.[1] ?? '';
 
 const fmt = (date: string, time: string) => `${new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`))} ${time}`;
 
@@ -114,6 +128,21 @@ export function devAgentStep(turns: Turn[], tools: ToolDecl[]): DevStep {
         if (!slot || !pick) return { text: 'That doctor has no free time then. Try another day.' };
         return call('propose_reschedule', { appointmentId: pick.appointmentId, newSlotId: slot.slotId });
       }
+      case 'list_my_reports': {
+        const list = (res.reports ?? []) as { orderId: string; orderNo: string; tests: string[]; date: string }[];
+        if (!list.length) return { text: 'You have no ready lab reports yet. They appear under "My lab tests" once the doctor at the lab has checked them.' };
+        const pick = ordinal != null ? list[ordinal] : list.find((r) => q.includes(r.orderNo.toLowerCase())) ?? list[0];
+        return pick ? call('explain_report', { orderId: pick.orderId }) : { text: 'Which report do you mean?' };
+      }
+      case 'explain_report': {
+        type V = { name: string; value: string; unit: string | null; normalRange: string | null; flag: string };
+        const tests = (res.tests ?? []) as { test: string; values: V[] }[];
+        const out = tests.flatMap((t) => t.values).filter((v) => v.flag !== 'NORMAL');
+        const lines = out.map((v) => `- ${v.name} is ${v.value}${v.unit ? ` ${v.unit}` : ''}, ${v.flag === 'LOW' ? 'below' : v.flag === 'HIGH' ? 'above' : 'outside'} the normal range${v.normalRange ? ` (${v.normalRange})` : ''}. ${measures(v.name)}`.trim());
+        const head = `Your ${tests.map((t) => t.test).join(', ')} report ${res.orderNo}${res.date ? ` from ${res.date}` : ''}:`;
+        const body = out.length ? `${lines.join('\n')}\n${out.length < tests.flatMap((t) => t.values).length ? 'Everything else is in the normal range.' : ''}` : 'All the values are in the normal range.';
+        return { text: `${head}\n${body}\nThese numbers alone are not a diagnosis. Please discuss these results with your doctor.${res.orderedBy ? ` I can book a follow-up with ${res.orderedBy} if you like.` : ''}` };
+      }
       case 'propose_cancel': return { text: `Your cancellation of ${res.appointmentNo} is on a card. Tap the button to cancel it.` };
       case 'propose_reschedule': return { text: `The new time for ${res.appointmentNo} is on a card. Tap the button to move it.` };
       case 'search_lab_tests': {
@@ -138,6 +167,7 @@ export function devAgentStep(turns: Turn[], tools: ToolDecl[]): DevStep {
     const pick = (last('list_my_appointments', earlier).appointments as Appt[])[ordinal];
     if (pick) return call('propose_cancel', { appointmentId: pick.appointmentId });
   }
+  if (REPORT.test(q) && has('list_my_reports')) return call('list_my_reports', {});
   if ((CANCEL.test(q) || MOVE.test(q) || MINE.test(q)) && has('list_my_appointments')) return call('list_my_appointments', {});
   if (LAB.test(q) && !BOOK.test(q) && !PREP.test(q) && has('search_lab_tests')) return call('search_lab_tests', { query: topic(q.replace(/\b(test|tests|price|cost|how|much|of|what|is|the)\b/g, ' ')) ?? q });
   if (BOOK.test(q) && has('search_doctors')) return call('search_doctors', { query: topic(q), date: dateFrom(q, day), partOfDay: partFrom(q) });

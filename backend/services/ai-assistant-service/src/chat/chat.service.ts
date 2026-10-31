@@ -34,6 +34,7 @@ const T = {
   fallback: { en: 'Sorry, I can\'t answer right now. Tap "Talk to a person" and our team will call you back.', hi: 'माफ़ कीजिए, मैं अभी जवाब नहीं दे पा रहा। "किसी व्यक्ति से बात करें" दबाएँ, हमारी टीम आपको कॉल करेगी।' },
   limit: { en: 'The assistant has reached this month\'s message limit for the hospital. Tap "Talk to a person" and our team will call you back.', hi: 'इस महीने के लिए सहायक की संदेश सीमा पूरी हो गई है। "किसी व्यक्ति से बात करें" दबाएँ।' },
   handoff: { en: 'Thanks. Someone from {hospital} will call you{phone} soon. For anything urgent, call the hospital directly.', hi: 'धन्यवाद। {hospital} से कोई जल्द ही आपको{phone} कॉल करेगा।' },
+  critical: { en: 'Your report {no} has a result your doctor needs to look at first. The lab has told your doctor, who will contact you. If you feel unwell now, call 112 or come to the emergency department.', hi: 'आपकी रिपोर्ट {no} में एक ऐसा नतीजा है जिसे पहले आपके डॉक्टर देखेंगे। लैब ने आपके डॉक्टर को बता दिया है, वे आपसे संपर्क करेंगे। अभी तबीयत ठीक न लगे तो 112 पर कॉल करें या इमरजेंसी में आएँ।' },
   steps: { en: 'Sorry, I could not finish that. Tap "Talk to a person" and our team will help.', hi: 'माफ़ कीजिए, मैं यह पूरा नहीं कर पाया। "किसी व्यक्ति से बात करें" दबाएँ।' },
 };
 const say = (k: keyof typeof T, lang: string) => (lang === 'hi' ? T[k].hi : T[k].en);
@@ -137,7 +138,7 @@ export class ChatService {
     const entries = hits.map((h, i) => ({ n: i + 1, title: h.title, text: h.text }));
     const today = localDate();
     const turns: Turn[] = [...(await this.history(cv.id, user.id)), { role: 'user', text: userTurn(entries, text, tools.length ? { today, weekday: WEEKDAY(today), family } : undefined) }];
-    const system = conciergeSystem(t.name, byName.has('propose_booking'));
+    const system = conciergeSystem(t.name, { canBook: byName.has('propose_booking'), canExplain: byName.has('explain_report') });
     const trace: Turn[] = [];
     const usage = { input: 0, output: 0, cached: 0 };
     const started = Date.now();
@@ -165,6 +166,12 @@ export class ChatService {
           return { id: call.id, name: call.name, response };
         }));
         trace.push({ role: 'user', results });
+        // a critical lab value: a fixed reply, the model never explains it (the lab calls the doctor first)
+        const held = results.find((x) => x.name === 'explain_report' && x.response.criticalHeld === true);
+        if (held) {
+          this.log.log(`${t.slug}: report with a critical value not explained (conversation ${cv.id})`);
+          return reply({ kind: 'ANSWER', text: say('critical', language).replace('{no}', String(held.response.orderNo ?? '')), sources: [], offerHandoff: true, emergency: null, safety: { criticalHeld: true }, model: out.model, usage, latencyMs: Date.now() - started, trace });
+        }
         // layer 2 from the model's own triage: same fixed emergency reply, nothing booked
         if (results.some((x) => x.name === 'triage_symptoms' && x.response.urgency === 'EMERGENCY')) {
           this.log.warn(`${t.slug}: triage said EMERGENCY (conversation ${cv.id})`);

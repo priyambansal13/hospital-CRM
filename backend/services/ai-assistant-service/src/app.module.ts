@@ -6,6 +6,8 @@ import { EntitlementsClient, EntitlementsModule } from '@mc/entitlements-sdk';
 import { type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { ChatController, HandoffsController, KnowledgeController } from './chat/chat.controller.js';
 import { ChatService } from './chat/chat.service.js';
+import { CopilotController } from './copilot/copilot.controller.js';
+import { CopilotService } from './copilot/copilot.service.js';
 import { KbService } from './kb/kb.service.js';
 import { LLM } from './llm/llm.js';
 import { createLlm } from './llm/provider.js';
@@ -57,7 +59,7 @@ class KnowledgeJobs implements OnModuleInit, OnApplicationBootstrap, OnApplicati
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'assistant', control: true, tenant: true, relay: false }), EntitlementsModule],
-  controllers: [InternalKeysController, InternalPurgeController, ChatController, HandoffsController, KnowledgeController],
-  providers: [{ provide: LLM, useFactory: createLlm }, FieldCrypto, KbService, ChatService, KnowledgeJobs],
+  controllers: [InternalKeysController, InternalPurgeController, ChatController, HandoffsController, KnowledgeController, CopilotController],
+  providers: [{ provide: LLM, useFactory: createLlm }, FieldCrypto, KbService, ChatService, CopilotService, KnowledgeJobs],
 })
 export class AppModule {}

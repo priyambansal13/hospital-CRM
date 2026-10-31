@@ -3,7 +3,9 @@ import { day, type Encounter, vitalsLine } from './records';
 
 /** A past visit, read-only (chart and consultation history). */
 export function EncounterCard({ e }: { e: Encounter }) {
+  // id: the copilot's citations link here (#enc-<id>)
   return (
+    <div id={`enc-${e.id}`}>
     <Card title={`${day(e.startedAt)} · ${e.doctor.name}`}>
       <p className="mc-meta" style={{ margin: 0 }}>
         <Badge tone={e.status === 'OPEN' ? 'warning' : 'success'}>{e.status.toLowerCase()}</Badge> {vitalsLine(e.vitals)}
@@ -18,5 +20,6 @@ export function EncounterCard({ e }: { e: Encounter }) {
       ))}
       {e.amendments.map((a, i) => <p key={i} className="mc-meta">Amended {day(a.at)} by {a.by ?? 'doctor'}: {a.reason} ({a.changed.join(', ')})</p>)}
     </Card>
+    </div>
   );
 }

@@ -11,6 +11,7 @@ const LEVEL = { minimal: ThinkingLevel.MINIMAL, low: ThinkingLevel.LOW, medium: 
 export class GeminiLlm implements LlmClient {
   readonly name = 'gemini';
   readonly chatModel = process.env.GEMINI_CHAT_MODEL ?? 'gemini-3.8-flash';
+  readonly copilotModel = process.env.GEMINI_COPILOT_MODEL ?? 'gemini-3.1-pro-preview';
   readonly embedModel = process.env.GEMINI_EMBED_MODEL ?? 'gemini-embedding-2';
   private readonly ai: GoogleGenAI;
 
@@ -22,10 +23,11 @@ export class GeminiLlm implements LlmClient {
 
   async generate(req: GenerateRequest): Promise<GenerateResult> {
     const res = await this.ai.models.generateContent({
-      model: this.chatModel,
+      model: req.purpose === 'copilot' ? this.copilotModel : this.chatModel,
       contents: req.turns.map(toContent),
       config: {
         systemInstruction: req.system,
+        ...(req.responseSchema ? { responseMimeType: 'application/json', responseJsonSchema: req.responseSchema } : {}),
         ...(req.tools?.length ? { tools: [{ functionDeclarations: req.tools.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: t.parameters })) }] } : {}),
         thinkingConfig: { thinkingLevel: LEVEL[req.thinking ?? 'low'] },
         maxOutputTokens: req.maxOutputTokens ?? 800,
@@ -40,7 +42,7 @@ export class GeminiLlm implements LlmClient {
       raw: c?.content,
       text: res.promptFeedback?.blockReason ? '' : (calls.length ? '' : (res.text ?? '')),
       finishReason: res.promptFeedback?.blockReason ? 'BLOCKED' : String(c?.finishReason ?? 'STOP'),
-      model: res.modelVersion ?? this.chatModel,
+      model: res.modelVersion ?? (req.purpose === 'copilot' ? this.copilotModel : this.chatModel),
       usage: { input: u?.promptTokenCount ?? 0, output: (u?.candidatesTokenCount ?? 0) + (u?.thoughtsTokenCount ?? 0), cached: u?.cachedContentTokenCount ?? 0 },
     };
   }

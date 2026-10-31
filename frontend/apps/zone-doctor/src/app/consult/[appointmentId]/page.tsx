@@ -1,12 +1,13 @@
 import { getSession } from '@mc/auth';
 import { amendVisitFull } from '@/lib/amend-actions';
 import { api, ApiError } from '@mc/bff';
-import { ZoneFrame, zoneCapabilities } from '@mc/features';
+import { can, ZoneFrame, zoneCapabilities } from '@mc/features';
 import { Alert, Badge, Button, Card, Field, PageHeader, TextArea } from '@mc/ui';
 import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
 import { addDiagnosis, orderLabTests, finishVisit, issuePrescription, makePrimary, removeDiagnosis, saveDraft, signVisit, startVisit } from '@/lib/consult-actions';
 import { AllergyPanel, DocumentsPanel, loadAllergies } from '@/lib/clinical-panels';
+import { CopilotPanel } from '@/lib/copilot';
 import { EncounterCard } from '@/lib/encounter-view';
 import { Flash } from '@/lib/flash';
 import { finishSignLater } from '@/lib/visit-actions';
@@ -25,7 +26,9 @@ const Hidden = ({ e, back }: { e: Encounter; back: string }) => (
 export default async function Consult({ params, searchParams }: { params: Promise<{ appointmentId: string }>; searchParams: Promise<{ ok?: string; error?: string; icd?: string; unsigned?: string; allergy?: string; rx?: string }> }) {
   const { appointmentId } = await params;
   const path = `/doctor/consult/${appointmentId}`;
-  await zoneCapabilities('doctor', path);
+  const caps = await zoneCapabilities('doctor', path);
+  // the copilot: AI module, the plan's feature and the doctor's permission (Phase 24)
+  const copilot = caps.modules.includes('ai') && !!caps.features['ai.copilot']?.enabled && can(caps, 'copilot:use:own');
   const { accessToken: token } = (await getSession())!;
   const sp = await searchParams;
   const appt = await api<Appt>(`/api/scheduling/v1/appointments/${encodeURIComponent(appointmentId)}`, { token }).catch((e) => (e instanceof ApiError && e.status === 404 ? notFound() : Promise.reject(e)));
@@ -49,6 +52,7 @@ export default async function Consult({ params, searchParams }: { params: Promis
         actions={<a className="mc-btn mc-btn-ghost" href="/doctor/queue">Back to queue</a>}
       />
       <Flash ok={sp.ok} error={sp.error} />
+      {copilot && appt.status !== 'COMPLETED' ? <CopilotPanel token={token} appointmentId={appointmentId} back={path} /> : null}
       {!enc ? (
         <Card title="Start the visit notes">
           <form action={startVisit}>

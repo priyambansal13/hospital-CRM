@@ -172,6 +172,8 @@ Symptom routing is **navigation, not diagnosis**:
 
 When a report is published, the patient can ask "what does my report mean?". The tool returns **structured values** (parameter, value, unit, reference range, flag) from `diagnostics.lab_results`, not the PDF, so numbers are exact. The model explains in simple language which values are outside the range and what the parameter measures, without diagnosing, and ends with "discuss with your doctor". It can offer to book a follow-up with the ordering doctor. Critical values (flag `CRITICAL`) are never explained by AI first: the lab's critical-value call protocol to the doctor happens first, and the AI just says "your doctor has been informed and will contact you".
 
+*As built (Phase 24, 2026-10-31): `list_my_reports` + `explain_report`. Stricter than above: a report with any critical value is never explained by the assistant at all; a fixed reply (code, no model) says the doctor has been told. See IMPLEMENTATION-PLAN.md Phase 24.*
+
 ### 4.5 Channels
 
 - **WhatsApp:** the WhatsApp Business API webhook goes to the AI gateway; the patient is identified by verified phone number + OTP for sensitive actions. Action cards become WhatsApp interactive buttons. No report contents in WhatsApp, only an app deep link.
@@ -190,6 +192,8 @@ When a report is published, the patient can ask "what does my report mean?". The
 | **Prescription safety** | Allergy and drug–drug interaction checks come from a **deterministic drug database**, not the model. The model only formats the draft and explains flagged interactions. |
 | **Result review** | "Results ready" notification includes a two-line summary of what changed versus the last result. |
 | **Ask the chart** | Free-text questions about *this* patient ("when was metformin started?") answered only from the record, with citations; "not found in the record" if absent. |
+
+*As built (Phase 24, 2026-10-31): the pre-visit summary, made when the doctor asks (not automatically at check-in), from the chart, allergies, today's triage and the last 4 verified lab reports; references E/P/A/L/T, and a citation check that drops lines citing nothing real or carrying numbers the cited records do not have. Ask the chart, result review, prescription safety and the scribe are not built yet.*
 
 Nothing the copilot writes enters the medical record until the doctor edits and **signs** the encounter (LLD §6.6). The signed record stores `ai_assisted: true` and the draft version, for audit and quality review.
 
@@ -249,7 +253,7 @@ Batch-style jobs use **Gemini Batch Mode** (discounted, asynchronous); check the
 
 ### 8.1 New tables (`assistant` schema)
 
-*As built (Phase 22): conversations, messages (text encrypted with the hospital's data key; `kind` ANSWER / EMERGENCY / BLOCKED / FALLBACK / HANDOFF / LIMIT; `safety` flags, never text), feedback, `handoffs` (front-desk call-backs), `kb_articles` (FAQ / POLICY / EMERGENCY editable by the hospital, TEST_PREP copied from the lab catalog) and `kb_chunks` with `vector(768)` plus a full-text column for hybrid retrieval and the embedding model per chunk. Phase 23 added `pending_actions` (BOOK / CANCEL / RESCHEDULE_APPOINTMENT, 15-minute expiry, the card the patient saw), `tool_calls` and `messages.trace_enc` (the tool calls and results behind an answer, encrypted); clinical_drafts come with Phases 24–25. See IMPLEMENTATION-PLAN.md Phases 22–23.*
+*As built (Phase 22): conversations, messages (text encrypted with the hospital's data key; `kind` ANSWER / EMERGENCY / BLOCKED / FALLBACK / HANDOFF / LIMIT; `safety` flags, never text), feedback, `handoffs` (front-desk call-backs), `kb_articles` (FAQ / POLICY / EMERGENCY editable by the hospital, TEST_PREP copied from the lab catalog) and `kb_chunks` with `vector(768)` plus a full-text column for hybrid retrieval and the embedding model per chunk. Phase 23 added `pending_actions` (BOOK / CANCEL / RESCHEDULE_APPOINTMENT, 15-minute expiry, the card the patient saw), `tool_calls` and `messages.trace_enc` (the tool calls and results behind an answer, encrypted); Phase 24 added `clinical_drafts` (PREVISIT_SUMMARY: encrypted draft, sources as ids, dropped-line count, the doctor's rating); SOAP drafts come with Phase 25. See IMPLEMENTATION-PLAN.md Phases 22–24.*
 
 ```sql
 CREATE TABLE assistant.conversations (

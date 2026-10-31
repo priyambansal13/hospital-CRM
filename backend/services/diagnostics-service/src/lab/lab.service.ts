@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EventTypes, type LabOrderChanged, Topics } from '@mc/contracts';
-import { conflict, DomainError, forbidden, notFound } from '@mc/nest-common';
+import { conflict, DomainError, forbidden, notFound, dateOnly } from '@mc/nest-common';
 import { assertInBranch, branchesFor, EntitlementsClient, inBranch } from '@mc/entitlements-sdk';
 import { type Actor, addToOutbox, envelope, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
@@ -480,7 +480,7 @@ export class LabService {
     const tz = o.timezone ?? 'Asia/Kolkata';
     return {
       id: o.id, orderNo: o.order_no, status: o.status, paymentMode: o.payment_mode, paymentStatus: o.payment_status, invoiceId: o.invoice_id, total: money(o.total),
-      patient: { id: o.patient_id, name: o.patient_name, mrn: o.patient_mrn, dob: o.patient_dob ? new Date(o.patient_dob).toISOString().slice(0, 10) : null, gender: o.patient_gender },
+      patient: { id: o.patient_id, name: o.patient_name, mrn: o.patient_mrn, dob: dateOnly(o.patient_dob), gender: o.patient_gender },
       orderedBy: o.ordered_by_name ? { name: o.ordered_by_name } : null, encounterId: o.encounter_id, note: o.note,
       branch: o.branch_id ? { id: o.branch_id, name: o.branch_name } : null, slotAt: o.slot_at,
       localDate: o.slot_at ? new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(o.slot_at)) : null,

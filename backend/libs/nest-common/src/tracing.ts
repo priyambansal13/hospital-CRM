@@ -42,10 +42,9 @@ if (process.env.OTEL_EXPORTER_OTLP_ENDPOINT && process.env.OTEL_SDK_DISABLED !==
       new IORedisInstrumentation({ dbStatementSerializer: (cmd) => cmd }),
     ],
   });
+  // no signal handlers here: they raced Nest's own shutdown hooks and could hold a stopping service open
+  // (the last few seconds of spans may be lost when a service stops)
   sdk.start();
-  const stop = () => void sdk.shutdown().catch(() => undefined);
-  process.once('SIGTERM', stop);
-  process.once('SIGINT', stop);
 }
 
 /** Drops query strings (and the separate query attribute) from URL attributes, in place. */

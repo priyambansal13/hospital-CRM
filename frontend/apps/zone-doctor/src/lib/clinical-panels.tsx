@@ -14,6 +14,7 @@ export function AllergyPanel({ allergies, patientId, back, canAdd }: { allergies
   if (!allergies) return null;
   const severe = allergies.filter((a) => a.severity === 'SEVERE');
   return (
+    <div id="allergies">
     <Card title={`Allergies${allergies.length ? ` (${allergies.length})` : ''}`}>
       {severe.length ? <Alert tone="error">Severe allergy: {severe.map((a) => a.substance).join(', ')}</Alert> : null}
       {allergies.length ? (
@@ -37,6 +38,7 @@ export function AllergyPanel({ allergies, patientId, back, canAdd }: { allergies
         </form>
       ) : null}
     </Card>
+    </div>
   );
 }
 

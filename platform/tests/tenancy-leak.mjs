@@ -158,6 +158,8 @@ const main = async () => {
   const aiHandoff = psql(`SELECT id FROM assistant.handoffs ORDER BY created_at LIMIT 1`);
   // a Confirm card (run `mc test concierge` once): another hospital must not confirm or close it
   const [aiAction, aiActionStatus] = psql(`SELECT id || '|' || status FROM assistant.pending_actions ORDER BY created_at LIMIT 1`).split('|');
+  // a pre-visit summary (run `mc test copilot` once): another hospital must not make, read or rate it
+  const [aiDraft, aiDraftAppt, aiDraftRating] = psql(`SELECT id || '|' || appointment_id || '|' || coalesce(rating::text, '') FROM assistant.clinical_drafts WHERE status = 'DRAFT' ORDER BY created_at LIMIT 1`).split('|');
   const [aiArticle, aiArticleTitle] = psql(`SELECT id || '|' || title FROM assistant.kb_articles WHERE source = 'FAQ' AND source_ref = 'parking'`).split('|');
   const secrets = [aiConv, aiMsg, aiHandoff, aiArticle, me.id, me.tenant.id, branch.id, branch.name, 'CityCare', doctor.id, doctor.name, spec.id, hours.id, leave.id, selfP.id, selfP.mrn, child.id, 'Leak Patient', appt.id, appt.appointmentNo, wait.id, invoice.id, invoice.invoiceNo, encounter.id, rxId, docId, consentId, allergyId, labOrderId, reportOrderId, verifyCode, visitId];
   // Path params → citycare's ids. key: "<route prefix>:<METHOD> <path>"
@@ -294,6 +296,9 @@ const main = async () => {
     'assistant:POST /v1/assistant/messages/:id/feedback': { id: aiMsg, body: { rating: -1 } },
     'assistant:POST /v1/assistant/actions/:id/confirm': { id: aiAction },
     'assistant:POST /v1/assistant/actions/:id/reject': { id: aiAction },
+    'assistant:GET /v1/assistant/copilot/appointments/:appointmentId/summary': { appointmentId: aiDraftAppt },
+    'assistant:POST /v1/assistant/copilot/appointments/:appointmentId/summary': { appointmentId: aiDraftAppt },
+    'assistant:POST /v1/assistant/copilot/drafts/:id/feedback': { id: aiDraft, body: { rating: 1, reason: null } },
     'assistant:POST /v1/assistant/handoffs/:id/close': { id: aiHandoff, body: { note: 'pwned' } },
     'assistant:PUT /v1/assistant/knowledge/:id': { id: aiArticle, body: { title: 'pwned', version: 1 } },
     'assistant:DELETE /v1/assistant/knowledge/:id': { id: aiArticle },
@@ -349,6 +354,8 @@ const main = async () => {
       }
     }
   }
+  // citycare's pre-visit summary must keep its rating
+  psql(`SELECT coalesce(rating::text, '') FROM assistant.clinical_drafts WHERE id = '${aiDraft}'`) === aiDraftRating ? ok() : fail('citycare pre-visit summary was rated by another hospital');
   // citycare's Confirm card must keep its status
   psql(`SELECT status FROM assistant.pending_actions WHERE id = '${aiAction}'`) === aiActionStatus ? ok() : fail('citycare assistant card was confirmed or closed by another hospital');
   // citycare's assistant knowledge article must still be there, unchanged

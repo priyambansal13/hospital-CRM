@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { EventTypes, Topics } from '@mc/contracts';
-import { DomainError, forbidden, notFound, REDIS, type Redis } from '@mc/nest-common';
+import { DomainError, forbidden, notFound, REDIS, type Redis, dateOnly } from '@mc/nest-common';
 import { type Actor, addToOutbox, envelope, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { createHash, randomUUID } from 'node:crypto';
 import { RecordAccess } from '../records/access.js';
@@ -16,7 +16,7 @@ interface UploadIntent { patientId: string; key: string; mime: AllowedMime; size
 export const toDocument = (r: any) => ({
   id: r.id, patientId: r.patient_id, type: r.type, title: r.title, source: r.source, mimeType: r.mime_type, sizeBytes: Number(r.size_bytes),
   scanStatus: r.scan_status, scanDetail: r.scan_status === 'CLEAN' || r.scan_status === 'PENDING' || r.scan_status === 'SCANNING' ? null : r.scan_detail,
-  issuedOn: r.issued_on ? new Date(r.issued_on).toISOString().slice(0, 10) : null, uploadedBy: { kind: r.uploaded_by_kind, name: r.uploaded_by_name }, createdAt: r.created_at,
+  issuedOn: dateOnly(r.issued_on), uploadedBy: { kind: r.uploaded_by_kind, name: r.uploaded_by_name }, createdAt: r.created_at,
 });
 
 /**

@@ -3,7 +3,7 @@ import { userTurn } from '../chat/prompts.js';
 import { dateFrom, devAgentStep, optionsFrom, partFrom, topic } from './dev-agent.js';
 import type { ToolDecl, Turn } from './llm.js';
 
-const TOOLS: ToolDecl[] = ['search_doctors', 'propose_booking', 'list_my_appointments', 'propose_cancel', 'search_lab_tests', 'get_available_slots', 'propose_reschedule']
+const TOOLS: ToolDecl[] = ['list_my_reports', 'explain_report', 'search_doctors', 'propose_booking', 'list_my_appointments', 'propose_cancel', 'search_lab_tests', 'get_available_slots', 'propose_reschedule']
   .map((name) => ({ name, description: '', parameters: {} }));
 const ask = (q: string): Turn => ({ role: 'user', text: userTurn([], q, { today: '2026-10-31', weekday: 'Saturday', family: [] }) });
 const search = { date: '2026-11-07', partOfDay: 'MORNING', doctors: [
@@ -63,5 +63,16 @@ describe('dev agent: the tool loop', () => {
     expect(devAgentStep([ask('How much is the thyroid test?')], TOOLS)).toEqual({ calls: [expect.objectContaining({ name: 'search_lab_tests', args: { query: 'thyroid' } })] });
     expect(devAgentStep([ask('What are the visiting hours?')], TOOLS)).toBeNull();
     expect(devAgentStep([ask('Do I need to fast before a blood test?')], TOOLS)).toBeNull();
+  });
+  it('a report question lists reports, explains the newest from its values, and sends the patient to their doctor', () => {
+    const turns: Turn[] = [ask('What does my blood test report mean?')];
+    expect(devAgentStep(turns, TOOLS)).toEqual({ calls: [expect.objectContaining({ name: 'list_my_reports' })] });
+    turns.push({ role: 'model', calls: [{ name: 'list_my_reports', args: {} }] }, { role: 'user', results: [{ name: 'list_my_reports', response: { reports: [{ orderId: 'o2', orderNo: 'LAB-2', tests: ['HbA1c'], date: '2026-10-30' }, { orderId: 'o1', orderNo: 'LAB-1', tests: ['CBC'], date: '2026-10-01' }] } }] });
+    expect(devAgentStep(turns, TOOLS)).toEqual({ calls: [expect.objectContaining({ name: 'explain_report', args: { orderId: 'o2' } })] });
+    turns.push({ role: 'model', calls: [{ name: 'explain_report', args: { orderId: 'o2' } }] }, { role: 'user', results: [{ name: 'explain_report', response: { criticalHeld: false, orderNo: 'LAB-2', date: '2026-10-30', orderedBy: 'Dr. Rao', tests: [{ test: 'HbA1c', values: [{ name: 'HbA1c', value: '7.2', unit: '%', normalRange: '4–5.6', flag: 'HIGH' }] }] } }] });
+    const end = devAgentStep(turns, TOOLS) as { text: string };
+    expect(end.text).toMatch(/HbA1c is 7\.2 %, above the normal range \(4–5\.6\)/);
+    expect(end.text).toMatch(/discuss these results with your doctor/);
+    expect(end.text).toMatch(/follow-up with Dr\. Rao/);
   });
 });
