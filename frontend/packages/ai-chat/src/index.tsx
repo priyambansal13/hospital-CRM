@@ -6,10 +6,15 @@
  */
 import { useEffect, useRef, useState } from 'react';
 
+/** A Confirm card: the assistant proposed it; nothing happens until the person taps Confirm. */
+export interface ActionCard {
+  id: string; type: string; status: 'PENDING' | 'CONFIRMED' | 'REJECTED' | 'EXPIRED' | 'FAILED';
+  title: string; lines: string[]; confirmLabel: string; expiresAt: string; result: { appointmentNo?: string; error?: string } | null;
+}
 export interface ChatMessage {
   id: string; role: 'user' | 'assistant';
-  kind: 'TEXT' | 'ANSWER' | 'EMERGENCY' | 'BLOCKED' | 'FALLBACK' | 'HANDOFF' | 'LIMIT';
-  text: string; sources: { id: string; title: string }[]; offerHandoff: boolean; emergency: string | null; createdAt: string;
+  kind: 'TEXT' | 'ANSWER' | 'EMERGENCY' | 'BLOCKED' | 'FALLBACK' | 'HANDOFF' | 'LIMIT' | 'ACTION';
+  text: string; sources: { id: string; title: string }[]; cards?: ActionCard[]; offerHandoff: boolean; emergency: string | null; createdAt: string;
 }
 export interface Handoff { id: string; status: string; phone: string | null }
 export interface Conversation { id: string; status: string; handoff: Handoff | null }
@@ -20,9 +25,12 @@ export interface ChatActions {
   handoff: (conversationId: string, reason: string) => Promise<{ handoff: Handoff; message: ChatMessage | null } | Err>;
   feedback: (messageId: string, rating: 1 | -1) => Promise<{ ok: true } | Err>;
   close: (conversationId: string) => Promise<{ ok: true } | Err>;
+  /** Confirm cards (booking, moving, cancelling); absent where the zone offers none */
+  confirm?: (actionId: string) => Promise<{ action: ActionCard; message: ChatMessage | null } | Err>;
+  reject?: (actionId: string) => Promise<{ action: ActionCard } | Err>;
 }
 
-const SUGGESTIONS = ['What are the visiting hours?', 'Do I need to fast before a blood test?', 'Is parking available?', 'मिलने का समय क्या है?'];
+const SUGGESTIONS = ['What are the visiting hours?', 'Do I need to fast before a blood test?', 'I need a skin doctor tomorrow morning', 'My appointments', 'मिलने का समय क्या है?'];
 const isErr = (x: unknown): x is Err => !!x && typeof x === 'object' && 'error' in x;
 
 function Emergency({ m }: { m: ChatMessage }) {
@@ -37,6 +45,26 @@ function Emergency({ m }: { m: ChatMessage }) {
         <a className="mc-btn mc-btn-ghost" href="tel:108">Ambulance 108</a>
         {selfHarm ? <a className="mc-btn mc-btn-ghost" href="tel:14416">Tele-MANAS 14416</a> : null}
       </div>
+    </div>
+  );
+}
+
+const DONE: Record<ActionCard['status'], string> = { PENDING: '', CONFIRMED: 'Done', REJECTED: 'Not done', EXPIRED: 'Expired: ask again for a fresh card', FAILED: 'Did not go through' };
+
+function Card({ c, busy, onConfirm, onReject }: { c: ActionCard; busy: boolean; onConfirm?: () => void; onReject?: () => void }) {
+  const open = c.status === 'PENDING' && new Date(c.expiresAt).getTime() > Date.now();
+  return (
+    <div className="mc-chat-card" data-status={open ? 'PENDING' : c.status === 'PENDING' ? 'EXPIRED' : c.status} aria-label={c.title}>
+      <strong>{c.title}</strong>
+      <ul>{c.lines.filter(Boolean).map((l, i) => <li key={i}>{l}</li>)}</ul>
+      {open && onConfirm ? (
+        <div className="mc-chat-actions">
+          <button type="button" className="mc-btn mc-btn-primary" disabled={busy} onClick={onConfirm}>{c.confirmLabel}</button>
+          <button type="button" className="mc-btn mc-btn-ghost" disabled={busy} onClick={onReject}>Not now</button>
+        </div>
+      ) : (
+        <p className="mc-chat-meta" role="status">{c.status === 'PENDING' ? DONE.EXPIRED : DONE[c.status]}{c.result?.appointmentNo ? `: ${c.result.appointmentNo}` : ''}</p>
+      )}
     </div>
   );
 }
@@ -90,6 +118,29 @@ export function ChatPanel({ hospital, initial, actions }: { hospital: string; in
     await actions.feedback(id, rating);
   };
 
+  // a card changed: update it wherever it is shown, and add the outcome message
+  const settle = (card: ActionCard, message?: ChatMessage | null) => setMessages((ms) => [
+    ...ms.map((m) => (m.cards?.some((c) => c.id === card.id) ? { ...m, cards: m.cards.map((c) => (c.id === card.id ? card : c)) } : m)),
+    ...(message ? [message] : []),
+  ]);
+  const confirm = async (id: string) => {
+    if (!actions.confirm || busy) return;
+    setBusy(true);
+    setError(null);
+    const r = await actions.confirm(id);
+    setBusy(false);
+    if (isErr(r)) return setError(r.error);
+    settle(r.action, r.message);
+  };
+  const reject = async (id: string) => {
+    if (!actions.reject || busy) return;
+    setBusy(true);
+    const r = await actions.reject(id);
+    setBusy(false);
+    if (isErr(r)) return setError(r.error);
+    settle(r.action);
+  };
+
   const restart = async () => {
     if (conversation) await actions.close(conversation.id);
     setConversation(null);
@@ -100,12 +151,12 @@ export function ChatPanel({ hospital, initial, actions }: { hospital: string; in
   return (
     <section className="mc-chat" aria-label="Assistant chat">
       <p className="mc-chat-note">
-        AI assistant: answers come from {hospital}&apos;s own information. It cannot give medical advice. In an emergency, call 112.
+        AI assistant: answers come from {hospital}&apos;s own information and booking system. It never books anything until you tap Confirm, and it cannot give medical advice. In an emergency, call 112.
       </p>
       <div ref={log} className="mc-chat-log" role="log" aria-live="polite" aria-label="Messages">
         {messages.length === 0 ? (
           <div className="mc-chat-empty">
-            <p>Ask about timings, visiting rules, payments, insurance or how to prepare for a test.</p>
+            <p>Ask about timings, visiting rules, payments or test preparation, or ask it to find a doctor and book a time.</p>
             <div className="mc-chips">{SUGGESTIONS.map((s) => <button key={s} type="button" className="mc-chip" onClick={() => void send(s)}>{s}</button>)}</div>
           </div>
         ) : null}
@@ -113,6 +164,7 @@ export function ChatPanel({ hospital, initial, actions }: { hospital: string; in
           <div key={m.id} className={`mc-chat-msg mc-chat-${m.role}`} data-kind={m.kind}>
             {m.kind === 'EMERGENCY' ? <Emergency m={m} /> : <div className="mc-chat-bubble">{m.text}</div>}
             {m.sources.length ? <p className="mc-chat-meta">From: {m.sources.map((s) => s.title).join(', ')}</p> : null}
+            {(m.cards ?? []).map((c) => <Card key={c.id} c={c} busy={busy} onConfirm={actions.confirm ? () => void confirm(c.id) : undefined} onReject={() => void reject(c.id)} />)}
             {m.role === 'assistant' && m.kind === 'ANSWER' ? (
               <div className="mc-chat-rate" aria-label="Was this helpful?">
                 <button type="button" aria-pressed={rated[m.id] === 1} aria-label="Helpful" onClick={() => void rate(m.id, 1)}>👍</button>

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Inject, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Headers, HttpCode, Inject, Param, Post, Query } from '@nestjs/common';
 import { CurrentActor, forbidden, Idempotent, Internal, notFound, parse, PLACEMENTS, TenantPublic } from '@mc/nest-common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { type Actor, type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
@@ -61,8 +61,9 @@ export class AppointmentsController {
   @Post('appointments')
   @Idempotent()
   @RequirePermission('appointment:create:own')
-  book(@Body() body: unknown, @CurrentActor() actor: Actor) {
-    return this.svc.book(actor, parse(Book, body));
+  book(@Body() body: unknown, @CurrentActor() actor: Actor, @Headers('x-mc-via') via?: string) {
+    // a label only (the patient's own token still books it): which bookings came from the AI assistant
+    return this.svc.book(actor, parse(Book, body), via === 'ASSISTANT' ? 'ASSISTANT' : null);
   }
 
   @Get('me/appointments')

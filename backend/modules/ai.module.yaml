@@ -1,9 +1,10 @@
 # AI assistant (docs/AI-AGENTS.md; IMPLEMENTATION-PLAN.md Phase 22): the patients' Care Concierge, knowledge-only for
 # now (hospital FAQs, policies, test preparation), with the emergency check in code before any model call and a
-# human handoff to the front desk. Booking tools come in Phase 23.
+# human handoff to the front desk. Phase 23: tools (find doctors and times, my appointments, lab tests) and Confirm
+# cards for booking, moving and cancelling (the patient's tap runs the normal booking API).
 key: ai
 name: AI assistant
-version: 1
+version: 2
 dependsOn: [core]
 services: [ai-assistant-service]
 lifecycle: [assistant]
@@ -13,6 +14,7 @@ permissions:
   - { code: assistant_handoff:manage:branch, description: See chats patients handed to a person and close them }
 features:
   - { key: ai.concierge, name: AI assistant messages, type: METERED, unit: messages }
+  - { key: ai.booking, name: Booking from the AI assistant, type: BOOLEAN }
 nav:
   - { key: assistant-chat, label: Ask us, zone: patient, href: /care/assistant, permissions: [assistant:chat:own], audience: patient }
   - { key: assistant-handoffs, label: Chat requests, zone: desk, href: /desk/assistant, permissions: [assistant_handoff:manage:branch], audience: staff }

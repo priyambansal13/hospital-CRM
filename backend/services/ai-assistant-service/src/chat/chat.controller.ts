@@ -54,6 +54,21 @@ export class ChatController {
     return this.chat.handoff(actor, id(cid, 'conversation'), parse(Handoff, body ?? {}));
   }
 
+  /** The patient's Confirm on a card: runs the booking/cancel/move with their own token (the model cannot call this). */
+  @Post('actions/:id/confirm')
+  @RequirePermission('assistant:chat:own')
+  @HttpCode(200)
+  confirm(@Param('id') aid: string, @CurrentActor() actor: Actor) {
+    return this.chat.confirm(actor, id(aid, 'action'));
+  }
+
+  @Post('actions/:id/reject')
+  @RequirePermission('assistant:chat:own')
+  @HttpCode(200)
+  reject(@Param('id') aid: string, @CurrentActor() actor: Actor) {
+    return this.chat.reject(actor, id(aid, 'action'));
+  }
+
   @Post('messages/:id/feedback')
   @RequirePermission('assistant:chat:own')
   @HttpCode(204)

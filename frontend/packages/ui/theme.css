@@ -145,6 +145,11 @@ h2 { font-size: 1.05rem; margin: 0 0 12px; }
 .mc-chat-rate button { border: 1px solid var(--border); background: var(--surface); border-radius: 8px; padding: 2px 8px; cursor: pointer; font-size: 13px; }
 .mc-chat-rate button[aria-pressed="true"] { border-color: var(--brand); background: color-mix(in srgb, var(--brand) 12%, transparent); }
 .mc-chat-handoff { height: 32px; font-size: 14px; }
+/* Confirm cards (Phase 23): the assistant proposes, the person confirms */
+.mc-chat-card { border: 1px solid var(--brand); border-radius: var(--radius); background: var(--surface); padding: 12px 14px; max-width: 420px; display: grid; gap: 6px; }
+.mc-chat-card ul { margin: 0; padding-left: 18px; }
+.mc-chat-card[data-status="CONFIRMED"] { border-color: var(--success, var(--brand)); }
+.mc-chat-card[data-status="REJECTED"], .mc-chat-card[data-status="EXPIRED"], .mc-chat-card[data-status="FAILED"] { border-color: var(--border); opacity: .8; }
 .mc-chat-emergency { border: 2px solid var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); color: var(--text); border-radius: var(--radius); padding: 14px 16px; }
 .mc-chat-emergency strong { color: var(--danger); font-size: 1.05rem; }
 .mc-chat-emergency p { margin: 6px 0 0; }

@@ -1,7 +1,7 @@
-# Handoff: where work stopped (2026-10-31, after wave 5)
+# Handoff: where work stopped (2026-10-31, after Phase 23)
 
 ## State
-- Phases 0–22 are built (Phase 22: AI foundation and the knowledge-only concierge, `ai-assistant-service` on 4415).
+- Phases 0–23 are built (Phase 22: AI foundation and the knowledge-only concierge, `ai-assistant-service` on 4415; Phase 23: the concierge's booking tools with Confirm cards, 2026-10-31).
 - The flow review is in [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md). See §8 "Fix log" for details.
   - Wave 1 (15 gaps): fixed 2026-10-25.
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
@@ -14,32 +14,39 @@
   - `mc test wave3` covers wave 3 (31 checks).
   - `mc test wave4` covers wave 4 (48 checks).
   - `mc test wave5` covers wave 5 (15 checks).
-  - The tenancy leak test has 1086 checks and found 0 leaks.
+  - `mc test concierge` is the Phase 23 booking-task eval (28 checks; run it before the leak test, which uses one of its cards).
+  - The tenancy leak test has 1095 checks and found 0 leaks.
 - Git: one repo for all three folders, at https://github.com/priyambansal13/hospital-CRM (`main`).
-  - Waves 2 and 3 are pushed.
-  - CI workflows are in `.github/workflows` (backend, frontend, platform), with path filters. All three pass on GitHub (2026-10-30).
+  - Everything up to Phase 23 is pushed.
+  - CI workflows are in `.github/workflows` (backend, frontend, platform), with path filters. They pass on GitHub, as does the security workflow (2026-10-31).
   - Image builds wait for the `GCP_WIF_PROVIDER` repo variable.
   - The integration job is manual (workflow_dispatch).
 
 ## Resume here (ask first)
 Choose one:
-1. **Phase 23** (the next AI phase in IMPLEMENTATION-PLAN.md).
+1. **Phase 24** (report explainer + doctor pre-visit summary, IMPLEMENTATION-PLAN.md).
 2. **Real-provider runs**, once the user provides keys or accounts:
+   - Gemini: a valid key, then `LLM_PROVIDER=gemini` and `mc test assistant` + `mc test concierge` against the real model (prompt tuning);
    - Razorpay: test keys, the recurring adapter for `SAAS_PAYMENTS=razorpay`, and Route;
    - MSG91 with DLT templates;
    - Cloud KMS (`KEY_WRAPPER=gcp-kms`);
-   - Gemini;
    - ClamAV;
    - a GCP project for staging.
-3. **What is still open from the review** (small; none blocks Phase 23):
+3. **What is still open from the review** (small; none blocks Phase 24):
    - support "act as" (Phase 31);
    - captcha on signup and patient OTP;
    - approvals for overrides and coupons;
    - the first GitHub run of the manual integration job (it now includes Playwright).
 
-**Fix first (configuration, 2026-10-31):** after `mc dev` was restarted, the services picked up a `GEMINI_API_KEY` (or Vertex setting) that Google rejects (401). The assistant then calls Gemini instead of the offline dev model, and that breaks `mc test assistant`, `plans`, `onboarding`, part of `wave2` and `wave5`, and `p22-assistant.spec.ts` (turning on the AI module seeds embeddings). Either set a valid key, or put `LLM_PROVIDER=dev` in `backend/.env` and restart `mc dev`, then rerun those suites. Locally, tracing is on (`OTEL_EXPORTER_OTLP_ENDPOINT` in `backend/.env`, Jaeger container `mc-jaeger`, UI on :16686). To turn it off, remove the line, run `docker rm -f mc-jaeger`, and restart `mc dev`.
+**Local LLM setting (2026-10-31):** the services pick up a `GEMINI_API_KEY` that Google rejects (401), so `backend/.env` now has `LLM_PROVIDER=dev` (the offline dev model). Remove that line once a valid key is set. Locally, tracing is on (`OTEL_EXPORTER_OTLP_ENDPOINT` in `backend/.env`, Jaeger container `mc-jaeger`, UI on :16686). To turn it off, remove the line, run `docker rm -f mc-jaeger`, and restart `mc dev`.
 
 **Not run, on purpose:** `mc tenant purge`. It permanently destroys a hospital's data, and running it was blocked as irreversible. The user decides whether to run it (only on DELETED test hospitals, and only after `mc tenant export`).
+
+## Phase 23 notes worth knowing
+- **Confirm cards:** `pending_actions` (15 minutes). Only `POST /api/assistant/v1/assistant/actions/:id/confirm` books, moves or cancels, with the patient's token; the card id is the idempotency key. Scheduling marks these bookings `booked_via = ASSISTANT` (header `x-mc-via`).
+- **Feature `ai.booking`:** switch booking from the chat off per hospital in the console (feature override `{enabled:false}`); the model then gets no `propose_*` tools.
+- **Dev model:** `llm/dev-agent.ts` understands "book … <doctor or symptom> <day> <morning>", "the second one", "cancel/reschedule my appointment", "my appointments", "how much is the … test". Test phrases must contain a booking word ("book", "doctor", "appointment").
+- **Tool trace:** `messages.trace_enc` (encrypted) brings earlier tool results back to the model; `tool_calls` logs every call without the visit reason.
 
 ## Wave 5 notes worth knowing
 - **Tracing:**

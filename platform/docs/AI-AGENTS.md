@@ -124,6 +124,8 @@ API settings used throughout:
 | `search_knowledge` | Hospital FAQ, policies, visiting hours, insurance (RAG) | — |
 | `handoff_to_human` | Creates a ticket / live chat with reception | — |
 
+*As built (Phase 23, 2026-10-31): all tools above except `book_lab_test`, `explain_report`, `get_invoice` / `payment_link` (lab booking and payment link to the existing pages; the report explainer is Phase 24), plus `get_test_preparation` folded into `search_lab_tests` and the knowledge entries. `search_knowledge` is not a tool: the matching hospital entries are put in the user turn, as in Phase 22. Bookings from a card are made "pay at the hospital". See IMPLEMENTATION-PLAN.md Phase 23.*
+
 "Confirmation" is a UI step, not something the model can fake: the tool returns a `pendingActionId`; only the client's **Confirm** button calls `POST /assistant/actions/{id}/confirm`, which runs the real booking with the patient's token. The model never gets a tool that books without that.
 
 ### 4.2 Booking conversation flow
@@ -247,7 +249,7 @@ Batch-style jobs use **Gemini Batch Mode** (discounted, asynchronous); check the
 
 ### 8.1 New tables (`assistant` schema)
 
-*As built (Phase 22): conversations, messages (text encrypted with the hospital's data key; `kind` ANSWER / EMERGENCY / BLOCKED / FALLBACK / HANDOFF / LIMIT; `safety` flags, never text), feedback, `handoffs` (front-desk call-backs), `kb_articles` (FAQ / POLICY / EMERGENCY editable by the hospital, TEST_PREP copied from the lab catalog) and `kb_chunks` with `vector(768)` plus a full-text column for hybrid retrieval and the embedding model per chunk. pending_actions and clinical_drafts come with Phases 23–25. See IMPLEMENTATION-PLAN.md Phase 22.*
+*As built (Phase 22): conversations, messages (text encrypted with the hospital's data key; `kind` ANSWER / EMERGENCY / BLOCKED / FALLBACK / HANDOFF / LIMIT; `safety` flags, never text), feedback, `handoffs` (front-desk call-backs), `kb_articles` (FAQ / POLICY / EMERGENCY editable by the hospital, TEST_PREP copied from the lab catalog) and `kb_chunks` with `vector(768)` plus a full-text column for hybrid retrieval and the embedding model per chunk. Phase 23 added `pending_actions` (BOOK / CANCEL / RESCHEDULE_APPOINTMENT, 15-minute expiry, the card the patient saw), `tool_calls` and `messages.trace_enc` (the tool calls and results behind an answer, encrypted); clinical_drafts come with Phases 24–25. See IMPLEMENTATION-PLAN.md Phases 22–23.*
 
 ```sql
 CREATE TABLE assistant.conversations (
@@ -448,7 +450,7 @@ Style: reply in the patient's language, short sentences, at most 3 options at a 
 
 ## 8.4 AI features by role and plan
 
-*As built (Phase 22): module key `ai` (manifest `backend/modules/ai.module.yaml`); `ai.concierge` metered per hospital per month (Hospital Professional 5,000, Enterprise 20,000; Clinic Professional via the AI_ASSISTANT add-on). Per-patient membership quotas are not built yet.*
+*As built (Phases 22–23): module key `ai` (manifest `backend/modules/ai.module.yaml`); `ai.concierge` metered per hospital per month (Hospital Professional 5,000, Enterprise 20,000; Clinic Professional via the AI_ASSISTANT add-on). The table's `ai.concierge.booking` is built as `ai.booking` (feature keys are `module.feature`), on wherever the module is. Per-patient membership quotas are not built yet.*
 
 Every AI capability is a **feature key** checked by the entitlement service ([FEATURES-AND-PLANS.md](FEATURES-AND-PLANS.md)), so admins and plans control AI just like any other module:
 

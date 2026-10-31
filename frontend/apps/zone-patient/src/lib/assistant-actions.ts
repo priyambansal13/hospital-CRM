@@ -1,7 +1,7 @@
 'use server';
 import { actionSession } from '@mc/auth';
 import { api, ApiError } from '@mc/bff';
-import type { ChatMessage, Handoff } from '@mc/ai-chat';
+import type { ActionCard, ChatMessage, Handoff } from '@mc/ai-chat';
 
 /** The assistant chat's server actions: the patient's token never reaches the browser. */
 const msg = (e: unknown) => (e instanceof ApiError ? (e.status === 429 ? 'You are sending messages too fast. Please wait a few minutes.' : e.message) : 'Something went wrong. Please try again.');
@@ -39,6 +39,25 @@ export async function closeChat(conversationId: string) {
   try {
     await api(`/api/assistant/v1/assistant/conversations/${encodeURIComponent(conversationId)}/close`, { token, method: 'POST' });
     return { ok: true as const };
+  } catch (e) {
+    return { error: msg(e) };
+  }
+}
+
+/** The patient's Confirm on a card: the assistant service runs the booking with the patient's own token. */
+export async function confirmAction(actionId: string) {
+  const { accessToken: token } = await actionSession();
+  try {
+    return await api<{ action: ActionCard; message: ChatMessage | null }>(`/api/assistant/v1/assistant/actions/${encodeURIComponent(actionId)}/confirm`, { token, method: 'POST' });
+  } catch (e) {
+    return { error: msg(e) };
+  }
+}
+
+export async function rejectAction(actionId: string) {
+  const { accessToken: token } = await actionSession();
+  try {
+    return await api<{ action: ActionCard }>(`/api/assistant/v1/assistant/actions/${encodeURIComponent(actionId)}/reject`, { token, method: 'POST' });
   } catch (e) {
     return { error: msg(e) };
   }

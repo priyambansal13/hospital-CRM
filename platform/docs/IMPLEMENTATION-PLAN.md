@@ -23,10 +23,10 @@
 | **M2 Clinic MVP** | Phases 6–10 ✅ done (6–9 on 2026-10-23, 10 on 2026-10-24; Phase 9 staging: built and validated, **not deployed**: needs a GCP project) |
 | **M3 Payments, records and lab** | ✅ Phases 11–16 done 2026-10-24 (Phase 11: simulated Razorpay locally, real adapter needs test keys; Phase 13: dev virus scanner locally, clamd adapter tested against a protocol fake, real ClamAV not run) |
 | **M4 SaaS business** | ✅ Phases 17–21 done 2026-10-25 (plans, contracts, module lifecycle; platform console with plan builder and two-person approval; SaaS billing; self-serve signup, setup guide, settings, role editor, custom domains; search with OpenSearch. Razorpay recurring and Route are simulated) |
-| **M5 AI (Gemini)** | Phase 22 ✅ done 2026-10-25 (AI foundation and knowledge-only concierge; verified with the offline dev provider: **no Gemini key yet**, the Gemini/Vertex adapter is built and typechecked but has not called the real API). Phases 23–25 remain |
+| **M5 AI (Gemini)** | Phase 22 ✅ done 2026-10-25 (AI foundation and knowledge-only concierge); Phase 23 ✅ done 2026-10-31 (booking tools with Confirm cards). Both verified with the offline dev provider: **no working Gemini key yet**, the Gemini/Vertex adapter (incl. function calling) is built and typechecked but has not called the real API. Phases 24–25 remain |
 | M6–M7 | Not started |
 
-**Review 2026-10-25:** [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md) traces every role's flows through the code and lists the gaps: production blockers, branch scoping, clinical safety and dead ends. It recommends fixing waves 1–2 before Phase 23. **Wave 1 done 2026-10-25; wave 2 (branch scoping, offboarding, split permissions, admin audit, nurse triage, critical-value escalation, desk chat alerts) done 2026-10-30** (fix log: §8 of that document; `mc test gaps`, `mc test wave2`). **Wave 3 (front desk and lab completeness, screens for existing APIs, missing notifications) done 2026-10-30** (`mc test wave3`). **Wave 4 (production readiness without provider accounts) done 2026-10-30** (`mc test wave4`); the real-provider runs (Razorpay recurring and Route, MSG91, Cloud KMS, ClamAV, Gemini) wait for keys. **Wave 5 (remaining smaller gaps: E-9 amend form, owner and staff notices, real client IP and OTP caps, document purge, override end dates, OpenTelemetry tracing, Playwright in CI) done 2026-10-31** (`mc test wave5`). Next: Phase 23.
+**Review 2026-10-25:** [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md) traces every role's flows through the code and lists the gaps: production blockers, branch scoping, clinical safety and dead ends. It recommends fixing waves 1–2 before Phase 23. **Wave 1 done 2026-10-25; wave 2 (branch scoping, offboarding, split permissions, admin audit, nurse triage, critical-value escalation, desk chat alerts) done 2026-10-30** (fix log: §8 of that document; `mc test gaps`, `mc test wave2`). **Wave 3 (front desk and lab completeness, screens for existing APIs, missing notifications) done 2026-10-30** (`mc test wave3`). **Wave 4 (production readiness without provider accounts) done 2026-10-30** (`mc test wave4`); the real-provider runs (Razorpay recurring and Route, MSG91, Cloud KMS, ClamAV, Gemini) wait for keys. **Wave 5 (remaining smaller gaps: E-9 amend form, owner and staff notices, real client IP and OTP caps, document purge, override end dates, OpenTelemetry tracing, Playwright in CI) done 2026-10-31** (`mc test wave5`). **Phase 23 (concierge booking tools with Confirm cards) done 2026-10-31** (`mc test concierge`). Next: Phase 24 (report explainer + doctor pre-visit summary).
 
 ### M1: what was built and how it was verified
 
@@ -628,11 +628,20 @@ flowchart LR
 **Demo:** patient asks visiting hours and fasting rules and gets correct answers; "crushing chest pain right now" triggers the emergency response without calling the model.
 
 ### Phase 23: Concierge with booking tools
-- [ ] Tools: triage (structured output), search doctors, slots, my appointments, propose booking/cancel/reschedule with **Confirm cards**, lab test search
-- [ ] Tools filtered by entitlements; per-plan message quotas metered
-- [ ] Booking-task eval (scripted conversations against staging)
+- [x] Tools: triage (structured output), search doctors, slots, my appointments, propose booking/cancel/reschedule with **Confirm cards**, lab test search *(plus handoff_to_human; lab tests are searched, not booked, in the chat)*
+- [x] Tools filtered by entitlements; per-plan message quotas metered *(feature `ai.booking`; one message counts once whatever the tool steps)*
+- [x] Booking-task eval (scripted conversations against staging) *(`mc test concierge`, 28 checks; runs locally with the dev model, `MC_GATEWAY`/`MC_HOST` point it at staging; not yet run against real Gemini)*
 
 **Demo:** "need a skin doctor Saturday morning" → options → Confirm → booked through the normal booking API.
+
+**As built (2026-10-31):**
+- **Loop** (`ChatService.send`): emergency rules → monthly quota → the patient's capabilities decide the tools → up to 6 tool rounds → output policy. The model sees a `<patient>` block (today's date in India, the family members it may book for); hospital facts still come inline.
+- **Tools** (`chat/tools.ts`) call the owning services **with the patient's own token**: `triage_symptoms` (urgency + specialties as function arguments, checked against the hospital's specialties; EMERGENCY gives the fixed emergency reply), `search_doctors` (search-service with symptom synonyms, directory fallback, up to 3 times per doctor), `get_available_slots`, `list_my_appointments`, `search_lab_tests`, `propose_booking` / `propose_reschedule` / `propose_cancel`, `handoff_to_human`.
+- **Confirm cards** (`pending_actions`, 15 minutes): only `POST v1/assistant/actions/:id/confirm` (the patient's tap) runs the booking, move or cancel through scheduling's normal API; the card id is the idempotency key (a double tap books once). "Not now" closes it. A taken time fails the card with a clear message and a person on offer. Scheduling marks these bookings `booked_via = ASSISTANT`.
+- **Entitlements:** booking tools need module `appointments` (not read-only), the patient's permission and feature `ai.booking` (on in every plan with the AI module; MediCare can switch it off per hospital). Without it the assistant lists times and points to "Find a doctor".
+- **Kept:** `tool_calls` (inputs without the free-text reason, results summarised to counts), and each answer's tool trace encrypted with the hospital's key (`messages.trace_enc`), so "the second one" works on the next message.
+- **Dev model:** a deterministic intent reader (`llm/dev-agent.ts`: book / the Nth one / cancel / reschedule / my appointments / lab prices) so the loop runs without Google; Gemini does the real understanding (thought signatures are sent back unchanged).
+- **Not yet:** a run against real Gemini (needs a valid key); booking lab tests or paying online from the chat (both link to the existing pages); per-patient quotas; Hindi tool replies from the dev model.
 
 ### Phase 24: Report explainer + doctor pre-visit summary
 - [ ] `explain_report` from structured lab results; critical values never explained first

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { NO_ANSWER, parseUserTurn } from '../chat/prompts.js';
+import { devAgentStep } from './dev-agent.js';
 import { EMBED_DIM, type GenerateRequest, type GenerateResult, type LlmClient, normalise } from './llm.js';
 
 const STOP = new Set('a an the is are was were be to of in on at for and or what when where how which who whom can could do does did i my me we our you your it its this that there with from by as please tell about any have has get need want hospital see know go come make like also just will would should much many some'.split(' '));
@@ -26,7 +27,11 @@ export class DevLlm implements LlmClient {
   readonly embedModel = 'dev-hash-768-v2';
 
   async generate(req: GenerateRequest): Promise<GenerateResult> {
-    const last = req.turns.at(-1)?.text ?? '';
+    const usage = (out: number) => ({ input: Math.ceil(JSON.stringify(req.turns).length / 4), output: out, cached: 0 });
+    const step = req.tools?.length ? devAgentStep(req.turns, req.tools) : null;
+    if (step && 'calls' in step) return { text: '', calls: step.calls, finishReason: 'STOP', model: this.chatModel, usage: usage(20) };
+    if (step) return { text: step.text, calls: [], finishReason: 'STOP', model: this.chatModel, usage: usage(Math.ceil(step.text.length / 4)) };
+    const last = req.turns.findLast((t) => t.role === 'user' && t.text)?.text ?? '';
     const { entries, question } = parseUserTurn(last);
     const q = new Set(terms(question));
     let best: { n: number; text: string; score: number } | null = null;
@@ -40,7 +45,7 @@ export class DevLlm implements LlmClient {
     const text = best
       ? `${best.text.length > 700 ? `${best.text.slice(0, 700).replace(/\s\S*$/, '')}…` : best.text} [${best.n}]`
       : `${NO_ANSWER} I don't have that information. A person from the hospital can call you back.`;
-    return { text, finishReason: 'STOP', model: this.chatModel, usage: { input: Math.ceil((req.system.length + last.length) / 4), output: Math.ceil(text.length / 4), cached: 0 } };
+    return { text, calls: [], finishReason: 'STOP', model: this.chatModel, usage: { input: Math.ceil((req.system.length + last.length) / 4), output: Math.ceil(text.length / 4), cached: 0 } };
   }
 
   async embed(texts: string[], _kind?: 'query' | 'document'): Promise<number[][]> {

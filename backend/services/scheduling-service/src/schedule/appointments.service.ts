@@ -42,7 +42,7 @@ export const toAppointment = (r: any) => ({
   startsAt: r.starts_at, endsAt: r.ends_at, localDate: r.local_date, localTime: r.local_time, mode: r.mode,
   reason: r.reason, fee: r.fee == null ? null : Number(r.fee), paymentMode: r.payment_mode,
   rescheduledFrom: r.rescheduled_from, rescheduleCount: r.reschedule_count, cancelReason: r.cancel_reason, cancelledAt: r.cancelled_at,
-  source: r.source, tokenNo: r.token_no, checkedInAt: r.checked_in_at, startedAt: r.started_at, completedAt: r.completed_at, noShowAt: r.no_show_at,
+  source: r.source, bookedVia: r.booked_via ?? null, tokenNo: r.token_no, checkedInAt: r.checked_in_at, startedAt: r.started_at, completedAt: r.completed_at, noShowAt: r.no_show_at,
   paymentStatus: r.payment_status, invoiceId: r.invoice_id, paidAt: r.paid_at, holdExpiresAt: r.hold_expires_at,
   version: r.version, createdAt: r.created_at,
 });
@@ -55,6 +55,8 @@ export interface Booking {
   source: 'ONLINE' | 'DESK';
   /** ONLINE = hold the slot until paid (PENDING_PAYMENT); AT_CLINIC = confirmed now, paid at the hospital */
   paymentMode?: 'ONLINE' | 'AT_CLINIC';
+  /** booked from the AI assistant's Confirm card (Phase 23) */
+  via?: 'ASSISTANT' | null;
 }
 export type AppointmentDto = ReturnType<typeof toAppointment>;
 
@@ -86,7 +88,7 @@ export class AppointmentsService {
   }
 
   /** Book a slot (pay at clinic). docs/LLD.md §5.2: conditional UPDATE + partial unique index. */
-  async book(actor: Actor, input: { slotId: string; patientId: string; reason: string | null; paymentMode: 'ONLINE' | 'AT_CLINIC' }) {
+  async book(actor: Actor, input: { slotId: string; patientId: string; reason: string | null; paymentMode: 'ONLINE' | 'AT_CLINIC' }, via: 'ASSISTANT' | null = null) {
     if (actor.kind !== 'patient') throw forbidden('PATIENTS_ONLY', 'staff book through the front desk');
     const tenant = TenantContext.require();
     if (input.paymentMode === 'ONLINE') {
@@ -96,7 +98,7 @@ export class AppointmentsService {
       }
     }
     const patient = await this.patients.access(tenant.id, input.patientId, actor.id);
-    const appt = await this.bookingTx((c) => this.bookSlot(c, actor, input.slotId, { patient, reason: input.reason, source: 'ONLINE', paymentMode: input.paymentMode }));
+    const appt = await this.bookingTx((c) => this.bookSlot(c, actor, input.slotId, { patient, reason: input.reason, source: 'ONLINE', paymentMode: input.paymentMode, via }));
     if (appt.status !== 'PENDING_PAYMENT') return appt;
     // after commit (never across a network call): open the invoice + gateway order; if billing is down, give the slot back
     let payment: OnlineCheckout;
@@ -194,10 +196,10 @@ export class AppointmentsService {
     const pending = !!v.holdUntil;
     const { rows: no } = await c.query(`SELECT 'APT-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('appointment_seq')::text, 6, '0') AS no`);
     await c.query(
-      `INSERT INTO appointments (id, appointment_no, slot_id, patient_id, patient_name, patient_mrn, account_person_id, booked_by, doctor_id, branch_id, starts_at, ends_at, mode, status, reason, fee, source, payment_mode, payment_status, hold_expires_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+      `INSERT INTO appointments (id, appointment_no, slot_id, patient_id, patient_name, patient_mrn, account_person_id, booked_by, doctor_id, branch_id, starts_at, ends_at, mode, status, reason, fee, source, payment_mode, payment_status, hold_expires_at, booked_via)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
       [id, no[0].no, v.slotId, b.patient.id, b.patient.fullName, b.patient.mrn, b.patient.accountPersonId, actor.id, v.doctorId, v.branchId, v.startsAt, v.endsAt, v.mode,
-        pending ? 'PENDING_PAYMENT' : 'CONFIRMED', b.reason, v.fee, v.source, pending ? 'ONLINE' : 'AT_CLINIC', v.fee && v.fee > 0 ? 'UNPAID' : 'NOT_DUE', v.holdUntil ?? null],
+        pending ? 'PENDING_PAYMENT' : 'CONFIRMED', b.reason, v.fee, v.source, pending ? 'ONLINE' : 'AT_CLINIC', v.fee && v.fee > 0 ? 'UNPAID' : 'NOT_DUE', v.holdUntil ?? null, b.via ?? null],
     );
     const appt = await this.find(c, id);
     // a pending online booking is announced as booked only once paid (notifications confirm on "booked")
