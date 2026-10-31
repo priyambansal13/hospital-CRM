@@ -28,4 +28,4 @@ COPY --from=build --chown=node:node /out .
 # module manifests + starting plan catalogue (read by entitlement-service and subscription-service; harmless elsewhere)
 COPY --chown=node:node modules ./modules
 USER node
-CMD ["node", "dist/main.js"]
+CMD ["node", "--import", "@mc/nest-common/tracing", "dist/main.js"]

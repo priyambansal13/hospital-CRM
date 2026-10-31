@@ -1,6 +1,7 @@
 import 'reflect-metadata';
 import { ConsoleLogger, Logger, type Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { trace } from '@opentelemetry/api';
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { RequestContext } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
@@ -31,6 +32,8 @@ export async function createService(module: Type<unknown>, opts: ServiceOptions)
   const access = new Logger('http');
   fastify.addHook('onResponse', (req, reply, done) => {
     const route = req.routeOptions?.url ?? 'unmatched'; // the template, never the ids in the URL
+    const span = trace.getActiveSpan(); // the http server span when tracing is on
+    if (span && req.routeOptions?.url) { span.setAttribute('http.route', route); span.updateName(`${req.method} ${route}`); }
     if (!route.startsWith('/health')) httpDuration.observe({ method: req.method, route, status: String(reply.statusCode) }, reply.elapsedTime / 1000);
     if (!req.url.startsWith('/health')) {
       const rc = RequestContext.current();

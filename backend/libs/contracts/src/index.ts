@@ -14,6 +14,9 @@ export const EventEnvelope = z.object({
   /** set for every tenant-scoped event; consumers use it to route to the tenant's own database */
   tenantId: z.uuid().optional(),
   subject: z.string().optional(),
+  /** W3C trace context of the request that caused the event (CloudEvents distributed-tracing extension) */
+  traceparent: z.string().optional(),
+  tracestate: z.string().optional(),
   data: z.record(z.string(), z.unknown()),
 });
 export type EventEnvelope<T = Record<string, unknown>> = Omit<z.infer<typeof EventEnvelope>, 'data'> & { data: T };

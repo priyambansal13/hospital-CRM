@@ -8,7 +8,7 @@ on:
     paths: ['backend/**', '.github/workflows/backend.yml']
   workflow_dispatch:
     inputs:
-      integration: { description: 'Also run the integration job (Docker stack, API suites)', type: boolean, default: false }
+      integration: { description: 'Also run the integration job (Docker stack, API suites, Playwright)', type: boolean, default: false }
 
 defaults:
   run: { working-directory: backend }
@@ -57,7 +57,7 @@ jobs:
           node platform/scripts/mc.mjs gateway sync
       - name: start services and seed the demo hospitals
         run: |
-          for d in backend/services/*-service; do (cd $d && nohup node dist/main.js > /tmp/$(basename $d).log 2>&1 &); done
+          for d in backend/services/*-service; do (cd $d && nohup node --import @mc/nest-common/tracing dist/main.js > /tmp/$(basename $d).log 2>&1 &); done
           sleep 15
           node platform/scripts/mc.mjs seed demo
           sleep 10
@@ -69,8 +69,21 @@ jobs:
           for t in assistant records documents lab results home tenancy race queue payments reminders search plans console billing onboarding gaps wave2 wave3 wave4; do
             echo "::group::mc test $t"; node platform/scripts/mc.mjs test $t; echo "::endgroup::"
           done
+      # browser journeys (Playwright): the zones built and started like production (next start), on the same stack
+      - name: start the frontend zones
+        run: |
+          cd frontend && pnpm install --frozen-lockfile && pnpm build
+          for d in apps/zone-*; do (cd $d && nohup pnpm start > /tmp/$(basename $d).log 2>&1 &); done
+          for i in $(seq 60); do curl -sf -o /dev/null http://citycare.localhost:3400/ && break; sleep 2; done
+      - name: Playwright
+        run: |
+          cd platform && pnpm install --frozen-lockfile && pnpm exec playwright install --with-deps chromium
+          pnpm test:e2e
       - if: failure()
-        run: tail -n 200 /tmp/*-service.log
+        uses: actions/upload-artifact@v4
+        with: { name: playwright-traces, path: platform/test-results, if-no-files-found: ignore }
+      - if: failure()
+        run: tail -n 200 /tmp/*-service.log /tmp/zone-*.log
 
   list-services:
     runs-on: ubuntu-latest

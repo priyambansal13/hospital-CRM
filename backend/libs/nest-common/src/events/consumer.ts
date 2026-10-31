@@ -1,9 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { dlqMessages } from '../metrics.js';
 import { EventEnvelope } from '@mc/contracts';
+import { context, propagation, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
 import { createConsumer, createProducer, type KafkaMessageIn, type Producer } from '@mc/kafka';
 import { type PlacementSource, TenantContext, type TenantDbRouter, TenantUnavailableError, withTx } from '@mc/tenancy';
 import type pg from 'pg';
+
+const tracer = trace.getTracer('@mc/nest-common/events');
 
 export type EventHandler = (event: EventEnvelope<any>, db: pg.PoolClient | undefined) => Promise<void>;
 
@@ -60,8 +63,20 @@ export class EventConsumer {
         await handler(event, c);
       });
     };
-    if (event.tenantId) return TenantContext.run(await this.deps.placements.get(event.tenantId), run, `evt-${event.id}`);
-    return run();
+    // one span per handled event, a child of the request that published it (no-op without tracing)
+    const parent = propagation.extract(context.active(), { traceparent: event.traceparent, tracestate: event.tracestate });
+    return tracer.startActiveSpan(`${event.type} process`, { kind: SpanKind.CONSUMER, attributes: { 'messaging.consumer.group.name': this.spec.group, 'messaging.message.id': event.id, 'mc.tenant': event.tenantId ?? '' } }, parent, async (span) => {
+      try {
+        if (event.tenantId) return await TenantContext.run(await this.deps.placements.get(event.tenantId), run, `evt-${event.id}`);
+        return await run();
+      } catch (e) {
+        span.recordException(e as Error);
+        span.setStatus({ code: SpanStatusCode.ERROR, message: (e as Error).message });
+        throw e;
+      } finally {
+        span.end();
+      }
+    });
   }
 
   private async onMessage(m: KafkaMessageIn) {

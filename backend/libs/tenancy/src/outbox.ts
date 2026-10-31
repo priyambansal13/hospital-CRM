@@ -1,10 +1,15 @@
 import { randomUUID } from 'node:crypto';
+import { context, propagation } from '@opentelemetry/api';
 import type { EventEnvelope } from '@mc/contracts';
 import type { Queryable } from './db.js';
 
 /** Build an event envelope (ids are random UUIDs; ordering comes from the outbox id and Kafka partition key). */
 export function envelope<T extends Record<string, unknown>>(type: string, data: T, opts: { tenantId?: string; subject?: string; source?: string } = {}): EventEnvelope<T> {
+  // the current trace (a no-op without tracing): the consumer's span joins it
+  const trace: { traceparent?: string; tracestate?: string } = {};
+  propagation.inject(context.active(), trace);
   return {
+    ...trace,
     specversion: '1.0',
     id: randomUUID(),
     type,

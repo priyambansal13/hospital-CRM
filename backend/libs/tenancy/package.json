@@ -21,15 +21,16 @@
     "test:integration": "vitest run -c vitest.integration.config.ts"
   },
   "dependencies": {
-    "pg": "^8.23.1",
+    "@mc/contracts": "workspace:^",
+    "@opentelemetry/api": "^1.10.0",
     "lru-cache": "^11.2.2",
-    "@mc/contracts": "workspace:^"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.6",
     "oxlint": "^1.89.0",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.2",
-    "@types/pg": "^8.15.6"
+    "vitest": "^4.1.2"
   }
 }
