@@ -1,4 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { EventTypes, type StaffNotice, Topics } from '@mc/contracts';
+import { addToOutbox, envelope, withTx } from '@mc/tenancy';
 import { CONTROL_DB, DomainError, isDev, REDIS, type Redis, smtpOptions } from '@mc/nest-common';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import nodemailer from 'nodemailer';
@@ -14,6 +16,13 @@ const site = () => process.env.PUBLIC_SITE_URL ?? 'http://medicare.localhost:340
 
 export interface SignupInput { hospitalName: string; slug: string; adminName: string; adminEmail: string; phone: string | null; plan: string }
 type Check = { key: string; label: string; done: boolean };
+type Signup = { id: string; slug: string; hospital_name: string; admin_name: string; admin_email: string; plan_code: string; status: string; tenant_id: string | null; verified_at: string | null };
+const STUCK_MS = 10 * 60_000;
+const urls = (slug: string) => {
+  const port = new URL(site()).port;
+  const base = `${new URL(site()).protocol}//${slug}.${process.env.TENANT_BASE_DOMAIN ?? 'localhost'}${port ? `:${port}` : ''}`;
+  return { base, login: `${base}/login?next=${encodeURIComponent('/admin/setup')}` };
+};
 
 /**
  * Self-serve signup (docs/MULTI-TENANCY.md §6, PRODUCT-MODULES-AND-PLANS.md §10): the owner confirms their e-mail,
@@ -100,8 +109,7 @@ export class SignupService {
       await this.db.query('UPDATE signups SET tenant_id = $2 WHERE id = $1', [s.id, t.id]);
       this.log.log(`signup ${s.slug}: hospital database ready; services are setting up the rest`);
     } catch (e) {
-      await this.db.query(`UPDATE signups SET status = 'FAILED', error = $2 WHERE id = $1`, [s.id, (e as Error).message.slice(0, 500)]);
-      this.log.error(`signup ${s.slug} failed: ${(e as Error).message}`);
+      await this.fail(s, (e as Error).message);
     }
   }
 
@@ -130,29 +138,69 @@ export class SignupService {
     ];
   }
 
+  /**
+   * Moves a provisioning signup on: READY when every step is done (the owner gets an e-mail), FAILED when it is not
+   * done after 10 minutes (MediCare support gets a notice). Run by the status page and by the sweep, so it happens
+   * even when nobody has the page open; the conditional UPDATE makes each move (and its message) happen once.
+   */
+  async settle(s: Signup): Promise<{ status: string; steps: Check[] }> {
+    if (s.status !== 'PROVISIONING' && s.status !== 'READY') return { status: s.status, steps: [] };
+    const age = Date.now() - new Date(s.verified_at ?? Date.now()).getTime();
+    if (!s.tenant_id) {
+      // the saga stopped before the hospital existed (the service restarted mid-way)
+      if (s.status === 'PROVISIONING' && age > STUCK_MS) return { status: (await this.fail(s, 'provisioning stopped before the hospital was created')) ? 'FAILED' : s.status, steps: [] };
+      return { status: s.status, steps: [] };
+    }
+    const steps = await this.readiness(s.tenant_id, s.admin_email);
+    if (s.status !== 'PROVISIONING') return { status: s.status, steps };
+    const missing = steps.filter((x) => !x.done).map((x) => x.key);
+    if (!missing.length) {
+      const { rowCount } = await this.db.query(`UPDATE signups SET status = 'READY', ready_at = now() WHERE id = $1 AND status = 'PROVISIONING'`, [s.id]);
+      if (!rowCount) return { status: 'READY', steps };
+      this.log.log(`signup ${s.slug} ready in ${Math.round(age / 1000)} s`);
+      const { base, login } = urls(s.slug);
+      await this.mail.sendMail({
+        from: 'MediCare <hello@medicare.example>', to: s.admin_email, subject: `${s.hospital_name} is ready on MediCare`,
+        text: `Hello ${s.admin_name},\n\n${s.hospital_name} is set up and your free trial has started. Sign in to finish the setup (branches, doctors, timings):\n\n${login}\n\nYour hospital's address: ${base}\n\nMediCare`,
+      }).catch((e) => this.log.warn(`signup ${s.slug}: ready e-mail not sent: ${(e as Error).message}`));
+      return { status: 'READY', steps };
+    }
+    // something did not finish (a service is down or an event went to its DLQ)
+    if (age > STUCK_MS && (await this.fail(s, `not ready after 10 minutes: ${missing.join(', ')}`))) return { status: 'FAILED', steps };
+    return { status: 'PROVISIONING', steps };
+  }
+
+  /** Marks the signup FAILED and tells MediCare support (in the same transaction). False if it had already moved on. */
+  private async fail(s: Pick<Signup, 'id' | 'slug' | 'hospital_name' | 'admin_name' | 'admin_email'> & { tenant_id?: string | null }, reason: string) {
+    this.log.error(`signup ${s.slug} failed: ${reason}`);
+    const hq = await this.catalog.findBySlug(process.env.HQ_SLUG ?? 'medicare');
+    return withTx(this.db, async (c) => {
+      const { rowCount } = await c.query(`UPDATE signups SET status = 'FAILED', error = $2 WHERE id = $1 AND status = 'PROVISIONING'`, [s.id, reason.slice(0, 500)]);
+      if (!rowCount) return false;
+      if (hq) {
+        const n: StaffNotice = {
+          permission: 'customer:manage:tenant', subject: `Signup failed: ${s.hospital_name} (${s.slug})`,
+          message: `The self-serve signup of ${s.hospital_name} by ${s.admin_name} <${s.admin_email}> did not finish: ${reason}. Their status page says our team has been told: contact them, fix the cause, and finish or remove the hospital.`,
+          linkPath: s.tenant_id ? `/platform/hospitals/${s.tenant_id}` : '/platform/hospitals', dedupe: `signup-failed:${s.id}`,
+        };
+        await addToOutbox(c, Topics.tenant, hq.id, envelope(EventTypes.staffNotice, n, { tenantId: hq.id }));
+      } else this.log.warn('no MediCare HQ account: nobody to tell about the failed signup');
+      return true;
+    });
+  }
+
+  /** Signups still provisioning (the sweep settles them). */
+  async inProgress(): Promise<Signup[]> {
+    return (await this.db.query(`SELECT * FROM signups WHERE status = 'PROVISIONING' ORDER BY verified_at LIMIT 100`)).rows;
+  }
+
   async status(token: string) {
     const s = await this.byToken(token);
-    let steps: Check[] = [];
-    let status: string = s.status;
-    if (s.tenant_id && (s.status === 'PROVISIONING' || s.status === 'READY')) {
-      steps = await this.readiness(s.tenant_id, s.admin_email);
-      if (s.status === 'PROVISIONING' && !steps.every((x) => x.done) && Date.now() - new Date(s.verified_at).getTime() > 10 * 60_000) {
-        // something did not finish (a service is down or an event went to its DLQ): tell the person, alert ops
-        await this.db.query(`UPDATE signups SET status = 'FAILED', error = $2 WHERE id = $1 AND status = 'PROVISIONING'`, [s.id, `not ready after 10 minutes: ${steps.filter((x) => !x.done).map((x) => x.key).join(', ')}`]);
-        this.log.error(`signup ${s.slug} not ready after 10 minutes (${steps.filter((x) => !x.done).map((x) => x.key).join(', ')})`);
-        status = 'FAILED';
-      } else if (s.status === 'PROVISIONING' && steps.every((x) => x.done)) {
-        await this.db.query(`UPDATE signups SET status = 'READY', ready_at = now() WHERE id = $1 AND status = 'PROVISIONING'`, [s.id]);
-        status = 'READY';
-        this.log.log(`signup ${s.slug} ready in ${Math.round((Date.now() - new Date(s.verified_at).getTime()) / 1000)} s`);
-      }
-    }
-    const host = `${s.slug}.${process.env.TENANT_BASE_DOMAIN ?? 'localhost'}`;
-    const port = new URL(site()).port;
-    const base = `${new URL(site()).protocol}//${host}${port ? `:${port}` : ''}`;
+    const { status, steps } = await this.settle(s);
+    const { base, login } = urls(s.slug);
     return {
       id: s.id, status, slug: s.slug, hospitalName: s.hospital_name, email: s.admin_email, plan: s.plan_code, error: status === 'FAILED' ? 'We could not finish setting up. Our team has been told.' : null,
-      steps, url: base, loginUrl: status === 'READY' ? `${base}/login?next=${encodeURIComponent('/admin/setup')}` : null,
+      steps, url: base, loginUrl: status === 'READY' ? login : null,
     };
   }
 }

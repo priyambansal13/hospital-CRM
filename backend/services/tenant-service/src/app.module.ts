@@ -8,6 +8,7 @@ import { CatalogRepo } from './catalog/catalog.repo.js';
 import { DomainsController, SetupController } from './catalog/domains.controller.js';
 import { ProvisioningService } from './catalog/provisioning.service.js';
 import { SignupController } from './signup/signup.controller.js';
+import { SignupSweepJob } from './signup/signup-sweep.job.js';
 import { SignupService } from './signup/signup.service.js';
 
 @Module({
@@ -23,6 +24,6 @@ import { SignupService } from './signup/signup.service.js';
     EntitlementsModule,
   ],
   controllers: [InternalCatalogController, BrandingController, BranchesController, InternalBranchCountController, SignupController, DomainsController, SetupController],
-  providers: [CatalogRepo, ProvisioningService, SignupService],
+  providers: [CatalogRepo, ProvisioningService, SignupService, SignupSweepJob],
 })
 export class AppModule {}

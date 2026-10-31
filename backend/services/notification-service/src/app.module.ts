@@ -16,7 +16,11 @@ class NotificationConsumers implements OnModuleInit, OnApplicationBootstrap {
     this.registry.register({
       group: 'notification.tenant-setup',
       topics: [Topics.tenant],
-      handlers: { [EventTypes.tenantProvisioned]: (_e, db) => this.planner.seedTemplates(db!) },
+      handlers: {
+        [EventTypes.tenantProvisioned]: (_e, db) => this.planner.seedTemplates(db!),
+        // tenant-service tells MediCare support about failed signups (to the HQ account)
+        [EventTypes.staffNotice]: (e, db) => this.planner.onStaffNotice(db!, StaffNotice.parse(e.data)),
+      },
     });
     this.registry.register({
       group: 'notification.patients',

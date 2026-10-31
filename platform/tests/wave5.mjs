@@ -102,5 +102,21 @@ psql(`UPDATE subscription.contracts SET overrides = jsonb_set(overrides, '{expir
 const gone = await waitFor(async () => !(psql(`SELECT overrides->'features' ? 'core.branches' FROM subscription.contracts WHERE tenant_id = '${city.id}' AND status = 'ACTIVE'`, 'mc_control') === 't'), 40000, 2000);
 check(!!gone, 'H-7 when its date passes, the override goes back to the plan by itself');
 
+// ======== 4.G signups: the owner hears the hospital is ready, MediCare support hears about a failure ========
+// (rows put straight into the table; the sweep settles them within 30 s without anyone opening the status page)
+const stuck = `w5stuck${SFX}`, ready = `w5ready${SFX}`;
+// a hospital whose every setup step is done: the newest one that came through a signup (the onboarding suite makes them)
+const [rTenant, rEmail] = psql(`SELECT t.id || '|' || s.admin_email FROM tenant.signups s JOIN tenant.tenants t ON t.id = s.tenant_id WHERE s.status = 'READY' AND t.status = 'ACTIVE' ORDER BY s.ready_at DESC LIMIT 1`, 'mc_control').split('|');
+if (!rTenant) console.log('  (no hospital from a finished signup: run the onboarding suite first)');
+psql(`INSERT INTO tenant.signups (id, token_hash, slug, hospital_name, admin_name, admin_email, plan_code, status, verified_at, expires_at) VALUES
+  (gen_random_uuid(), 'w5-stuck-${SFX}', '${stuck}', 'Stuck Hospital ${SFX}', 'Stuck Owner', 'stuck.${SFX}@example.test', 'CLINIC_STARTER', 'PROVISIONING', now() - interval '11 minutes', now() + interval '1 day'),
+  (gen_random_uuid(), 'w5-ready-${SFX}', '${ready}', 'Ready Clinic ${SFX}', 'Ready Owner', '${rEmail}', 'CLINIC_STARTER', 'PROVISIONING', now() - interval '1 minute', now() + interval '1 day')`, 'mc_control');
+psql(`UPDATE tenant.signups SET tenant_id = '${rTenant}' WHERE slug = '${ready}'`, 'mc_control');
+check(!!(await waitFor(async () => (await mailSince(`to:support@medicare.test subject:"Signup failed: Stuck Hospital ${SFX}"`)).length > 0, 60000, 2000)), '4.G MediCare support is told when a signup fails');
+check(psql(`SELECT status FROM tenant.signups WHERE slug = '${stuck}'`, 'mc_control') === 'FAILED', '4.G the stuck signup is marked failed');
+check(!!(await waitFor(async () => (await mailSince(`to:${rEmail} subject:"Ready Clinic ${SFX} is ready on MediCare"`)).length > 0, 60000, 2000)), '4.G the owner gets a "your hospital is ready" e-mail');
+check(psql(`SELECT count(*) FROM tenant.signups WHERE slug = '${ready}' AND status = 'READY'`, 'mc_control') === '1', '4.G the signup is ready without the status page open');
+psql(`DELETE FROM tenant.signups WHERE slug IN ('${stuck}', '${ready}')`, 'mc_control');
+
 console.log(failures ? `\n\x1b[31m${failures} check(s) failed\x1b[0m` : '\n\x1b[32mwave 5: all checks passed\x1b[0m');
 process.exit(failures ? 1 : 0);
