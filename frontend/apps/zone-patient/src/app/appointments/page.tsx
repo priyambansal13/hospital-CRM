@@ -26,7 +26,7 @@ const feeLine = (a: Appointment) => {
 };
 const CANCEL_REASON: Record<string, string> = { DOCTOR_UNAVAILABLE: 'The doctor is unavailable that day.', PATIENT_CANCELLED: 'You cancelled.', CANCELLED_BY_HOSPITAL: 'Cancelled by the hospital.' };
 
-function AppointmentCard({ a, actions, windowHours }: { a: Appointment; actions: boolean; windowHours: number }) {
+function AppointmentCard({ a, actions, windowHours, forms = false }: { a: Appointment; actions: boolean; windowHours: number; forms?: boolean }) {
   const s = STATUS[a.status] ?? { label: a.status, tone: 'neutral' as const };
   const changeable = actions && a.status === 'CONFIRMED' && new Date(a.startsAt).getTime() - Date.now() > windowHours * 3600_000;
   return (
@@ -39,6 +39,7 @@ function AppointmentCard({ a, actions, windowHours }: { a: Appointment; actions:
       </div>
       <div className="mc-appt-actions">
         <Badge tone={s.tone}>{s.label}</Badge>
+        {forms && ['CONFIRMED', 'PENDING_PAYMENT', 'CHECKED_IN'].includes(a.status) ? <a className="mc-btn mc-btn-ghost" href={`/care/appointments/${a.id}/form`}>{a.formAnswers ? 'Your answers' : 'Before your visit'}</a> : null}
         {a.status === 'PENDING_PAYMENT' && a.invoiceId ? <a className="mc-btn mc-btn-primary" href={`/care/pay/${a.invoiceId}`}>Pay now</a> : null}
         {changeable ? (
           <>
@@ -59,6 +60,8 @@ export default async function MyAppointmentsPage({ searchParams }: { searchParam
   if (caps.actor.kind !== 'patient') {
     return <ZoneFrame zone="patient" path="/care/appointments" zones={ZONES}><Alert tone="error">This page is for patients.</Alert></ZoneFrame>;
   }
+  // pre-visit forms (Phase 27)
+  const forms = caps.modules.includes('workflows') && caps.permissions.includes('form:submit:own');
   const { accessToken: token } = (await getSession())!;
   const [data, waitlist] = await Promise.all([
     myAppointments(token),
@@ -70,7 +73,7 @@ export default async function MyAppointmentsPage({ searchParams }: { searchParam
       <Flash {...await searchParams} />
       <section className="mc-list" aria-label="Upcoming">
         <h2>Upcoming</h2>
-        {data.upcoming.length ? data.upcoming.map((a) => <AppointmentCard key={a.id} a={a} actions windowHours={data.policy.cancelWindowHours} />) : <p className="mc-muted">No upcoming appointments.</p>}
+        {data.upcoming.length ? data.upcoming.map((a) => <AppointmentCard key={a.id} a={a} actions windowHours={data.policy.cancelWindowHours} forms={forms} />) : <p className="mc-muted">No upcoming appointments.</p>}
       </section>
       {waitlist.length ? (
         <Card title="Waitlist">

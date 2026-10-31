@@ -1,0 +1,16 @@
+# Integrations (IMPLEMENTATION-PLAN.md Phase 27): signed webhooks to the hospital's own systems, API keys, a read-only
+# HL7 FHIR R4 API (Patient, Appointment, DiagnosticReport) and the LIS connector v1 (orders out as FHIR
+# ServiceRequest, results back as Observations, entered for a pathologist to verify). Off by default.
+key: integrations
+name: Integrations (webhooks, API keys, FHIR, LIS)
+version: 1
+dependsOn: []
+services: [integration-service]
+permissions:
+  - { code: integration:manage:tenant, description: Manage webhooks, API keys and the lab instrument (LIS) connection }
+features:
+  - { key: integrations.webhooks, name: Webhook endpoints, type: LIMIT, unit: endpoints }
+  - { key: integrations.fhir, name: FHIR read API, type: BOOLEAN }
+  - { key: integrations.lis, name: LIS connector, type: BOOLEAN }
+nav:
+  - { key: integrations-admin, label: Integrations, zone: admin, href: /admin/integrations, permissions: [integration:manage:tenant, admin:access:tenant] }

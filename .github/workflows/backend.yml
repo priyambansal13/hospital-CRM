@@ -63,10 +63,10 @@ jobs:
           sleep 10
       - run: cd backend && pnpm test:integration
       # API suites (review H-6). Order matters: the leak test aims at a chat, an encounter, a lab report, a home visit,
-      # a Confirm card, a pre-visit summary, a scribe draft and a membership tier that the earlier suites leave behind.
+      # a Confirm card, a pre-visit summary, a scribe draft, a membership tier and custom fields, forms and rules that the earlier suites leave behind.
       - run: |
           set -e
-          for t in assistant records documents lab results home concierge copilot scribe whatsapp memberships tenancy race queue payments reminders search plans console billing onboarding gaps wave2 wave3 wave4 wave5; do
+          for t in assistant records documents lab results home concierge copilot scribe whatsapp memberships workflows tenancy race queue payments reminders search plans console billing onboarding gaps wave2 wave3 wave4 wave5; do
             echo "::group::mc test $t"; node platform/scripts/mc.mjs test $t; echo "::endgroup::"
           done
       # browser journeys (Playwright): the zones built and started like production (next start), on the same stack

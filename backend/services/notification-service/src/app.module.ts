@@ -1,5 +1,5 @@
 import { Inject, Injectable, Module, type OnApplicationBootstrap, type OnModuleInit } from '@nestjs/common';
-import { AppointmentChanged, DoctorAgenda, EventTypes, PayoutAccountChanged, StaffNotice, HomeVisitChanged, LabCriticalEscalated, LabCriticalValue, LabOrderChanged, LabReportPublished, PatientRegistered, PaymentSucceeded, PrescriptionIssued, RefundProcessed, Topics, WaitlistSlotAvailable, BillingNotice } from '@mc/contracts';
+import { AppointmentChanged, DoctorAgenda, EventTypes, PayoutAccountChanged, StaffNotice, HomeVisitChanged, LabCriticalEscalated, LabCriticalValue, LabOrderChanged, LabReportPublished, PatientRegistered, PaymentSucceeded, PrescriptionIssued, RefundProcessed, Topics, WaitlistSlotAvailable, BillingNotice, WorkflowNotify } from '@mc/contracts';
 import { ConsumerRegistry, CoreModule, PLACEMENTS, retryInBackground } from '@mc/nest-common';
 import { EntitlementsModule } from '@mc/entitlements-sdk';
 import { type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
@@ -42,6 +42,11 @@ class NotificationConsumers implements OnModuleInit, OnApplicationBootstrap {
         [EventTypes.doctorAgenda]: (e, db) => this.planner.onDoctorAgenda(db!, DoctorAgenda.parse(e.data)),
         [EventTypes.waitlistSlotAvailable]: (e, db) => this.planner.onWaitlist(db!, { ...WaitlistSlotAvailable.parse(e.data), doctorName: (e.data as any).doctorName }, e.time),
       },
+    });
+    this.registry.register({
+      group: 'notification.workflows',
+      topics: [Topics.integration],
+      handlers: { [EventTypes.workflowNotify]: (e, db) => this.planner.onWorkflowNotify(db!, WorkflowNotify.parse(e.data)) },
     });
     this.registry.register({
       group: 'notification.billing',

@@ -42,6 +42,10 @@ const en: DefaultTemplate[] = [
   { key: 'doctor_agenda', channel: 'EMAIL', language: 'en', subject: 'Your patients today ({{count}})', body: 'Good morning {{doctorName}},\n\nYour bookings for {{date}}:\n\n{{list}}\n\nWalk-ins join your queue during the day. Open MediCare: {{link}}\n\n{{hospital}}' },
   { key: 'doctor_day_change', channel: 'EMAIL', language: 'en', subject: '{{change}} today: {{time}} {{patientName}}', body: '{{doctorName}},\n\n{{change}} for today: {{patientName}} at {{time}} ({{where}}, {{appointmentNo}}).\n\nYour queue: {{link}}\n\n{{hospital}}' },
   { key: 'staff_notice', channel: 'EMAIL', language: 'en', subject: '{{subject}}', body: 'Hello,\n\n{{message}}\n\n{{link}}\n\nMediCare' },
+  // workflow rules (Phase 27): the hospital writes the wording in the rule
+  { key: 'workflow_staff', channel: 'EMAIL', language: 'en', subject: '{{subject}}', body: 'Hello,\n\n{{message}}\n\n(Sent automatically by one of the hospital\'s workflow rules.)\n\n{{hospital}}' },
+  { key: 'workflow_patient', channel: 'EMAIL', language: 'en', subject: '{{subject}}', body: 'Hello,\n\n{{message}}\n\n{{hospital}}' },
+  { key: 'workflow_patient', channel: 'SMS', language: 'en', body: '{{hospital}}: {{message}}' },
   { key: 'payout_account_changed', channel: 'EMAIL', language: 'en', subject: 'Payout account {{changeWord}}: bank account ending {{bankLast4}}', body: 'Hello,\n\nThe bank account that patients\' online payments are paid out to was {{changeWord}} by {{by}}: now account ending {{bankLast4}} ({{ifsc}}){{prevLine}}.\n{{holdLine}}\n\nIf you did not expect this, change it back at once and tell MediCare support: {{link}}\n\n{{hospital}} via MediCare' },
   { key: 'lab_tat_breached', channel: 'EMAIL', language: 'en', subject: 'Overdue: lab order {{orderNo}}', body: 'The report for lab order {{orderNo}} ({{tests}}) is past its promised time.\n\nPending results: {{link}}\n\n{{hospital}} lab' },
   { key: 'lab_critical_escalated', channel: 'EMAIL', language: 'en', subject: 'ESCALATED critical lab value: {{patientName}} ({{patientMrn}})', body: 'URGENT: not acknowledged for {{minutesOpen}} minutes\n\nA critical value for {{patientName}} ({{patientMrn}}, order {{orderNo}}): {{testName}}, {{parameter}}. {{orderedByLine}}\n\n{{action}}\nOpen MediCare: {{link}}\n\n{{hospital}} lab' },
@@ -84,7 +88,7 @@ const hi: DefaultTemplate[] = [
 export const DEFAULT_TEMPLATES = [...en, ...hi];
 
 /** Messages to hospital staff: email only (no SMS template on purpose). */
-export const STAFF_ONLY_KEYS = new Set(['staff_notice', 'payout_account_changed', 'lab_report_ready_doctor', 'lab_critical_value', 'lab_critical_escalated', 'doctor_agenda', 'doctor_day_change', 'lab_tat_breached', 'home_visit_assigned_staff', 'billing_notice_staff']);
+export const STAFF_ONLY_KEYS = new Set(['staff_notice', 'payout_account_changed', 'lab_report_ready_doctor', 'lab_critical_value', 'lab_critical_escalated', 'doctor_agenda', 'doctor_day_change', 'lab_tat_breached', 'home_visit_assigned_staff', 'billing_notice_staff', 'workflow_staff']);
 
 /** {{var}} replacement; missing values render as empty strings. */
 export function render(text: string, vars: Record<string, unknown>): string {

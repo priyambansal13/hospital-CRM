@@ -29,8 +29,8 @@ const UNIQUE_VIOLATION = '23505';
 /** money still held for the appointment (a partial refund leaves the rest refundable) */
 const HAS_PAID_MONEY = ['PAID', 'PARTIALLY_REFUNDED'];
 
-const APPT_SELECT = `
-  SELECT a.*, d.name AS doctor_name, d.user_id AS doctor_user_id, b.name AS branch_name, b.timezone,
+export const APPT_SELECT = `
+  SELECT a.*, d.name AS doctor_name, d.user_id AS doctor_user_id, d.specialty_codes AS doctor_specialties, b.name AS branch_name, b.timezone,
          to_char(a.starts_at AT TIME ZONE b.timezone, 'YYYY-MM-DD') AS local_date,
          to_char(a.starts_at AT TIME ZONE b.timezone, 'HH24:MI') AS local_time
   FROM appointments a JOIN doctors d ON d.id = a.doctor_id JOIN branches b ON b.id = a.branch_id`;
@@ -45,8 +45,11 @@ export const toAppointment = (r: any) => ({
   rescheduledFrom: r.rescheduled_from, rescheduleCount: r.reschedule_count, cancelReason: r.cancel_reason, cancelledAt: r.cancelled_at,
   source: r.source, bookedVia: r.booked_via ?? null, memberBenefit: r.member_benefit ?? null, tokenNo: r.token_no, checkedInAt: r.checked_in_at, startedAt: r.started_at, completedAt: r.completed_at, noShowAt: r.no_show_at,
   paymentStatus: r.payment_status, invoiceId: r.invoice_id, paidAt: r.paid_at, holdExpiresAt: r.hold_expires_at,
+  formAnswers: r.form_answers ?? null,
   version: r.version, createdAt: r.created_at,
 });
+/** staff also see the hospital's custom fields (Phase 27; not shown to patients) */
+export const toStaffAppointment = (r: any) => ({ ...toAppointment(r), customFields: (r.custom_fields ?? {}) as Record<string, unknown> });
 
 /** Who the appointment is for, and how it is being booked. */
 export interface Booking {
@@ -101,6 +104,11 @@ export class AppointmentsService {
       }
     }
     const patient = await this.patients.access(tenant.id, input.patientId, actor.id);
+    // a workflow rule (Phase 27, e.g. "two no-shows → pay when booking") asked this patient to pay online
+    if (input.paymentMode !== 'ONLINE' && caps.modules.includes('workflows')) {
+      const { rows: [f] } = await (await this.db.current()).query('SELECT reason FROM patient_flags WHERE patient_id = $1 AND prepay_required', [patient.id]);
+      if (f) throw new DomainError(422, 'PREPAYMENT_REQUIRED', `please pay online to book${f.reason ? ` (${f.reason})` : ''}; the front desk can help`, { reason: f.reason });
+    }
     const rules = await this.membership.rulesFor(tenant.id, caps, patient.accountPersonId);
     const appt = await this.bookingTx((c) => this.bookSlot(c, actor, input.slotId, { patient, reason: input.reason, source: 'ONLINE', paymentMode: input.paymentMode, via, rules }));
     if (appt.status !== 'PENDING_PAYMENT') return appt;

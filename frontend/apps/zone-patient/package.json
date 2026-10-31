@@ -22,6 +22,7 @@
     "@mc/auth": "workspace:^",
     "@mc/bff": "workspace:^",
     "@mc/features": "workspace:^",
+    "@mc/forms": "workspace:^",
     "@mc/ui": "workspace:^",
     "next": "16.4.2",
     "react": "19.3.0",

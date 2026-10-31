@@ -38,6 +38,7 @@
 //   keys rotate <slug> | keys rewrap  data key rotation; re-wrap data keys with the current master key / KMS
 //   whatsapp link <slug> <phoneNumberId> <number> | whatsapp list <slug>   a hospital's WhatsApp Business number (Phase 25)
 //   test memberships                  memberships: tiers, booking window, members-only times, paid join, lab discount (Phase 26)
+//   test workflows                    custom fields, pre-visit forms, workflow rules (Phase 27)
 //   test console                      platform console: plan builder, two-person approval, impact, move hospitals, audit
 //   k8s render <env>                  write deploy/environments/<env>/{generated.yaml,apps.json} from service/zone metadata
 //   k8s check <env>                   helm lint + render every app + kubeconform schema check (needs helm, docker)
@@ -660,6 +661,7 @@ const main = async () => {
       if (sub === 'scribe') return run(`node ${join(PLATFORM, 'tests/scribe.mjs')}`, PLATFORM);
       if (sub === 'whatsapp') return run(`node ${join(PLATFORM, 'tests/whatsapp.mjs')}`, PLATFORM);
       if (sub === 'memberships') return run(`node ${join(PLATFORM, 'tests/memberships.mjs')}`, PLATFORM);
+      if (sub === 'workflows') return run(`node ${join(PLATFORM, 'tests/workflows.mjs')}`, PLATFORM);
       return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2|wave3|wave4|wave5|concierge|copilot|scribe|whatsapp');
     case 'seed':
       if (sub === 'showcase') return run(`node ${join(PLATFORM, 'scripts/seed-showcase.mjs')}`, PLATFORM);

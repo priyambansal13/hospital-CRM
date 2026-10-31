@@ -1,0 +1,55 @@
+{
+  "name": "@mc/integration-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "mc": {
+    "kind": "service",
+    "port": 4416,
+    "schema": "integration",
+    "control": true,
+    "tenant": true,
+    "route": "integration",
+    "owner": "team-platform",
+    "publishes": [
+      "integration.events"
+    ],
+    "consumes": [
+      "scheduling.events",
+      "patient.events",
+      "diagnostics.events",
+      "billing.events",
+      "records.events"
+    ]
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "dev": "tsc -p tsconfig.build.json && (tsc -w -p tsconfig.build.json --preserveWatchOutput >/dev/null & node --import @mc/nest-common/tracing --watch-path=dist dist/main.js)",
+    "start": "node --import @mc/nest-common/tracing dist/main.js",
+    "migrate": "node dist/migrate.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "oxlint src",
+    "test": "vitest run --passWithNoTests --dir src",
+    "test:integration": "vitest run --passWithNoTests --dir test"
+  },
+  "dependencies": {
+    "@mc/contracts": "workspace:^",
+    "@mc/entitlements-sdk": "workspace:^",
+    "@mc/nest-common": "workspace:^",
+    "@mc/tenancy": "workspace:^",
+    "@nestjs/common": "~12.1.3",
+    "@nestjs/core": "~12.1.3",
+    "@nestjs/platform-fastify": "~12.1.3",
+    "pg": "^8.23.1",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/pg": "^8.15.6",
+    "oxlint": "^1.89.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.2"
+  }
+}

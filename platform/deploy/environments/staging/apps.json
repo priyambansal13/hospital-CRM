@@ -100,6 +100,19 @@
     "valuesJson": "{\"name\":\"iam-service\",\"port\":4402,\"schema\":\"iam\",\"migrations\":true,\"extraSecretKeys\":[\"MC_IAM_CLIENT_SECRET\",\"SMTP_USER\",\"SMTP_PASSWORD\"]}"
   },
   {
+    "name": "integration-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "integration-service",
+      "port": 4416,
+      "schema": "integration",
+      "migrations": true,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"integration-service\",\"port\":4416,\"schema\":\"integration\",\"migrations\":true,\"extraSecretKeys\":[]}"
+  },
+  {
     "name": "notification-service",
     "chart": "medicare-service",
     "wave": "2",

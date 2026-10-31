@@ -1,13 +1,14 @@
 import { StatsController } from './schedule/stats.controller.js';
 import { Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { BranchChanged, DoctorChanged, EventTypes, MembershipChanged, PaymentSucceeded, RefundProcessed, Topics } from '@mc/contracts';
-import { ConsumerRegistry, CoreModule } from '@mc/nest-common';
+import { ConsumerRegistry, CoreModule, CustomFieldsClient } from '@mc/nest-common';
 import { EntitlementsModule } from '@mc/entitlements-sdk';
 import type { Queryable } from '@mc/tenancy';
 import { AppointmentsController, InternalAppointmentsController, InternalNextSlotsController } from './schedule/appointments.controller.js';
 import { AppointmentsService } from './schedule/appointments.service.js';
 import { BillingClient } from './schedule/billing.client.js';
 import { MembershipRules } from './schedule/membership.js';
+import { AppointmentCustomController, InternalPrepaymentController } from './schedule/custom.controller.js';
 import { HoldExpiryJob } from './schedule/hold-expiry.job.js';
 import { HorizonJob } from './schedule/horizon.job.js';
 import { NoShowJob } from './schedule/no-show.job.js';
@@ -29,10 +30,10 @@ async function upsertBranch(c: Queryable, data: unknown, appts: AppointmentsServ
 /** Doctor read model; when a doctor stops practising at a branch, their hours there (and open slots) go. */
 async function upsertDoctor(c: Queryable, data: unknown, svc: ScheduleService, appts: AppointmentsService) {
   const d = DoctorChanged.parse(data);
-  await c.query(`INSERT INTO doctors (id, user_id, name, status, branch_ids, branch_fees) VALUES ($1,$2,$3,$4,$5,$6)
+  await c.query(`INSERT INTO doctors (id, user_id, name, status, branch_ids, branch_fees, specialty_codes) VALUES ($1,$2,$3,$4,$5,$6,$7)
     ON CONFLICT (id) DO UPDATE SET user_id = $2, name = $3, status = $4, branch_ids = $5,
-      branch_fees = CASE WHEN $6::jsonb = '[]'::jsonb THEN doctors.branch_fees ELSE $6::jsonb END, updated_at = now()`,
-    [d.doctorId, d.userId, d.name, d.status, d.branchIds, JSON.stringify(d.branchFees)]);
+      branch_fees = CASE WHEN $6::jsonb = '[]'::jsonb THEN doctors.branch_fees ELSE $6::jsonb END, specialty_codes = $7, updated_at = now()`,
+    [d.doctorId, d.userId, d.name, d.status, d.branchIds, JSON.stringify(d.branchFees), d.specialtyCodes]);
   const { rows } = await c.query('SELECT id FROM availability_templates WHERE doctor_id = $1 AND NOT (branch_id = ANY($2))', [d.doctorId, d.branchIds]);
   for (const r of rows) await svc.removeHours(c, d.doctorId, r.id);
   // unpublished: every future booking goes; no longer at a branch: the bookings there go (review D-5)
@@ -80,7 +81,7 @@ class SchedulingConsumers implements OnModuleInit {
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'scheduling', control: false, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [InternalAgendaController, UpcomingAppointmentsController, ScheduleController, AppointmentsController, InternalAppointmentsController, InternalNextSlotsController, DeskController, QueueController, InternalQueueController, StatsController],
-  providers: [ScheduleService, AppointmentsService, QueueService, PatientsClient, BillingClient, MembershipRules, HorizonJob, NoShowJob, HoldExpiryJob, AgendaJob, SchedulingConsumers],
+  controllers: [InternalAgendaController, UpcomingAppointmentsController, ScheduleController, AppointmentsController, InternalAppointmentsController, InternalNextSlotsController, DeskController, QueueController, InternalQueueController, StatsController, AppointmentCustomController, InternalPrepaymentController],
+  providers: [ScheduleService, AppointmentsService, QueueService, PatientsClient, BillingClient, MembershipRules, CustomFieldsClient, HorizonJob, NoShowJob, HoldExpiryJob, AgendaJob, SchedulingConsumers],
 })
 export class AppModule {}

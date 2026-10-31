@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Inject, Param, Patch, Post, Put } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Param, Patch, Post, Put } from '@nestjs/common';
 import { EventTypes, type PatientRegistered, Topics } from '@mc/contracts';
 import { conflict, CurrentActor, DomainError, forbidden, Internal, notFound, parse, PLACEMENTS } from '@mc/nest-common';
 import { RequirePermission } from '@mc/entitlements-sdk';
@@ -16,6 +16,8 @@ export const NewDependent = z.object({ ...Person, gender: Person.gender.default(
 export const UpdateDependent = z.object({ ...Person, relation: NewDependent.shape.relation }).partial().extend({ version: z.number().int() });
 
 export const toDto = (r: any) => ({ id: r.id, mrn: r.mrn, fullName: r.full_name, dob: r.dob, gender: r.gender, relation: r.relation, isSelf: r.guardian_id === null, phone: r.phone, email: r.email, version: r.version });
+/** staff and other services also see the hospital's custom fields and workflow tags (not shown to patients) */
+export const staffDto = (r: any) => ({ ...toDto(r), customFields: (r.custom_fields ?? {}) as Record<string, unknown>, tags: (r.tags ?? []) as string[] });
 export const DOB = `to_char(dob, 'YYYY-MM-DD') AS dob`;
 
 function requirePatient(actor: Actor) {
@@ -160,7 +162,22 @@ export class InternalPatientsController {
     return TenantContext.run(await this.placements.get(tenantId), async () => {
       const { rows } = await this.db.query(`SELECT *, ${DOB} FROM patients WHERE id = $1`, [patientId]);
       if (!rows[0]) throw notFound('patient');
-      return { ...toDto(rows[0]), accountPersonId: rows[0].account_person_id };
+      return { ...staffDto(rows[0]), accountPersonId: rows[0].account_person_id };
+    });
+  }
+
+  /** A workflow rule's "tag the patient" action (Phase 27): idempotent, at most 20 tags. */
+  @Post(':patientId/tags')
+  @Internal()
+  @HttpCode(200)
+  async tag(@Param('tenantId') tenantId: string, @Param('patientId') patientId: string, @Body() body: unknown) {
+    for (const v of [tenantId, patientId]) if (!z.uuid().safeParse(v).success) throw notFound('patient');
+    const { tag } = parse(z.object({ tag: z.string().trim().min(1).max(40) }), body);
+    return TenantContext.run(await this.placements.get(tenantId), async () => {
+      const { rows } = await this.db.query(
+        `UPDATE patients SET tags = CASE WHEN $2 = ANY(tags) OR cardinality(tags) >= 20 THEN tags ELSE array_append(tags, $2) END WHERE id = $1 RETURNING tags`, [patientId, tag]);
+      if (!rows[0]) throw notFound('patient');
+      return { tags: rows[0].tags as string[] };
     });
   }
 

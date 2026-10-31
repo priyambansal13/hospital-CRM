@@ -1,11 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Put, Query } from '@nestjs/common';
 import { PhoneNumber } from '@mc/contracts';
-import { conflict, CurrentActor, DomainError, notFound, parse } from '@mc/nest-common';
+import { conflict, CurrentActor, CustomFieldsClient, DomainError, notFound, parse } from '@mc/nest-common';
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
-import { type Actor, TenantDbRouter } from '@mc/tenancy';
+import { type Actor, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { announcePatient, DOB, nextMrn, toDto } from './patients.controller.js';
+import { AuditClient } from './audit.client.js';
+import { announcePatient, DOB, nextMrn, staffDto, toDto } from './patients.controller.js';
 
 export const DeskRegister = z.object({
   phone: PhoneNumber,
@@ -40,7 +41,7 @@ export class DeskPatientsController {
     const { rows } = await this.db.query(
       `SELECT p.*, ${DOB}, (SELECT full_name FROM patients h WHERE h.id = p.guardian_id) AS guardian_name
        FROM patients p WHERE ${where} ORDER BY p.phone, p.guardian_id NULLS FIRST, p.full_name LIMIT 25`, [arg]);
-    return rows.map((r) => ({ ...toDto(r), guardianName: r.guardian_name }));
+    return rows.map((r) => ({ ...staffDto(r), guardianName: r.guardian_name }));
   }
 
   @Get(':id')
@@ -49,7 +50,7 @@ export class DeskPatientsController {
     const { rows } = await this.db.query(
       `SELECT p.*, ${DOB}, (SELECT full_name FROM patients h WHERE h.id = p.guardian_id) AS guardian_name FROM patients p WHERE p.id = $1`, [id]);
     if (!rows[0]) throw notFound('patient');
-    return { ...toDto(rows[0]), guardianName: rows[0].guardian_name };
+    return { ...staffDto(rows[0]), guardianName: rows[0].guardian_name };
   }
 
   @Post()
@@ -85,4 +86,31 @@ async function ensurePerson(phone: string): Promise<string> {
   });
   if (!res.ok) throw new DomainError(502, 'IAM_UNAVAILABLE', `iam-service ${res.status}`);
   return ((await res.json()) as { personId: string }).personId;
+}
+
+/**
+ * The hospital's custom fields on a patient (Phase 27), filled in by the desk or nurses. Values are checked against
+ * the definitions in integration-service; keys not sent are kept.
+ */
+@Controller('v1/patients')
+@RequireModule('workflows')
+@RequirePermission('custom_field:write:branch')
+export class PatientFieldsController {
+  constructor(private readonly db: TenantDbRouter, private readonly fields: CustomFieldsClient, private readonly audit: AuditClient) {}
+
+  @Put(':id/custom-fields')
+  async save(@Param('id') id: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
+    if (!z.uuid().safeParse(id).success) throw notFound('patient');
+    const { values, version } = parse(z.object({ values: z.record(z.string(), z.unknown()), version: z.number().int() }), body);
+    const tenant = TenantContext.require();
+    return this.db.tx(async (c) => {
+      const { rows: [p] } = await c.query('SELECT * FROM patients WHERE id = $1 FOR UPDATE', [id]);
+      if (!p) throw notFound('patient');
+      if (p.version !== version) throw conflict('VERSION_CONFLICT', 'this patient changed in another window; reload');
+      const next = await this.fields.merge(tenant.id, 'PATIENT', p.custom_fields ?? {}, values);
+      const { rows } = await c.query(`UPDATE patients SET custom_fields = $2, version = version + 1, updated_at = now() WHERE id = $1 RETURNING *, ${DOB}`, [id, JSON.stringify(next)]);
+      await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: actor.email ?? null, action: 'UPDATE', resourceType: 'PATIENT_CUSTOM_FIELDS', resourceId: id, patientId: id, purpose: 'ADMIN', changes: Object.keys(values) });
+      return staffDto(rows[0]);
+    });
+  }
 }

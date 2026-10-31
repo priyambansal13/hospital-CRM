@@ -230,6 +230,9 @@ importers:
       '@mc/features':
         specifier: workspace:^
         version: link:../../packages/features
+      '@mc/forms':
+        specifier: workspace:^
+        version: link:../../packages/forms
       '@mc/schedule-ui':
         specifier: workspace:^
         version: link:../../packages/schedule-ui
@@ -276,6 +279,9 @@ importers:
       '@mc/features':
         specifier: workspace:^
         version: link:../../packages/features
+      '@mc/forms':
+        specifier: workspace:^
+        version: link:../../packages/forms
       '@mc/ui':
         specifier: workspace:^
         version: link:../../packages/ui
@@ -319,6 +325,9 @@ importers:
       '@mc/features':
         specifier: workspace:^
         version: link:../../packages/features
+      '@mc/forms':
+        specifier: workspace:^
+        version: link:../../packages/forms
       '@mc/schedule-ui':
         specifier: workspace:^
         version: link:../../packages/schedule-ui
@@ -414,6 +423,9 @@ importers:
       '@mc/features':
         specifier: workspace:^
         version: link:../../packages/features
+      '@mc/forms':
+        specifier: workspace:^
+        version: link:../../packages/forms
       '@mc/ui':
         specifier: workspace:^
         version: link:../../packages/ui
@@ -635,6 +647,34 @@ importers:
       server-only:
         specifier: ^0.0.1
         version: 0.0.1
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.19.2
+      '@types/react':
+        specifier: ^19.3.0
+        version: 19.3.0
+      next:
+        specifier: 16.4.2
+        version: 16.4.2(@types/node@24.19.2)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      oxlint:
+        specifier: ^1.89.0
+        version: 1.89.0
+      react:
+        specifier: 19.3.0
+        version: 19.3.0
+      typescript:
+        specifier: ^6.0.2
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.2
+        version: 4.1.12(@types/node@24.19.2)(vite@8.3.5(@types/node@24.19.2))
+
+  packages/forms:
+    dependencies:
+      '@mc/ui':
+        specifier: workspace:^
+        version: link:../ui
     devDependencies:
       '@types/node':
         specifier: ^24.0.0

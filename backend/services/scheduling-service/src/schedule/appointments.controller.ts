@@ -3,7 +3,7 @@ import { CurrentActor, forbidden, Idempotent, Internal, notFound, parse, PLACEME
 import { RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { type Actor, type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { z } from 'zod';
-import { AppointmentsService, LIVE, POLICY, toAppointment } from './appointments.service.js';
+import { AppointmentsService, LIVE, POLICY, toAppointment, toStaffAppointment } from './appointments.service.js';
 import { ScheduleService } from './schedule.service.js';
 import { MembershipRules, membersOnly } from './membership.js';
 
@@ -96,8 +96,8 @@ export class AppointmentsController {
 
   @Get('appointments/:id')
   async get(@Param('id') apptId: string, @CurrentActor() actor: Actor) {
-    const { row } = await this.svc.assertAccess(await this.db.current(), actor, id(apptId, 'appointment'), 'appointment:read:branch');
-    return toAppointment(row);
+    const { row, as } = await this.svc.assertAccess(await this.db.current(), actor, id(apptId, 'appointment'), 'appointment:read:branch');
+    return as === 'patient' ? toAppointment(row) : toStaffAppointment(row);
   }
 
   @Post('appointments/:id/cancel')

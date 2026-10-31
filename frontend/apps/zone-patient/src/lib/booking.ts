@@ -8,7 +8,7 @@ export interface PatientRecord { id: string; mrn: string; fullName: string; dob:
 export interface Appointment {
   id: string; appointmentNo: string; status: string; patient: { id: string; name: string; mrn: string }; doctor: { id: string; name: string };
   branch: { id: string; name: string }; startsAt: string; endsAt: string; localDate: string; localTime: string; mode: string; reason: string | null;
-  fee: number | null; paymentMode: string; rescheduleCount: number; cancelReason: string | null; memberBenefit?: string | null;
+  fee: number | null; paymentMode: string; rescheduleCount: number; cancelReason: string | null; memberBenefit?: string | null; formAnswers?: { formName: string } | null;
   paymentStatus: string; invoiceId: string | null; holdExpiresAt: string | null;
 }
 export interface MyAppointments { upcoming: Appointment[]; past: Appointment[]; policy: { cancelWindowHours: number; maxReschedules: number } }

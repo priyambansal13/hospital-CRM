@@ -34,6 +34,7 @@ export const Topics = {
   records: 'records.events',
   diagnostics: 'diagnostics.events',
   subscription: 'subscription.events',
+  integration: 'integration.events',
 } as const;
 
 // ---------- event payloads ----------
@@ -391,6 +392,7 @@ export const EventTypes = {
   consentRevoked: 'patient.consent_revoked',
   patientRegistered: 'patient.registered',
   patientUpdated: 'patient.updated',
+  workflowNotify: 'integration.workflow_notify',
 } as const;
 
 // ---------- shared value types ----------
@@ -479,3 +481,16 @@ export interface Problem {
   requestId?: string;
   [extra: string]: unknown;
 }
+
+/**
+ * A workflow rule's notify action (Phase 27): notification-service sends it. STAFF → everyone holding `permission`
+ * (at the branch when given), by e-mail; PATIENT → the account holder (their usual channels).
+ */
+export const WorkflowNotify = z.object({
+  ruleId: z.uuid(), runId: z.uuid(), audience: z.enum(['STAFF', 'PATIENT']),
+  permission: z.string().nullable(), branchId: z.uuid().nullable(), accountPersonId: z.uuid().nullable(),
+  subject: z.string().max(150), message: z.string().max(1000),
+});
+export type WorkflowNotify = z.infer<typeof WorkflowNotify>;
+
+export * from './custom-fields.js';

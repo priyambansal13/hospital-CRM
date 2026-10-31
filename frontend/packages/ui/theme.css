@@ -440,3 +440,9 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--brand); width:
 .mc-slot-member { position: relative; }
 .mc-slot-member::after { content: '★'; position: absolute; top: 2px; right: 4px; font-size: 0.65rem; color: var(--warning); }
 .mc-sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* expandable rows (Phase 27: a patient's visits at the desk) */
+.mc-details { border-top: 1px solid var(--border); padding: 10px 0; }
+.mc-details:first-child { border-top: 0; }
+.mc-details > summary { cursor: pointer; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.mc-details > form, .mc-details > dl { margin-top: 12px; }

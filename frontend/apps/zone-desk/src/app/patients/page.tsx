@@ -16,6 +16,8 @@ export default async function DeskPatients({ searchParams }: { searchParams: Pro
   const caps = await zoneCapabilities('desk', '/desk/patients');
   // the lab's booking page (D-3), when the hospital has the lab and the person may book tests
   const labBooking = caps.permissions.includes('lab_order:create:branch') && caps.modules.includes('diagnostics');
+  // the hospital's custom fields (Phase 27)
+  const details = caps.modules.includes('workflows') && caps.permissions.includes('custom_field:write:branch');
   const { accessToken: token } = (await getSession())!;
   const sp = await searchParams;
   const q = sp.q?.trim() ?? '';
@@ -58,6 +60,7 @@ export default async function DeskPatients({ searchParams }: { searchParams: Pro
               { header: 'Relation', cell: (p) => (p.isSelf ? 'owner' : `${p.relation.toLowerCase()} of ${p.guardianName ?? '—'}`) },
               { header: '', cell: (p) => <span className="mc-inline">
                 <a className="mc-btn mc-btn-primary" href={`/desk/book?patientId=${p.id}${branch ? `&branch=${branch}` : ''}`} aria-label={`Book visit for ${p.fullName}`}>Book visit</a>
+                {details ? <a className="mc-btn mc-btn-ghost" href={`/desk/patients/${p.id}`} aria-label={`Details for ${p.fullName}`}>Details</a> : null}
                 {labBooking ? <a className="mc-btn mc-btn-ghost" href={`/lab/book?patientId=${p.id}`} aria-label={`Book lab tests for ${p.fullName}`}>Lab tests</a> : null}
               </span> },
             ]}

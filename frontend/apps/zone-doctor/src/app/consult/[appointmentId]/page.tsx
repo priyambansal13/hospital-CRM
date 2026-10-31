@@ -11,13 +11,14 @@ import { CopilotPanel } from '@/lib/copilot';
 import { ScribePanel } from '@/lib/scribe';
 import { EncounterCard } from '@/lib/encounter-view';
 import { Flash } from '@/lib/flash';
+import { type FieldDef, FieldValues, type Values } from '@mc/forms';
 import { finishSignLater } from '@/lib/visit-actions';
 import { type Chart, type Encounter } from '@/lib/records';
 import { ZONES } from '@/lib/zones';
 
 export const dynamic = 'force-dynamic';
 
-interface Appt { id: string; appointmentNo: string; status: string; tokenNo: number | null; mode: string; reason: string | null; localTime: string; patient: { id: string; name: string; mrn: string } }
+interface Appt { id: string; appointmentNo: string; status: string; tokenNo: number | null; mode: string; reason: string | null; localTime: string; patient: { id: string; name: string; mrn: string }; customFields?: Values; formAnswers?: { formName: string; fields: FieldDef[]; answers: Values } | null }
 
 const Hidden = ({ e, back }: { e: Encounter; back: string }) => (
   <><input type="hidden" name="encounterId" value={e.id} /><input type="hidden" name="version" value={e.version} /><input type="hidden" name="back" value={back} /></>
@@ -33,6 +34,9 @@ export default async function Consult({ params, searchParams }: { params: Promis
   const scribe = caps.modules.includes('ai') && !!caps.features['ai.scribe']?.enabled && can(caps, 'copilot:use:own');
   const { accessToken: token } = (await getSession())!;
   const sp = await searchParams;
+  // the hospital's custom fields on appointments and the pre-visit form answers (Phase 27)
+  const fieldDefs = caps.modules.includes('workflows') && can(caps, 'custom_field:write:branch')
+    ? await api<FieldDef[]>('/api/integration/v1/custom-fields/active?entity=APPOINTMENT', { token }).catch(() => []) : [];
   const appt = await api<Appt>(`/api/scheduling/v1/appointments/${encodeURIComponent(appointmentId)}`, { token }).catch((e) => (e instanceof ApiError && e.status === 404 ? notFound() : Promise.reject(e)));
   const enc = await api<Encounter>(`/api/records/v1/encounters/by-appointment/${appointmentId}`, { token }).catch((e) => (e instanceof ApiError && e.status === 404 ? null : Promise.reject(e)));
   const chart = enc ? await api<Chart>(`/api/records/v1/patients/${enc.patient.id}/chart`, { token }).catch(() => null) : null;
@@ -54,6 +58,8 @@ export default async function Consult({ params, searchParams }: { params: Promis
         actions={<a className="mc-btn mc-btn-ghost" href="/doctor/queue">Back to queue</a>}
       />
       <Flash ok={sp.ok} error={sp.error} />
+      {appt.formAnswers ? <Card title={`Before the visit: ${appt.formAnswers.formName}`}><FieldValues defs={appt.formAnswers.fields} values={appt.formAnswers.answers} /></Card> : null}
+      {fieldDefs.length && Object.keys(appt.customFields ?? {}).length ? <Card title="Visit details"><FieldValues defs={fieldDefs} values={appt.customFields!} /></Card> : null}
       {copilot && !enc && appt.status !== 'COMPLETED' ? <CopilotPanel token={token} appointmentId={appointmentId} back={path} /> : null}
       {!enc ? (
         <Card title="Start the visit notes">

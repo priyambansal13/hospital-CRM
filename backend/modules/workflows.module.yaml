@@ -1,0 +1,26 @@
+# Hospital customization (IMPLEMENTATION-PLAN.md Phase 27, PRODUCT-MODULES-AND-PLANS.md §7): custom fields on patients
+# and appointments, short forms patients fill before a visit, and workflow rules (trigger event → conditions → a
+# fixed, safe list of actions). integration-service owns the definitions and runs the rules; patient-service and
+# scheduling-service store and validate the values. Off by default: without it nothing changes.
+key: workflows
+name: Custom fields, forms and workflow rules
+version: 1
+dependsOn: [appointments]
+services: [integration-service, patient-service, scheduling-service]
+permissions:
+  - { code: customization:manage:tenant, description: Define custom fields, forms and workflow rules }
+  - { code: custom_field:write:branch, description: Fill in custom fields on patients and appointments }
+  - { code: form:submit:own, description: Fill in the hospital's forms before a visit }
+features:
+  - { key: workflows.custom_fields, name: Custom fields, type: LIMIT, unit: fields }
+  - { key: workflows.forms, name: Forms, type: LIMIT, unit: forms }
+  - { key: workflows.rules, name: Workflow rules, type: LIMIT, unit: rules }
+nav:
+  - { key: custom-fields-admin, label: Custom fields and forms, zone: admin, href: /admin/custom-fields, permissions: [customization:manage:tenant, admin:access:tenant] }
+  - { key: workflow-rules-admin, label: Workflow rules, zone: admin, href: /admin/workflows, permissions: [customization:manage:tenant, admin:access:tenant] }
+defaultRoleGrants:
+  BRANCH_ADMIN: [custom_field:write:branch]
+  RECEPTIONIST: [custom_field:write:branch]
+  NURSE: [custom_field:write:branch]
+  DOCTOR: [custom_field:write:branch]
+  PATIENT: [form:submit:own]

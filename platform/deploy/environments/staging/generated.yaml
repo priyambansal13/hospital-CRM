@@ -6,6 +6,7 @@ services:
   - { name: diagnostics-service, port: 4412, schema: diagnostics, route: diagnostics, control: false, tenant: true }
   - { name: entitlement-service, port: 4403, schema: entitlement, route: entitlement, control: true, tenant: true }
   - { name: iam-service, port: 4402, schema: iam, route: iam, control: true, tenant: true }
+  - { name: integration-service, port: 4416, schema: integration, route: integration, control: true, tenant: true }
   - { name: notification-service, port: 4407, schema: notification, route: notification, control: false, tenant: true }
   - { name: patient-service, port: 4406, schema: patient, route: patient, control: false, tenant: true }
   - { name: provider-service, port: 4404, schema: provider, route: provider, control: false, tenant: true }

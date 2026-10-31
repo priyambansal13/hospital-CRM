@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EntitlementsClient } from '@mc/entitlements-sdk';
-import { type AppointmentChanged, type BillingNotice, type StaffNotice, type DoctorAgenda, type PayoutAccountChanged, type HomeVisitChanged, type LabCriticalEscalated, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable } from '@mc/contracts';
+import { type AppointmentChanged, type BillingNotice, type StaffNotice, type DoctorAgenda, type PayoutAccountChanged, type HomeVisitChanged, type LabCriticalEscalated, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable, type WorkflowNotify } from '@mc/contracts';
 import { type Queryable, TenantContext } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_TEMPLATES } from './templates.js';
@@ -146,6 +146,21 @@ export class PlannerService {
     if (!res.ok) throw new Error(`entitlement-service ${res.status}`);
     const { userIds } = (await res.json()) as { userIds: string[] };
     for (const userId of userIds) await this.plan(c, 'staff_notice', userId, { subject: n.subject, message: n.message, link: webLink(t, n.linkPath) }, randomUUID(), new Date(), `${n.dedupe}:${userId}`, 'staff');
+  }
+
+  /** A workflow rule's notice (Phase 27): staff holding the permission (at the branch), or the patient's account. */
+  async onWorkflowNotify(c: Queryable, n: WorkflowNotify) {
+    const t = TenantContext.require();
+    const vars = { hospital: t.name, subject: n.subject, message: n.message };
+    if (n.audience === 'PATIENT') {
+      if (n.accountPersonId) await this.plan(c, 'workflow_patient', n.accountPersonId, vars, n.runId, new Date(), n.runId);
+      return;
+    }
+    const q = n.branchId ? `?branchId=${n.branchId}` : '';
+    const res = await fetch(`${process.env.SVC_URL_ENTITLEMENT ?? 'http://localhost:4403'}/internal/tenants/${t.id}/users-with-permission/${n.permission}${q}`, { headers: { 'x-internal-token': process.env.INTERNAL_API_TOKEN ?? '' } });
+    if (!res.ok) throw new Error(`entitlement-service ${res.status}`);
+    const { userIds } = (await res.json()) as { userIds: string[] };
+    for (const userId of userIds) await this.plan(c, 'workflow_staff', userId, vars, n.runId, new Date(), `${n.runId}:${userId}`, 'staff');
   }
 
   async onBillingNotice(c: Queryable, n: BillingNotice) {

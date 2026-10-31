@@ -121,6 +121,9 @@ const main = async () => {
   const psql = (sql) => execFileSync('docker', ['compose', '--env-file', join(PLATFORM, '.env'), '-f', join(PLATFORM, 'infra/docker-compose.yml'), 'exec', '-T', 'postgres', 'psql', '-qAt', '-U', 'postgres', '-d', `t_${A}`, '-c', sql], { encoding: 'utf8' }).trim();
   // a membership tier (seeded when the module is switched on; `mc test memberships` does that)
   const tierId = psql(`SELECT id FROM billing.membership_plans ORDER BY sort LIMIT 1`) || '00000000-0000-0000-0000-000000000001';
+  // custom fields, forms and workflow rules (Phase 27; `mc test workflows` leaves some)
+  const one = (sql) => psql(sql) || '00000000-0000-0000-0000-000000000001';
+  const fieldId = one(`SELECT id FROM integration.field_defs LIMIT 1`), formId = one(`SELECT id FROM integration.forms LIMIT 1`), ruleId = one(`SELECT id FROM integration.rules LIMIT 1`);
   const [encId, encAppt, encPatient] = psql(`SELECT id || '|' || coalesce(appointment_id::text, '') || '|' || patient_id FROM records.encounters ORDER BY started_at LIMIT 1`).split('|');
   const rxId = psql('SELECT id FROM records.prescriptions ORDER BY issued_at LIMIT 1');
   if (!encId || !rxId) throw new Error('fixture setup failed: no encounter/prescription in citycare yet — run `mc test records` once');
@@ -187,6 +190,14 @@ const main = async () => {
     'scheduling:GET /v1/public/doctors/:doctorId/slots': { doctorId: doctor.id },
     'scheduling:GET /v1/public/slots/:slotId': { slotId: slot.slotId },
     'scheduling:GET /v1/appointments/:id': { id: appt.id },
+    'scheduling:PUT /v1/appointments/:id/custom-fields': { id: appt.id, body: { values: { pwned: 'x' }, version: 1 } },
+    'scheduling:GET /v1/appointments/:id/form': { id: appt.id },
+    'scheduling:PUT /v1/appointments/:id/form': { id: appt.id, body: { answers: { pwned: 'x' } } },
+    'scheduling:GET /v1/appointments/of-patient/:patientId': { patientId: selfP.id },
+    'patient:PUT /v1/patients/:id/custom-fields': { id: selfP.id, body: { values: { pwned: 'x' }, version: 1 } },
+    'integration:PATCH /v1/custom-fields/:id': { id: fieldId, body: { label: 'pwned', version: 1 } },
+    'integration:PATCH /v1/forms/:id': { id: formId, body: { name: 'pwned', version: 1 } },
+    'integration:PATCH /v1/workflows/rules/:id': { id: ruleId, body: { name: 'pwned', version: 1 } },
     'scheduling:POST /v1/appointments/:id/cancel': { id: appt.id, body: {} },
     'scheduling:POST /v1/appointments/:id/reschedule': { id: appt.id, body: { newSlotId: slot.slotId } },
     'scheduling:DELETE /v1/waitlist/:id': { id: wait.id },

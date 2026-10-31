@@ -17,6 +17,7 @@
     "consumes": [
       "billing.events",
       "diagnostics.events",
+      "integration.events",
       "patient.events",
       "records.events",
       "scheduling.events",
