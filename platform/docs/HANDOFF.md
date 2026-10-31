@@ -19,7 +19,7 @@
   - The tenancy leak test has 1141 checks and found 0 leaks.
 - Git: one repo for all three folders, at https://github.com/priyambansal13/hospital-CRM (`main`).
   - Everything up to Phase 25 is pushed.
-  - CI workflows are in `.github/workflows` (backend, frontend, platform), with path filters. They pass on GitHub, as does the security workflow (2026-10-31, Phase 24 commit c7e1a07).
+  - CI workflows are in `.github/workflows` (backend, frontend, platform), with path filters. They pass on GitHub, as does the security workflow (2026-10-31, UI v2 commit 486ac93).
   - Image builds wait for the `GCP_WIF_PROVIDER` repo variable.
   - The integration job is manual (workflow_dispatch).
 
