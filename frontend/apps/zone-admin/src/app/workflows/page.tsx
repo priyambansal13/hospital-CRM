@@ -58,7 +58,7 @@ export default async function Workflows({ searchParams }: { searchParams: Promis
       <Card title="Add a rule">
         <form method="get" className="mc-form">
           <Select label="When" name="trigger" defaultValue={trig?.key ?? ''} options={[{ value: '', label: 'Choose what happens…' }, ...cat.triggers.map((t) => ({ value: t.key, label: t.label }))]} />
-          <Button variant="ghost">{trig ? 'Change' : 'Next'}</Button>
+          <Button variant="ghost">{trig ? 'Change' : 'Continue'}</Button>
         </form>
         {trig ? (
           <form action={addRule} className="mc-form" style={{ marginTop: 16 }}>

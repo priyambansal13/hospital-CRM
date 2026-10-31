@@ -124,6 +124,8 @@ const main = async () => {
   // custom fields, forms and workflow rules (Phase 27; `mc test workflows` leaves some)
   const one = (sql) => psql(sql) || '00000000-0000-0000-0000-000000000001';
   const fieldId = one(`SELECT id FROM integration.field_defs LIMIT 1`), formId = one(`SELECT id FROM integration.forms LIMIT 1`), ruleId = one(`SELECT id FROM integration.rules LIMIT 1`);
+  // integrations (`mc test integrations` leaves endpoints, deliveries and keys)
+  const endpointId = one(`SELECT id FROM integration.endpoints LIMIT 1`), deliveryId = one(`SELECT id FROM integration.deliveries LIMIT 1`), apiKeyId = one(`SELECT id FROM integration.api_keys LIMIT 1`);
   const [encId, encAppt, encPatient] = psql(`SELECT id || '|' || coalesce(appointment_id::text, '') || '|' || patient_id FROM records.encounters ORDER BY started_at LIMIT 1`).split('|');
   const rxId = psql('SELECT id FROM records.prescriptions ORDER BY issued_at LIMIT 1');
   if (!encId || !rxId) throw new Error('fixture setup failed: no encounter/prescription in citycare yet — run `mc test records` once');
@@ -198,6 +200,12 @@ const main = async () => {
     'integration:PATCH /v1/custom-fields/:id': { id: fieldId, body: { label: 'pwned', version: 1 } },
     'integration:PATCH /v1/forms/:id': { id: formId, body: { name: 'pwned', version: 1 } },
     'integration:PATCH /v1/workflows/rules/:id': { id: ruleId, body: { name: 'pwned', version: 1 } },
+    'integration:GET /v1/fhir/r4/Patient/:id': { id: selfP.id },
+    'integration:GET /v1/fhir/r4/Appointment/:id': { id: appt.id },
+    'integration:PATCH /v1/integrations/endpoints/:id': { id: endpointId, body: { url: 'https://pwned.example/x', version: 1 } },
+    'integration:POST /v1/integrations/endpoints/:id/test': { id: endpointId, body: {} },
+    'integration:POST /v1/integrations/deliveries/:id/retry': { id: deliveryId, body: {} },
+    'integration:POST /v1/integrations/api-keys/:id/revoke': { id: apiKeyId, body: {} },
     'scheduling:POST /v1/appointments/:id/cancel': { id: appt.id, body: {} },
     'scheduling:POST /v1/appointments/:id/reschedule': { id: appt.id, body: { newSlotId: slot.slotId } },
     'scheduling:DELETE /v1/waitlist/:id': { id: wait.id },
@@ -351,7 +359,8 @@ const main = async () => {
         if (r.method === 'GET') {
           const x = await call('GET', path, { host: `${B}.localhost` });
           secrets.some((s) => x.text.includes(s)) ? fail(`${label}: tenant-public route returned the other hospital's data`) : ok();
-          if (params.length) [403, 404].includes(x.status) ? ok() : fail(`${label}: ${B} host with ${A} ids → ${x.status}`);
+          // 401: the route wants its own credentials (FHIR API keys) and returned nothing
+          if (params.length) [401, 403, 404].includes(x.status) ? ok() : fail(`${label}: ${B} host with ${A} ids → ${x.status}`);
         }
         continue;
       }

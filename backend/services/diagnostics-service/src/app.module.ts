@@ -3,6 +3,7 @@ import { BranchChanged, EventTypes, PaymentSucceeded, RefundProcessed, Topics } 
 import { ConsumerRegistry, CoreModule, ModuleHooks, PLACEMENTS, retryInBackground } from '@mc/nest-common';
 import { EntitlementsClient, EntitlementsModule } from '@mc/entitlements-sdk';
 import { type PlacementSource, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
+import { InternalIntegrationController } from './lab/integration.controller.js';
 import { AuditClient, BillingClient, CareAccessClient, MembershipClient, PatientsClient } from './lab/clients.js';
 import { LabHoldExpiryJob } from './lab/hold-expiry.job.js';
 import { HomeAdminController, HomeDispatchController, MyVisitsController, PublicHomeController } from './lab/home.controller.js';
@@ -69,7 +70,7 @@ class DiagnosticsConsumers implements OnModuleInit, OnApplicationBootstrap {
 /** Lab: catalog, collection slots, orders, samples (docs/LLD.md §3.5, §6.5); results and reports (Phase 15); home collection (Phase 16). */
 @Module({
   imports: [CoreModule.forRoot({ schema: 'diagnostics', control: false, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [InternalLabJobsController, PublicLabController, PublicHomeController, HomeAdminController, HomeDispatchController, MyVisitsController, LabOrdersController, LabBenchController, LabCatalogAdminController, LabResultsController, ResultsAccessController],
+  controllers: [InternalLabJobsController, PublicLabController, PublicHomeController, HomeAdminController, HomeDispatchController, MyVisitsController, LabOrdersController, LabBenchController, LabCatalogAdminController, LabResultsController, ResultsAccessController, InternalIntegrationController],
   providers: [LabService, ResultsService, HomeService, PatientsClient, CareAccessClient, AuditClient, BillingClient, MembershipClient, LabHoldExpiryJob, TatJob, CriticalEscalationJob, DiagnosticsConsumers],
 })
 export class AppModule {}

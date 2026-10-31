@@ -106,3 +106,28 @@ export class InternalPrepaymentController {
     });
   }
 }
+
+/** integration-service's FHIR API (Phase 27): an appointment, or a patient's appointments (newest first). */
+@Controller('internal/tenants/:tenantId/appointments')
+export class InternalAppointmentReadController {
+  constructor(private readonly db: TenantDbRouter, @Inject(PLACEMENTS) private readonly placements: PlacementSource) {}
+
+  @Get('by-id/:id')
+  @Internal()
+  async one(@Param('tenantId') t: string, @Param('id') a: string) {
+    return TenantContext.run(await this.placements.get(id(t, 'tenant')), async () => {
+      const { rows: [r] } = await this.db.query(`${APPT_SELECT} WHERE a.id = $1`, [id(a, 'appointment')]);
+      if (!r) throw notFound('appointment');
+      return toStaffAppointment(r);
+    });
+  }
+
+  @Get('of-patient/:patientId')
+  @Internal()
+  async ofPatient(@Param('tenantId') t: string, @Param('patientId') p: string) {
+    return TenantContext.run(await this.placements.get(id(t, 'tenant')), async () => {
+      const { rows } = await this.db.query(`${APPT_SELECT} WHERE a.patient_id = $1 ORDER BY a.starts_at DESC LIMIT 100`, [id(p, 'patient')]);
+      return rows.map(toStaffAppointment);
+    });
+  }
+}

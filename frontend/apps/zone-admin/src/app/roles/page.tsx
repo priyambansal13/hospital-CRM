@@ -28,7 +28,8 @@ export default async function Roles({ searchParams }: { searchParams: Promise<{ 
     api<Preview>(`/api/entitlement/v1/roles/${role.code}/preview`, { token }).catch(() => null),
     can(caps, 'staff:read:tenant') ? api<Staff[]>('/api/iam/v1/staff', { token }).catch(() => [] as Staff[]) : Promise.resolve([] as Staff[]),
   ]);
-  const rolesOf = await Promise.all(staff.map(async (s) => ({ ...s, roles: (await api<{ roleCode: string }[]>(`/api/entitlement/v1/users/${s.userId}/roles`, { token }).catch(() => [])).map((r) => r.roleCode) })));
+  const byUser = await api<Record<string, string[]>>('/api/entitlement/v1/user-roles', { token }).catch(() => ({} as Record<string, string[]>));
+  const rolesOf = staff.map((s) => ({ ...s, roles: byUser[s.userId] ?? [] }));
   const withRole = rolesOf.filter((s) => s.roles.includes(role.code));
   const has = new Set(role.permissions);
   const zones = [...new Set(preview?.nav.map((n) => n.zone) ?? [])];

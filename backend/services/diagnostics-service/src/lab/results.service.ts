@@ -27,6 +27,9 @@ const webBase = (host: string) => (process.env.PUBLIC_WEB_URL ?? `http://{host}:
  * doctor at once) → pathologist verifies → report PDF with a QR verification code, stored in the patient's record →
  * report.published. Corrections after publishing are amendments: a new report version, the old one superseded.
  */
+/** who entered results that came from the lab instrument system (not a person) */
+export const LIS_ACTOR_ID = '00000000-0000-4000-8000-00000000115a';
+
 @Injectable()
 export class ResultsService {
   constructor(private readonly db: TenantDbRouter, private readonly lab: LabService, private readonly audit: AuditClient, private readonly care: CareAccessClient) {}
@@ -151,6 +154,42 @@ export class ResultsService {
       if (changed.length) await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: this.staffName(actor), action: 'UPDATE', resourceType: 'LAB_RESULTS', resourceId: orderId, patientId: o.patient_id, purpose: 'TREATMENT', changes: changed.slice(0, 40) });
     });
     return this.sheet(await this.db.current(), orderId);
+  }
+
+  /**
+   * Results sent by the hospital's lab instrument system (LIS connector, Phase 27): matched to the order's tests by
+   * test code, entered as "LIS: <name>"; a pathologist still verifies. Not once the report is published.
+   */
+  async enterFromLis(orderNo: string, source: string, entries: { testCode: string; parameter: string; value: string }[]) {
+    const actor = { id: LIS_ACTOR_ID, kind: 'staff', email: `LIS: ${source}`.slice(0, 80) } as unknown as Actor;
+    return this.db.tx(async (c) => {
+      const { rows: [o0] } = await c.query('SELECT id FROM lab_orders WHERE order_no = $1', [orderNo]);
+      if (!o0) throw notFound('lab order');
+      const o = await this.lab.row(c, o0.id, true);
+      if (o.status === 'REPORT_PUBLISHED') throw conflict('REPORT_PUBLISHED', 'the report is published; a pathologist can amend it');
+      if (!['IN_LAB', 'RESULTS_ENTERED'].includes(o.status)) throw conflict('INVALID_STATE_TRANSITION', 'results can be entered once the samples are in the lab');
+      const { rows: items } = await c.query('SELECT id, test_code FROM lab_order_items WHERE order_id = $1', [o.id]);
+      const mapped = entries.map((e) => {
+        const item = items.find((i) => i.test_code === e.testCode);
+        if (!item) throw new DomainError(422, 'UNKNOWN_TEST', `test ${e.testCode} is not on ${orderNo}`);
+        return { itemId: item.id as string, parameter: e.parameter, value: e.value };
+      });
+      const changed = await this.apply(c, actor, o, mapped, null);
+      const { rows: [{ open }] } = await c.query(`SELECT count(*)::int AS open FROM lab_order_items WHERE order_id = $1 AND status <> 'RESULTED'`, [o.id]);
+      if (!open && o.status !== 'RESULTS_ENTERED') {
+        await c.query(`UPDATE lab_orders SET status = 'RESULTS_ENTERED', version = version + 1, updated_at = now() WHERE id = $1`, [o.id]);
+        await this.lab.emit(c, EventTypes.labResultsEntered, await this.lab.row(c, o.id));
+      }
+      if (changed.length) await this.audit.record({ actorId: LIS_ACTOR_ID, actorKind: 'system', actorName: `LIS: ${source}`.slice(0, 80), action: 'UPDATE', resourceType: 'LAB_RESULTS', resourceId: o.id, patientId: o.patient_id, purpose: 'TREATMENT', changes: changed.slice(0, 40) });
+      return { orderNo, entered: changed.length, allResulted: !open };
+    });
+  }
+
+  /** Published reports of a patient with their values (FHIR DiagnosticReport, Phase 27), newest first. */
+  async publishedFor(patientId: string, limit = 20) {
+    const c = await this.db.current();
+    const { rows } = await c.query(`SELECT id FROM lab_orders WHERE patient_id = $1 AND status = 'REPORT_PUBLISHED' ORDER BY updated_at DESC LIMIT $2`, [patientId, limit]);
+    return Promise.all(rows.map((r) => this.sheet(c, r.id)));
   }
 
   /** Pathologist verifies → report PDF → stored in the patient's record → REPORT_PUBLISHED (+ report.published). */

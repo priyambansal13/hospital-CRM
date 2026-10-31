@@ -1,7 +1,7 @@
-# Handoff: where work stopped (2026-10-31, after Phase 26: patient memberships)
+# Handoff: where work stopped (2026-10-31, after Phase 27: customization and integrations)
 
 ## State
-- Phases 0–26 are built; M5 (AI) is complete, M6 has started (Phase 26, patient memberships, 2026-10-31). UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
+- Phases 0–27 are built; M5 (AI) is complete; M6: Phase 26 (patient memberships) and Phase 27 (custom fields, forms, workflow rules, webhooks, API keys, FHIR read API, LIS connector; new integration-service on 4416) done 2026-10-31. UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
 - The flow review is in [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md). See §8 "Fix log" for details.
   - Wave 1 (15 gaps): fixed 2026-10-25.
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
@@ -17,16 +17,18 @@
   - `mc test concierge` is the Phase 23 booking-task eval (28 checks); `mc test copilot` covers Phase 24 (report explainer and pre-visit summary, 27 checks). Run both before the leak test, which uses a card and a summary they leave.
   - `mc test scribe` (prescription safety + scribe, 26 checks) and `mc test whatsapp` (20 checks) cover Phase 25; the scribe suite also leaves a draft the leak test uses.
   - `mc test memberships` (22 checks) covers Phase 26; it switches the module on for citycare and resets it afterwards.
-  - The tenancy leak test has 1173 checks and found 0 leaks.
+  - `mc test workflows` (31 checks) and `mc test integrations` (32 checks) cover Phase 27; both switch their module on for citycare and reset it.
+  - The tenancy leak test has 1315 checks and found 0 leaks.
+  - Admin Staff and Roles pages read everyone's roles in one call (`GET entitlement v1/user-roles`); one call per person used up Kong's 1200/min per-IP limit once citycare had hundreds of test staff (2026-10-31).
 - Git: one repo for all three folders, at https://github.com/priyambansal13/hospital-CRM (`main`).
-  - Everything up to Phase 26 is pushed.
+  - Everything up to Phase 27 is pushed.
   - CI workflows are in `.github/workflows` (backend, frontend, platform), with path filters. They pass on GitHub, as does the security workflow (2026-10-31, UI v2 commit 486ac93).
   - Image builds wait for the `GCP_WIF_PROVIDER` repo variable.
   - The integration job is manual (workflow_dispatch).
 
 ## Resume here (ask first)
 Choose one:
-1. **M6, Phases 27–29** (workflow rules/custom fields/integrations, video consultations, analytics and the Ops agent; IMPLEMENTATION-PLAN.md), ordered by customer demand: ask which first. Phase 28 (video) would also exercise the members' free video allowance.
+1. **M6, Phases 28–29** (video consultations; analytics and the Ops agent; IMPLEMENTATION-PLAN.md): ask which first. Phase 28 (video) would also exercise the members' free video allowance.
 2. **Real-provider runs**, once the user provides keys or accounts:
    - Gemini: a valid key, then `LLM_PROVIDER=gemini` and `mc test assistant`, `mc test concierge` `mc test copilot` and `mc test scribe` against the real model (prompt tuning; set `GEMINI_COPILOT_MODEL` / `GEMINI_TRANSCRIBE_MODEL` if the defaults are not available), and a real recorded consultation;
    - WhatsApp: a WhatsApp Business account (Meta Cloud API): `WHATSAPP_PROVIDER=meta`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, the webhook URL registered with Meta, `mc whatsapp link <slug> <phoneNumberId> <number>`;
@@ -42,9 +44,16 @@ Choose one:
    - approvals for overrides and coupons;
    - the first GitHub run of the manual integration job (it now includes Playwright).
 
-**Local LLM setting (2026-10-31):** the services pick up a `GEMINI_API_KEY` that Google rejects (401), so `backend/.env` now has `LLM_PROVIDER=dev` (the offline dev model). Remove that line once a valid key is set. Locally, tracing is on (`OTEL_EXPORTER_OTLP_ENDPOINT` in `backend/.env`, Jaeger container `mc-jaeger`, UI on :16686). To turn it off, remove the line, run `docker rm -f mc-jaeger`, and restart `mc dev`.
+**Local LLM setting (2026-10-31):** the services pick up a `GEMINI_API_KEY` that Google rejects (401), so `backend/.env` has `LLM_PROVIDER=dev` (the offline dev model). Remove that line once a valid key is set. `mc configure` used to rewrite `backend/.env` and drop such hand-set lines (it happened when integration-service was added, and the AI suites then hit the real API); it now keeps `LLM_PROVIDER`, `OTEL_EXPORTER_OTLP_ENDPOINT` and `WEBHOOK_ALLOW_PRIVATE`. Tracing is currently off locally (the endpoint line was lost in that rewrite): to turn it back on, set `OTEL_EXPORTER_OTLP_ENDPOINT` in `backend/.env` to the Jaeger container `mc-jaeger` (UI on :16686) and restart `mc dev`.
 
 **Not run, on purpose:** `mc tenant purge`. It permanently destroys a hospital's data, and running it was blocked as irreversible. The user decides whether to run it (only on DELETED test hospitals, and only after `mc tenant export`).
+
+## Phase 27 notes worth knowing
+- integration-service is the 16th service (port 4416, schema `integration`, control + tenant). A new service needs `mc configure`, a backend build, `mc db bootstrap` (schemas, roles, Kafka topic `integration.events`), `mc migrate`, `mc gateway sync`, a PgBouncer restart and an `mc dev` restart.
+- Scheduling's doctor read model now has `specialty_codes`; after deploying, republish doctors (provider `POST /internal/tenants/:t/doctors/republish`) so forms per specialty apply.
+- Both modules are off by default (`mc module enable <slug> workflows|integrations`). Leave them off on citycare: the suites switch them on and reset them.
+- Webhook dispatch runs every 3 s in-process (`WEBHOOK_DISPATCH_MS`); in production set `WEBHOOK_ALLOW_PRIVATE=false` (the default when NODE_ENV=production).
+- The leak test needs a field, form, rule, endpoint, delivery and API key in citycare: run `mc test workflows` and `mc test integrations` once before it.
 
 ## Phase 26 notes worth knowing
 - The module is off by default; `mc module enable <slug> memberships` switches it on (seeds Care+ and Family+). It is on for aarogya (showcase). Leave it off on citycare: other suites book further ahead than the 14-day free window.

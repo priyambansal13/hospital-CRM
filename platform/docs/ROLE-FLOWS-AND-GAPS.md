@@ -579,6 +579,15 @@ Not gap fixes, but they change role flows (details in IMPLEMENTATION-PLAN.md Pha
 
 Still open: membership cancellation with refund, auto-renewal, enforcing `familyMembers`.
 
+### New flows after the review: Phase 27 customization and integrations (2026-10-31)
+
+- **Admin:** Custom fields and forms, Workflow rules (with a run log), Integrations (webhooks, LIS, API keys, delivery log). Permissions `customization:manage:tenant`, `integration:manage:tenant`.
+- **Front desk / nurse / doctor:** a patient's details page with the hospital's custom fields on the patient and their visits (`custom_field:write:branch`); the doctor sees the pre-visit answers and visit details on the consultation page.
+- **Patient:** "Before your visit" on upcoming appointments (the hospital's form); a workflow rule may ask them to pay online when booking (the desk can still book them).
+- **Lab:** results from the LIS arrive as "LIS: <name>"; the pathologist verifies as before.
+
+Still open: HL7 v2 for older LIS, FHIR write/OAuth clients, ABDM and insurance connectors.
+
 ---
 
 ## 7. What works well (keep it)

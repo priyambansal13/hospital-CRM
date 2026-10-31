@@ -154,6 +154,18 @@ export class InternalPatientsController {
     });
   }
 
+  /** A patient by MRN (integration-service's FHIR API, Phase 27). */
+  @Get('by-mrn/:mrn')
+  @Internal()
+  async byMrn(@Param('tenantId') tenantId: string, @Param('mrn') mrn: string) {
+    if (!z.uuid().safeParse(tenantId).success || !/^MRN\d{1,12}$/i.test(mrn)) throw notFound('patient');
+    return TenantContext.run(await this.placements.get(tenantId), async () => {
+      const { rows } = await this.db.query(`SELECT *, ${DOB} FROM patients WHERE mrn = upper($1)`, [mrn]);
+      if (!rows[0]) throw notFound('patient');
+      return { ...staffDto(rows[0]), accountPersonId: rows[0].account_person_id };
+    });
+  }
+
   /** A patient by id (front-desk booking: the caller has already checked the staff member's permission). */
   @Get(':patientId')
   @Internal()

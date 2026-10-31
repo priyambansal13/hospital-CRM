@@ -29,7 +29,7 @@ export default async function StaffPage({ searchParams }: { searchParams: Promis
     ...branches.filter((b) => b.active && (mine === null || mine.includes(b.id))).map((b) => ({ value: b.id, label: b.name })),
   ];
   const rolesByUser = canRoles
-    ? Object.fromEntries(await Promise.all(staff.map(async (s) => [s.userId, (await api<{ roleCode: string }[]>(`/api/entitlement/v1/users/${s.userId}/roles`, { token }).catch(() => [])).map((r) => r.roleCode)] as const)))
+    ? await api<Record<string, string[]>>('/api/entitlement/v1/user-roles', { token }).catch(() => ({} as Record<string, string[]>))
     : {};
   const roleName = Object.fromEntries(roles.map((r) => [r.code, r.name]));
   return (

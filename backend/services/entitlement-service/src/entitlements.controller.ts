@@ -44,6 +44,14 @@ export class EntitlementsController {
     return rows.map((r) => ({ code: r.code, name: r.name, isSystem: r.is_system, grantsAll: r.grants_all, permissions: r.permissions }));
   }
 
+  /** Every staff member's role codes in one call (staff and roles pages; one call per person exhausted the gateway's rate limit). */
+  @Get('user-roles')
+  @RequirePermission('role:read:tenant')
+  async allUserRoles() {
+    const { rows } = await this.db.query(`SELECT ur.user_id, array_agg(DISTINCT r.code ORDER BY r.code) AS codes FROM user_roles ur JOIN roles r ON r.id = ur.role_id GROUP BY ur.user_id`);
+    return Object.fromEntries(rows.map((r) => [r.user_id as string, r.codes as string[]]));
+  }
+
   @Get('users/:userId/roles')
   @RequirePermission('role:read:tenant')
   async userRoles(@Param('userId') userId: string) {
