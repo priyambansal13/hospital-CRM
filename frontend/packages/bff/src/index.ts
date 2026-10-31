@@ -13,6 +13,15 @@ export async function requestHost(): Promise<string> {
   return (h.get('x-forwarded-host') ?? h.get('host') ?? '').split(',')[0].trim();
 }
 
+/** X-Forwarded-For as the zone received it (load balancer → shell → zone), outside a request: none. */
+async function clientChain(): Promise<string | null> {
+  try {
+    return (await headers()).get('x-forwarded-for');
+  } catch {
+    return null;
+  }
+}
+
 /** Hospital host without port, e.g. "citycare.localhost". */
 export async function tenantHost(): Promise<string> {
   return (await requestHost()).replace(/:\d+$/, '').toLowerCase();
@@ -60,6 +69,9 @@ const gateway = () => process.env.GATEWAY_URL ?? 'http://localhost:61000';
 export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
   const method = opts.method ?? (opts.body === undefined ? 'GET' : 'POST');
   const h: Record<string, string> = { 'x-tenant-host': opts.host ?? (await tenantHost()), 'x-request-id': randomUUID() };
+  // the browser's address for rate limits and signup checks (review B-7): the gateway trusts this only from the zones
+  const xff = await clientChain();
+  if (xff) h['x-forwarded-for'] = xff;
   if (opts.body !== undefined) h['content-type'] = 'application/json';
   if (opts.token) h.authorization = `Bearer ${opts.token}`;
   if (opts.idempotencyKey) h['idempotency-key'] = opts.idempotencyKey;

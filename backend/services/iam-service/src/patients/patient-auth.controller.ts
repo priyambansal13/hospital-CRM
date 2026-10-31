@@ -1,6 +1,6 @@
-import { Body, Controller, Get, HttpCode, Inject, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Inject, Post, Req } from '@nestjs/common';
 import { PhoneNumber } from '@mc/contracts';
-import { CONTROL_DB, DomainError, parse, Public, REDIS, type Redis, TenantPublic } from '@mc/nest-common';
+import { clientIp, CONTROL_DB, DomainError, parse, Public, REDIS, type Redis, TenantPublic } from '@mc/nest-common';
 import { TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { createHash, randomInt, randomUUID, timingSafeEqual } from 'node:crypto';
 import type pg from 'pg';
@@ -37,13 +37,21 @@ export class PatientAuthController {
   @Post('v1/auth/otp/request')
   @TenantPublic()
   @HttpCode(202)
-  async request(@Body() body: unknown) {
+  async request(@Body() body: unknown, @Req() req: { headers: Record<string, string | undefined>; ip?: string }) {
     const { phone } = parse(RequestOtp, body);
     const t = TenantContext.require();
-    const rl = `otp:rl:${t.id}:${phone}`;
-    const sends = await this.redis.incr(rl);
-    if (sends === 1) await this.redis.expire(rl, 600);
-    if (sends > MAX_SENDS_PER_10_MIN) throw new DomainError(429, 'OTP_RATE_LIMITED', 'too many codes requested; try again later');
+    // SMS pumping (review B-7) is billed to the hospital: caps per number, per caller IP and per hospital
+    const ip = clientIp(req) ?? 'unknown';
+    const caps: [string, number, number][] = [
+      [`otp:rl:${t.id}:${phone}`, 600, MAX_SENDS_PER_10_MIN],
+      [`otp:rl-ip:${t.id}:${ip}`, 600, Number(process.env.OTP_PER_IP_PER_10_MIN ?? 10)],
+      [`otp:rl-hospital:${t.id}`, 3600, Number(process.env.OTP_PER_HOSPITAL_PER_HOUR ?? 500)],
+    ];
+    for (const [key, ttl, max] of caps) {
+      const n = await this.redis.incr(key);
+      if (n === 1) await this.redis.expire(key, ttl);
+      if (n > max) throw new DomainError(429, 'OTP_RATE_LIMITED', 'too many codes requested; try again later');
+    }
     const code = String(randomInt(100000, 1000000));
     await this.redis.set(`otp:${t.id}:${phone}`, JSON.stringify({ hash: hash(code).toString('hex'), attempts: 0 }), 'EX', OTP_TTL_S);
     await this.sms.send(phone, `${code} is your ${t.name} login code. It expires in 5 minutes. Do not share it.`, t, code);

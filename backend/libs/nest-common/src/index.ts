@@ -22,3 +22,4 @@ export * from './crypto/key-wrapper.js';
 export * from './crypto/keys.controller.js';
 export * from './sms.js';
 export * from './metrics.js';
+export * from './client-ip.js';

@@ -11,6 +11,8 @@ export interface Overrides {
   /** true = switched on outside the plan, false = switched off although the plan has it */
   modules?: Record<string, boolean>;
   features?: Record<string, { enabled?: boolean; limit?: number | null; overage?: 'BLOCK' | 'SOFT_WARN' | 'ALLOW_BILL' | null }>;
+  /** when an override ends by itself (review H-7): "module:<key>" / "feature:<key>" → ISO date; absent = until removed */
+  expires?: Record<string, string>;
 }
 
 export type Effective = Pick<ContractChanged, 'modules' | 'features' | 'settingBounds'>;

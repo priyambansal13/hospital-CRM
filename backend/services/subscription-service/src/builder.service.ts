@@ -174,6 +174,7 @@ export class BuilderService {
       if (problems.length) throw new DomainError(422, 'PLAN_INVALID', `fix these first: ${problems.join('; ')}`, { problems });
       await c.query(`UPDATE plan_versions SET status = 'PENDING', submitted_by = $2, submitted_at = now() WHERE id = $1`, [id, who.label]);
       await this.plans.audit(c, who.label, 'VERSION_SUBMITTED', 'PLAN_VERSION', id, `${v.plan_code} v${v.version}`, null, null);
+      await this.plans.staffNotice(c, { permission: 'catalog:approve:tenant', subject: `Plan ${v.plan_code} v${v.version} waits for your approval`, message: `${who.label} submitted ${v.plan_code} version ${v.version}. Check its impact on hospitals, then approve or reject it (someone other than its author must).`, linkPath: `/platform/plans/${v.plan_code}`, dedupe: `submitted:${id}:${Date.now()}` });
       return { id, status: 'PENDING', submittedBy: who.label };
     });
   }
@@ -222,6 +223,7 @@ export class BuilderService {
       const { rows: retired } = await c.query(`UPDATE plan_versions SET status = 'RETIRED', retired_at = now() WHERE plan_id = $1 AND status = 'PUBLISHED' RETURNING version`, [v.plan_id]);
       await c.query(`UPDATE plan_versions SET status = 'PUBLISHED', approved_by = $2, published_at = now(), migration = $3, review_note = $4 WHERE id = $1`, [id, who.label, migration, note ?? null]);
       await this.plans.audit(c, who.label, 'VERSION_PUBLISHED', 'PLAN_VERSION', id, `${v.plan_code} v${v.version}`, { retired: retired.map((r) => r.version) }, { migration }, note);
+      await this.plans.staffNotice(c, { permission: 'catalog:edit:tenant', subject: `Plan ${v.plan_code} v${v.version} is published`, message: `${who.label} approved ${v.plan_code} version ${v.version}${migration === 'MIGRATE_NOW' ? '; hospitals on the plan move to it now' : ' for new hospitals'}.${note ? ` Note: ${note}` : ''}`, linkPath: `/platform/plans/${v.plan_code}`, dedupe: `published:${id}` });
       return v;
     });
     const moved: string[] = [];
@@ -249,6 +251,7 @@ export class BuilderService {
       if (v.status !== 'PENDING') throw new DomainError(409, 'NOT_PENDING', `v${v.version} is ${v.status}`);
       await c.query(`UPDATE plan_versions SET status = 'DRAFT', review_note = $2, submitted_by = NULL, submitted_at = NULL WHERE id = $1`, [id, note]);
       await this.plans.audit(c, who.label, 'VERSION_REJECTED', 'PLAN_VERSION', id, `${v.plan_code} v${v.version}`, null, null, note);
+      await this.plans.staffNotice(c, { permission: 'catalog:edit:tenant', subject: `Plan ${v.plan_code} v${v.version} was sent back`, message: `${who.label} rejected ${v.plan_code} version ${v.version}: ${note}. It is a draft again.`, linkPath: `/platform/plans/${v.plan_code}`, dedupe: `rejected:${id}:${Date.now()}` });
       return { id, status: 'DRAFT', reviewNote: note };
     });
   }

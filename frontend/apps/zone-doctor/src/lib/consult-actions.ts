@@ -58,10 +58,6 @@ export async function signVisit(f: FormData) {
   return run(f, (token) => api(`/api/records/v1/encounters/${str(f, 'encounterId')}/sign`, { token, body: { version: Number(f.get('version')) } }), 'Visit signed');
 }
 
-export async function amendVisit(f: FormData) {
-  return run(f, (token) => api(`/api/records/v1/encounters/${str(f, 'encounterId')}/amendments`, { token, body: { reason: str(f, 'reason'), notes: str(f, 'notes') || null } }), 'Amendment saved');
-}
-
 export async function issuePrescription(f: FormData) {
   const items = Array.from({ length: RX_ROWS }, (_, i) => ({
     drugName: str(f, `drug${i}`), strength: str(f, `strength${i}`) || null, form: str(f, `form${i}`) || null,

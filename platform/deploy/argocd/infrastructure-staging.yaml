@@ -71,7 +71,9 @@ spec:
     helm:
       values: |
         ingressController: { enabled: false }
-        env: { database: "off" }
+        # the real client IP (review B-7): X-Forwarded-For is believed only from the Google load balancer and the
+        # cluster's own pods (the zones forward the browser's address); Kong then sets X-Real-IP for the services
+        env: { database: "off", trusted_ips: "10.0.0.0/8,130.211.0.0/22,35.191.0.0/16", real_ip_header: X-Forwarded-For, real_ip_recursive: "on" }
         dblessConfig: { configMap: kong-declarative }
         proxy: { type: ClusterIP }
   destination: { server: https://kubernetes.default.svc, namespace: medicare-infra }

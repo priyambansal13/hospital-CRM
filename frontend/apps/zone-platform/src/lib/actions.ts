@@ -142,7 +142,7 @@ export async function assignPlan(f: FormData) {
 export async function overrideModule(f: FormData) {
   const id = str(f, 'hospitalId');
   try {
-    await call(`/hospitals/${id}/modules/${encodeURIComponent(str(f, 'module'))}`, 'PUT', { state: str(f, 'state'), reason: str(f, 'reason') });
+    await call(`/hospitals/${id}/modules/${encodeURIComponent(str(f, 'module'))}`, 'PUT', { state: str(f, 'state'), reason: str(f, 'reason'), until: str(f, 'until') || null });
   } catch (e) {
     return go(`/hospitals/${id}`, { error: message(e) });
   }
@@ -154,7 +154,7 @@ export async function overrideFeature(f: FormData) {
   const limit = str(f, 'limit');
   const value = f.get('reset') !== null ? null : limit === '' ? { limit: null } : { limit: Number(limit) };
   try {
-    await call(`/hospitals/${id}/features/${encodeURIComponent(str(f, 'feature'))}`, 'PUT', { value, reason: str(f, 'reason') });
+    await call(`/hospitals/${id}/features/${encodeURIComponent(str(f, 'feature'))}`, 'PUT', { value, reason: str(f, 'reason'), until: value ? str(f, 'until') || null : null });
   } catch (e) {
     return go(`/hospitals/${id}`, { error: message(e) });
   }

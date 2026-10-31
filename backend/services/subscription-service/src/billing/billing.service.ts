@@ -62,7 +62,11 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
       if (n) this.log.log(`opened ${n} subscription(s) for existing hospitals (offline payment)`);
     });
     if (process.env.MC_DISABLE_JOBS === 'true') return;
-    this.timer = setInterval(() => void this.tickAll().catch((e) => this.log.warn(`billing tick: ${(e as Error).message}`)), Number(process.env.BILLING_TICK_MS ?? 15_000));
+    this.timer = setInterval(() => {
+      void this.tickAll().catch((e) => this.log.warn(`billing tick: ${(e as Error).message}`));
+      // overrides with an end date go back to the plan (review H-7)
+      void this.plans.expireOverrides().catch((e) => this.log.warn(`override expiry: ${(e as Error).message}`));
+    }, Number(process.env.BILLING_TICK_MS ?? 15_000));
   }
   onApplicationShutdown() { if (this.timer) clearInterval(this.timer); }
 
@@ -126,7 +130,7 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
   }
 
   async notice(c: Queryable, s: Sub, n: NoticeInput) {
-    const data: BillingNotice = { invoiceNo: n.invoiceNo ?? null, amount: n.amount ?? null, date: n.date ?? null, feature: n.feature ?? null, used: n.used ?? null, limit: n.limit ?? null, kind: n.kind, dedupe: n.dedupe ?? `${n.kind}:${randomUUID()}` };
+    const data: BillingNotice = { invoiceNo: n.invoiceNo ?? null, amount: n.amount ?? null, date: n.date ?? null, feature: n.feature ?? null, used: n.used ?? null, limit: n.limit ?? null, plan: n.plan ?? null, kind: n.kind, dedupe: n.dedupe ?? `${n.kind}:${randomUUID()}` };
     await addToOutbox(c, Topics.subscription, s.tenant_id, envelope(EventTypes.billingNotice, data, { tenantId: s.tenant_id }));
   }
 
@@ -209,6 +213,8 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
       VALUES ($1,$2,$3,$4,$5,$6,'OPEN',$7,$8,$9,$10,$11,$12,$13)`,
       [id, number, s.tenant_id, kind, start, end, book.currency, inv.subtotal, inv.discount, inv.gst, inv.total, JSON.stringify({ ...inv, plan: { code: contract.plan.code, name: contract.plan.name, version: contract.plan.version }, priceBook: book.code }), this.now(s)]);
     for (const k of usage.keys) await c.query('UPDATE usage_counters SET billed_invoice_id = $4 WHERE tenant_id = $1 AND feature_key = $2 AND month = $3', [s.tenant_id, k.feature, k.month, id]);
+    // bank transfer customers hear about each invoice (card ones are charged and get a receipt instead)
+    if (s.payment_method?.kind === 'OFFLINE' && inv.total > 0) await this.notice(c, s, { kind: 'INVOICE_ISSUED', invoiceNo: number, amount: inv.total, dedupe: `invoice:${number}` });
     if (notes.length) await c.query('UPDATE saas_credits SET applied_invoice_id = $2, applied_at = now() WHERE id = ANY($1)', [notes.map((n) => n.id), id]);
     if (cp) await c.query('UPDATE subscriptions SET coupon_invoices_left = CASE WHEN coupon_invoices_left IS NULL THEN NULL ELSE coupon_invoices_left - 1 END WHERE tenant_id = $1', [s.tenant_id]);
     return { id, number, total: inv.total };
@@ -273,7 +279,7 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
           return false;
         }
         if (s.payment_method?.kind !== 'CARD') {
-          await this.setStatus(c, s, 'EXPIRED', { ended_at: now });
+          await this.setStatus(c, s, 'EXPIRED', { ended_at: now }, { kind: 'EXPIRED', date: now.toISOString(), dedupe: `expired:${s.trial_ends_at.toISOString()}` });
           return false;
         }
         // trial → paid: the rest of this month, prorated, then calendar months
@@ -299,7 +305,7 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
       }
       case 'SUSPENDED':
         if (s.suspended_at && now.getTime() >= s.suspended_at.getTime() + DUNNING.cancelAfterSuspendedDays * D) {
-          await this.setStatus(c, s, 'CANCELLED', { ended_at: now });
+          await this.setStatus(c, s, 'CANCELLED', { ended_at: now }, { kind: 'CANCELLED', date: now.toISOString(), dedupe: `cancelled:${now.toISOString().slice(0, 10)}` });
           return true;
         }
         return false;
@@ -312,7 +318,7 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
   private async renew(c: Queryable, s: Sub, now: Date): Promise<boolean> {
     const start = s.current_period_end!;
     if (s.cancel_at_period_end) {
-      await this.setStatus(c, s, 'CANCELLED', { ended_at: start });
+      await this.setStatus(c, s, 'CANCELLED', { ended_at: start }, { kind: 'CANCELLED', date: start.toISOString(), dedupe: `cancelled:${start.toISOString().slice(0, 10)}` });
       return true;
     }
     if (s.pending_change) {
@@ -563,10 +569,15 @@ export class BillingService implements OnModuleInit, OnApplicationBootstrap, OnA
         if (!paid.ok) throw new DomainError(402, 'PAYMENT_DECLINED', 'the card was declined: use another card');
       }
       const was = s.status;
-      s = await this.setStatus(c, s, 'ACTIVE', {}, card ? { kind: 'PAYMENT_RECEIVED', amount: inv.total, invoiceNo: inv.number } : undefined);
+      s = await this.setStatus(c, s, 'ACTIVE', {}, { kind: 'REACTIVATED', amount: inv.total, invoiceNo: inv.number });
       await this.plans.audit(c, by, 'REACTIVATED', 'TENANT', tenantId, await this.plans.slug(tenantId), { status: was }, { status: 'ACTIVE', offline: !card, reason: opts.reason ?? null });
       return { status: 'ACTIVE', invoice: { number: inv.number, total: inv.total, paid: card } };
     });
+  }
+
+  /** Tell the owner something outside a billing change (console plan moves). */
+  async announce(tenantId: string, n: NoticeInput) {
+    await withTx(this.db, async (c) => { await this.notice(c, await this.sub(c, tenantId), n); });
   }
 
   // ---------- support actions (console, review H-7) ----------

@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnModuleInit } from '@nestjs/common';
-import { type ContractChanged, EventTypes, Topics } from '@mc/contracts';
+import { type ContractChanged, EventTypes, type StaffNotice, Topics } from '@mc/contracts';
 import { type Catalog, loadCatalog } from '@mc/entitlements-sdk/catalog';
 import { CONTROL_DB, DomainError, PLACEMENTS, retryInBackground } from '@mc/nest-common';
 import { addToOutbox, envelope, type PlacementSource, type Queryable, withTx } from '@mc/tenancy';
@@ -214,16 +214,17 @@ export class PlansService implements OnModuleInit, OnApplicationBootstrap {
   }
 
   /** Switch one module on/off for one hospital outside its plan (support, pilots), or back to what the plan says. */
-  async overrideModule(tenantId: string, key: string, state: 'on' | 'off' | 'plan', by: string, reason?: string) {
+  async overrideModule(tenantId: string, key: string, state: 'on' | 'off' | 'plan', by: string, reason?: string, until?: string | null) {
     if (!this.modules.modules.has(key)) throw new DomainError(404, 'UNKNOWN_MODULE', `module ${key} does not exist`);
     if (this.modules.modules.get(key)!.internal && state === 'on') throw new DomainError(422, 'MODULE_INTERNAL', `module ${key} is MediCare's own and cannot be switched on for a hospital`);
     if (this.modules.modules.get(key)!.alwaysOn && state === 'off') throw new DomainError(422, 'MODULE_ALWAYS_ON', `module ${key} cannot be switched off`);
     return withTx(this.db, async (c) => {
       await c.query('SELECT pg_advisory_xact_lock(hashtext($1))', [`contract:${tenantId}`]);
       const cur = await this.current(tenantId, c);
-      const overrides: Overrides = { ...cur.overrides, modules: { ...cur.overrides.modules } };
+      const overrides: Overrides = { ...cur.overrides, modules: { ...cur.overrides.modules }, expires: { ...cur.overrides.expires } };
       if (state === 'plan') delete overrides.modules![key];
       else overrides.modules![key] = state === 'on';
+      setExpiry(overrides, `module:${key}`, state === 'plan' ? null : until ?? null);
       this.assertValid(computeEntitlements(this.modules, cur.plan, cur.addons, overrides));
       await c.query('UPDATE contracts SET overrides = $2 WHERE id = $1', [cur.contractId, overrides]);
       const what = `module ${key} ${state === 'plan' ? 'back to the plan' : `switched ${state}`}`;
@@ -234,7 +235,7 @@ export class PlansService implements OnModuleInit, OnApplicationBootstrap {
   }
 
   /** A feature switch or limit for one hospital outside its plan (e.g. 40 branches on a 25-branch plan); null = back to the plan. */
-  async overrideFeature(tenantId: string, key: string, value: { enabled?: boolean; limit?: number | null } | null, by: string, reason: string) {
+  async overrideFeature(tenantId: string, key: string, value: { enabled?: boolean; limit?: number | null } | null, by: string, reason: string, until?: string | null) {
     const def = [...this.modules.modules.values()].flatMap((m) => m.features).find((f) => f.key === key);
     if (!def) throw new DomainError(404, 'UNKNOWN_FEATURE', `feature ${key} does not exist`);
     if (value && 'limit' in value && def.type === 'BOOLEAN') throw new DomainError(422, 'NOT_A_LIMIT', `${def.name} has no limit`);
@@ -244,12 +245,32 @@ export class PlansService implements OnModuleInit, OnApplicationBootstrap {
       const features = { ...cur.overrides.features };
       if (value) features[key] = value;
       else delete features[key];
-      const overrides: Overrides = { ...cur.overrides, features };
+      const overrides: Overrides = { ...cur.overrides, features, expires: { ...cur.overrides.expires } };
+      setExpiry(overrides, `feature:${key}`, value ? until ?? null : null);
       await c.query('UPDATE contracts SET overrides = $2 WHERE id = $1', [cur.contractId, overrides]);
       await this.publish(c, tenantId, `${def.name} ${value ? 'set' : 'back to the plan'} by ${by}`);
       await this.audit(c, by, 'FEATURE_OVERRIDE', 'TENANT', tenantId, await this.slug(tenantId), { [key]: cur.overrides.features?.[key] ?? null }, { [key]: value }, reason);
       return this.current(tenantId, c);
     });
+  }
+
+  /**
+   * Overrides that have run out go back to the plan (review H-7), with an audit entry. Runs with the billing tick;
+   * returns how many were removed.
+   */
+  async expireOverrides(now = new Date()) {
+    const { rows } = await this.db.query(`SELECT tenant_id, overrides FROM contracts WHERE status = 'ACTIVE' AND overrides ? 'expires' AND overrides->'expires' <> '{}'::jsonb`);
+    let n = 0;
+    for (const r of rows) {
+      const due = Object.entries((r.overrides as Overrides).expires ?? {}).filter(([, d]) => new Date(d).getTime() <= now.getTime()).map(([k]) => k);
+      for (const k of due) {
+        const [kind, key] = [k.slice(0, k.indexOf(':')), k.slice(k.indexOf(':') + 1)];
+        if (kind === 'module') await this.overrideModule(r.tenant_id, key, 'plan', 'system', `override ended (${k})`);
+        else await this.overrideFeature(r.tenant_id, key, null, 'system', `override ended (${k})`);
+        n++;
+      }
+    }
+    return n;
   }
 
   /** "What would this hospital get on that plan version?" (keeps its overrides; add-ons as given). Nothing is saved. */
@@ -283,6 +304,16 @@ export class PlansService implements OnModuleInit, OnApplicationBootstrap {
   }
 
   /** Append to the platform audit log (same transaction as the change). */
+  /**
+   * E-mail MediCare's own staff holding `permission` (review 4.G): published from HQ's account, so notification-service
+   * finds the people there.
+   */
+  async staffNotice(c: Queryable, n: { permission: string; subject: string; message: string; linkPath: string; dedupe: string }) {
+    const hq = (await this.placements.list()).find((t) => t.slug === (process.env.HQ_SLUG ?? 'medicare'));
+    if (!hq) return; // no HQ account (a fresh install): nobody to tell
+    await addToOutbox(c, Topics.subscription, hq.id, envelope(EventTypes.staffNotice, n satisfies StaffNotice, { tenantId: hq.id }));
+  }
+
   /** One audit entry outside a transaction (console actions that call other services). */
   async auditOnce(actor: string, action: string, tenantId: string, label: string, note: string) {
     await this.audit(this.db, actor, action, 'TENANT', tenantId, label, null, null, note);
@@ -355,4 +386,11 @@ export class PlansService implements OnModuleInit, OnApplicationBootstrap {
       options,
     };
   }
+}
+
+/** Set or clear when one override ends (a date in the past is refused by the caller's schema). */
+function setExpiry(o: Overrides, key: string, until: string | null) {
+  o.expires ??= {};
+  if (until) o.expires[key] = new Date(until).toISOString();
+  else delete o.expires[key];
 }

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EntitlementsClient } from '@mc/entitlements-sdk';
-import { type AppointmentChanged, type BillingNotice, type DoctorAgenda, type PayoutAccountChanged, type HomeVisitChanged, type LabCriticalEscalated, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable } from '@mc/contracts';
+import { type AppointmentChanged, type BillingNotice, type StaffNotice, type DoctorAgenda, type PayoutAccountChanged, type HomeVisitChanged, type LabCriticalEscalated, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable } from '@mc/contracts';
 import { type Queryable, TenantContext } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_TEMPLATES } from './templates.js';
@@ -139,6 +139,15 @@ export class PlannerService {
    * MediCare billing notices (subscription.billing_notice) → an e-mail to every account owner of the hospital (staff
    * holding subscription:manage:tenant, looked up in entitlement-service). Never to patients.
    */
+  /** MediCare's own staff (HQ account): everyone holding the notice's permission (review 4.G). */
+  async onStaffNotice(c: Queryable, n: StaffNotice) {
+    const t = TenantContext.require();
+    const res = await fetch(`${process.env.SVC_URL_ENTITLEMENT ?? 'http://localhost:4403'}/internal/tenants/${t.id}/users-with-permission/${n.permission}`, { headers: { 'x-internal-token': process.env.INTERNAL_API_TOKEN ?? '' } });
+    if (!res.ok) throw new Error(`entitlement-service ${res.status}`);
+    const { userIds } = (await res.json()) as { userIds: string[] };
+    for (const userId of userIds) await this.plan(c, 'staff_notice', userId, { subject: n.subject, message: n.message, link: webLink(t, n.linkPath) }, randomUUID(), new Date(), `${n.dedupe}:${userId}`, 'staff');
+  }
+
   async onBillingNotice(c: Queryable, n: BillingNotice) {
     const t = TenantContext.require();
     const res = await fetch(`${process.env.SVC_URL_ENTITLEMENT ?? 'http://localhost:4403'}/internal/tenants/${t.id}/users-with-permission/subscription:manage:tenant`, { headers: { 'x-internal-token': process.env.INTERNAL_API_TOKEN ?? '' } });
@@ -280,6 +289,11 @@ export function billingWording(n: BillingNotice, hospital: string): { subject: s
     case 'SUSPENDED': return { subject: 'MediCare subscription suspended', message: `${hospital}'s MediCare subscription is suspended because invoices are unpaid. Patients and staff can still view records; nothing new can be booked or added. Pay the open invoices to restore everything at once.` };
     case 'PAYMENT_RECEIVED': return { subject: 'Payment received: subscription active', message: `Thank you: we received ${inr(n.amount)}. ${hospital}'s MediCare subscription is active again.` };
     case 'USAGE_80': return { subject: `80% of this month's ${f} used`, message: `${hospital} has used ${n.used} of the ${n.limit} ${f} included this month.` };
+    case 'EXPIRED': return { subject: 'Your MediCare trial has ended', message: `The free trial for ${hospital} has ended. Everything you added is kept and can be viewed; to use it again, add a card and resubscribe in Subscription.` };
+    case 'CANCELLED': return { subject: 'Your MediCare subscription has ended', message: `${hospital}'s MediCare subscription has ended. Records stay viewable; you can resubscribe at any time to use everything again.` };
+    case 'REACTIVATED': return { subject: 'Welcome back: your subscription is active', message: `${hospital}'s MediCare subscription is active again. Invoice ${n.invoiceNo} (${inr(n.amount)}) starts the new period.` };
+    case 'INVOICE_ISSUED': return { subject: `MediCare invoice ${n.invoiceNo}`, message: `Invoice ${n.invoiceNo} for ${hospital}: ${inr(n.amount)} (GST included), payable by bank transfer. The bank details are on the invoice.` };
+    case 'PLAN_CHANGED': return { subject: 'Your MediCare plan was changed', message: `MediCare moved ${hospital} to the ${n.plan} plan. The modules and limits in Plan show what is included; the next invoice follows the new plan.` };
     case 'USAGE_100': return { subject: `This month's ${f} allowance is used up`, message: `${hospital} has used all ${n.limit} ${f} included this month (${n.used} so far). Depending on your plan, further ones are billed on the next invoice or held until next month.` };
   }
 }

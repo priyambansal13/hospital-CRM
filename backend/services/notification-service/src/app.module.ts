@@ -1,5 +1,5 @@
 import { Inject, Injectable, Module, type OnApplicationBootstrap, type OnModuleInit } from '@nestjs/common';
-import { AppointmentChanged, DoctorAgenda, EventTypes, PayoutAccountChanged, HomeVisitChanged, LabCriticalEscalated, LabCriticalValue, LabOrderChanged, LabReportPublished, PatientRegistered, PaymentSucceeded, PrescriptionIssued, RefundProcessed, Topics, WaitlistSlotAvailable, BillingNotice } from '@mc/contracts';
+import { AppointmentChanged, DoctorAgenda, EventTypes, PayoutAccountChanged, StaffNotice, HomeVisitChanged, LabCriticalEscalated, LabCriticalValue, LabOrderChanged, LabReportPublished, PatientRegistered, PaymentSucceeded, PrescriptionIssued, RefundProcessed, Topics, WaitlistSlotAvailable, BillingNotice } from '@mc/contracts';
 import { ConsumerRegistry, CoreModule, PLACEMENTS, retryInBackground } from '@mc/nest-common';
 import { EntitlementsModule } from '@mc/entitlements-sdk';
 import { type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
@@ -64,7 +64,10 @@ class NotificationConsumers implements OnModuleInit, OnApplicationBootstrap {
     this.registry.register({
       group: 'notification.subscription',
       topics: [Topics.subscription],
-      handlers: { [EventTypes.billingNotice]: (e, db) => this.planner.onBillingNotice(db!, BillingNotice.parse(e.data)) },
+      handlers: {
+        [EventTypes.billingNotice]: (e, db) => this.planner.onBillingNotice(db!, BillingNotice.parse(e.data)),
+        [EventTypes.staffNotice]: (e, db) => this.planner.onStaffNotice(db!, StaffNotice.parse(e.data)),
+      },
     });
     this.registry.register({
       group: 'notification.records',

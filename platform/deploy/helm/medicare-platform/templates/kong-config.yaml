@@ -23,5 +23,5 @@ data:
             plugins: [{ name: request-termination, config: { status_code: 404, message: "not found" } }]
         plugins:
           - name: rate-limiting
-            config: { minute: 1200, policy: local, limit_by: header, header_name: X-Tenant-Host }
+            config: { minute: 1200, policy: local, limit_by: ip }
     {{- end }}

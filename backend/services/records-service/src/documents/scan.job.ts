@@ -12,6 +12,7 @@ export class ScanJob implements OnApplicationBootstrap, OnApplicationShutdown {
   private readonly log = new Logger('ScanJob');
   private timer?: NodeJS.Timeout;
   private running = false;
+  private lastPurge = 0;
   constructor(private readonly docs: DocumentsService, @Inject(PLACEMENTS) private readonly placements: PlacementSource) {}
 
   onApplicationBootstrap() {
@@ -27,9 +28,16 @@ export class ScanJob implements OnApplicationBootstrap, OnApplicationShutdown {
     try {
       const n = Number(process.env.REPLICA_COUNT ?? 1);
       const i = Number(process.env.REPLICA_INDEX ?? 0);
+      // removed documents past their grace period, once an hour (review H-5)
+      const purge = Date.now() - this.lastPurge > 3_600_000;
+      if (purge) this.lastPurge = Date.now();
       for (const t of await this.placements.list()) {
         if (t.status !== 'ACTIVE' || shardOf(t.id, n) !== i) continue;
         total += await TenantContext.run(t, () => this.docs.scanPending()).catch((e) => { this.log.warn(`${t.slug}: ${(e as Error).message}`); return 0; });
+        if (purge) {
+          const gone = await TenantContext.run(t, () => this.docs.purgeRemoved()).catch((e) => { this.log.warn(`${t.slug}: purge: ${(e as Error).message}`); return 0; });
+          if (gone) this.log.log(`${t.slug}: ${gone} removed document(s) deleted for good`);
+        }
       }
       if (total) this.log.log(`scanned ${total} document(s)`);
     } catch (e) {

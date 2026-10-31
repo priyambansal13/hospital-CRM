@@ -1,5 +1,5 @@
 import { Body, Controller, Get, HttpCode, Post, Query, Req } from '@nestjs/common';
-import { parse, Public } from '@mc/nest-common';
+import { clientIp, parse, Public } from '@mc/nest-common';
 import { PhoneNumber } from '@mc/contracts';
 import { z } from 'zod';
 import { SignupService } from './signup.service.js';
@@ -31,8 +31,7 @@ export class SignupController {
   @Post()
   @Public()
   start(@Body() body: unknown, @Req() req: { headers: Record<string, string | undefined>; ip?: string }) {
-    const ip = (req.headers['x-forwarded-for'] ?? req.ip ?? '').split(',')[0].trim() || null;
-    return this.signups.start(parse(Start, body), ip);
+    return this.signups.start(parse(Start, body), clientIp(req));
   }
 
   @Post('verify')

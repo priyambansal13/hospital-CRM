@@ -1,10 +1,11 @@
 import { getSession } from '@mc/auth';
+import { amendVisitFull } from '@/lib/amend-actions';
 import { api, ApiError } from '@mc/bff';
 import { ZoneFrame, zoneCapabilities } from '@mc/features';
 import { Alert, Badge, Button, Card, Field, PageHeader, TextArea } from '@mc/ui';
 import { randomUUID } from 'node:crypto';
 import { notFound } from 'next/navigation';
-import { addDiagnosis, amendVisit, orderLabTests, finishVisit, issuePrescription, makePrimary, removeDiagnosis, saveDraft, signVisit, startVisit } from '@/lib/consult-actions';
+import { addDiagnosis, orderLabTests, finishVisit, issuePrescription, makePrimary, removeDiagnosis, saveDraft, signVisit, startVisit } from '@/lib/consult-actions';
 import { AllergyPanel, DocumentsPanel, loadAllergies } from '@/lib/clinical-panels';
 import { EncounterCard } from '@/lib/encounter-view';
 import { Flash } from '@/lib/flash';
@@ -118,10 +119,25 @@ export default async function Consult({ params, searchParams }: { params: Promis
             </Card>
           ) : (
             <Card title="Amend">
-              <form action={amendVisit} className="mc-form">
+              <form action={amendVisitFull} className="mc-form">
                 <Hidden e={enc} back={path} />
+                <input type="hidden" name="before" value={JSON.stringify({ chiefComplaint: enc.chiefComplaint ?? null, notes: enc.notes ?? null, diagnoses: enc.diagnoses })} />
                 <Field label="Reason for the amendment" name="reason" required placeholder="e.g. lab result added" />
+                <Field label="Complaint" name="chiefComplaint" defaultValue={enc.chiefComplaint ?? ''} />
                 <TextArea label="Corrected notes" name="notes" rows={4} defaultValue={enc.notes ?? ''} />
+                {/* E-9: diagnoses can be corrected too (ICD-10 codes are checked against the reference list) */}
+                <fieldset className="mc-fieldset mc-field-wide">
+                  <legend>Diagnoses</legend>
+                  <input type="hidden" name="dxRows" value={enc.diagnoses.length + 2} />
+                  {[...enc.diagnoses, null, null].map((d, i) => (
+                    <div key={i} className="mc-inline" style={{ marginBottom: 6 }}>
+                      <label className="mc-check"><input type="checkbox" name={`dxKeep${i}`} defaultChecked={!!d} aria-label={`Keep diagnosis ${i + 1}`} /> <span>{d ? 'keep' : 'add'}</span></label>
+                      <input name={`dxCode${i}`} defaultValue={d?.code ?? ''} placeholder="ICD-10" aria-label={`ICD-10 code ${i + 1}`} className="mc-input-sm" size={7} />
+                      <input name={`dxDesc${i}`} defaultValue={d?.description ?? ''} placeholder="Description (if no code)" aria-label={`Description ${i + 1}`} className="mc-input-sm" />
+                      <label className="mc-check"><input type="radio" name="dxPrimary" value={i} defaultChecked={!!d?.isPrimary} /> <span>primary</span></label>
+                    </div>
+                  ))}
+                </fieldset>
                 <Button variant="ghost">Save amendment</Button>
               </form>
               {enc.amendments.map((a, i) => <p key={i} className="mc-meta">{new Date(a.at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}: {a.reason} ({a.changed.join(', ')})</p>)}

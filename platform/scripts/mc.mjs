@@ -150,6 +150,8 @@ function configure() {
     writeEnv(join(BACKEND, '.env'), {
       NODE_ENV: 'development',
       MC_DEV: 'true',
+      // the test suites sign many patients in from one machine (production keeps the default of 10; review B-7)
+      OTP_PER_IP_PER_10_MIN: '100000',
       // services → PgBouncer (transaction pooling); migrations/admin → Postgres directly
       PG_HOST: 'localhost', PG_PORT: '61643', PG_HOST_DIRECT: 'localhost', PG_PORT_DIRECT: '61432',
       CONTROL_DB: 'mc_control', TEMPLATE_DB: 'medicare_template',
@@ -320,7 +322,7 @@ services:
             config: { status_code: 404, message: "not found" }
     plugins:
       - name: rate-limiting
-        config: { minute: 1200, policy: local, limit_by: header, header_name: X-Tenant-Host }
+        config: { minute: 1200, policy: local, limit_by: ip }
 `;
   }
   writeFileSync(join(INFRA, 'kong/kong.yml'), y);
@@ -635,7 +637,8 @@ const main = async () => {
       if (sub === 'wave2') return run(`node ${join(PLATFORM, 'tests/wave2.mjs')}`, PLATFORM);
       if (sub === 'wave3') return run(`node ${join(PLATFORM, 'tests/wave3.mjs')}`, PLATFORM);
       if (sub === 'wave4') return run(`node ${join(PLATFORM, 'tests/wave4.mjs')}`, PLATFORM);
-      return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2|wave3|wave4');
+      if (sub === 'wave5') return run(`node ${join(PLATFORM, 'tests/wave5.mjs')}`, PLATFORM);
+      return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2|wave3|wave4|wave5');
     case 'seed':
       if (sub !== 'demo') return fail('seed demo');
       for (const [slug, name, plan] of [['citycare', 'CityCare Clinic', 'HOSPITAL_ENTERPRISE'], ['sunrise', 'Sunrise Diagnostics', 'HOSPITAL_PRO'], ['medicare', 'MediCare HQ', 'MEDICARE_HQ']]) {

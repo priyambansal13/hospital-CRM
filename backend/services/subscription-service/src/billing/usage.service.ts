@@ -56,7 +56,7 @@ export class UsageService implements OnApplicationBootstrap, OnApplicationShutdo
       if (used * 100 < limit * threshold) continue;
       const { rowCount } = await c.query(`INSERT INTO usage_alerts (tenant_id, feature_key, month, threshold, used) VALUES ($1,$2,$3,$4,$5) ON CONFLICT DO NOTHING`, [tenantId, feature, month, threshold, used]);
       if (!rowCount) continue;
-      const data: BillingNotice = { kind: threshold === 80 ? 'USAGE_80' : 'USAGE_100', feature, used, limit, invoiceNo: null, amount: null, date: null, dedupe: `usage:${feature}:${month}:${threshold}` };
+      const data: BillingNotice = { kind: threshold === 80 ? 'USAGE_80' : 'USAGE_100', feature, used, limit, invoiceNo: null, amount: null, date: null, plan: null, dedupe: `usage:${feature}:${month}:${threshold}` };
       await addToOutbox(c, Topics.subscription, tenantId, envelope(EventTypes.billingNotice, data, { tenantId }));
       this.log.log(`${await this.plans.slug(tenantId)}: ${feature} at ${threshold}% (${used}/${limit})`);
     }

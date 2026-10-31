@@ -107,7 +107,11 @@ export type SubscriptionStatusChanged = z.infer<typeof SubscriptionStatusChanged
 
 /** Something the hospital's account owner should hear about (e-mail): payment failed, grace, suspended, usage… */
 export const BillingNotice = z.object({
-  kind: z.enum(['TRIAL_ENDING', 'TRIAL_CONVERTED', 'PAYMENT_FAILED', 'GRACE_STARTED', 'SUSPENDED', 'PAYMENT_RECEIVED', 'USAGE_80', 'USAGE_100']),
+  kind: z.enum(['TRIAL_ENDING', 'TRIAL_CONVERTED', 'PAYMENT_FAILED', 'GRACE_STARTED', 'SUSPENDED', 'PAYMENT_RECEIVED', 'USAGE_80', 'USAGE_100',
+    // review 4.G: the owner also hears when the subscription ends or comes back, a bank-transfer invoice, a plan change by MediCare
+    'EXPIRED', 'CANCELLED', 'REACTIVATED', 'INVOICE_ISSUED', 'PLAN_CHANGED']),
+  /** PLAN_CHANGED: the new plan's name */
+  plan: z.string().nullable().default(null),
   invoiceNo: z.string().nullable().default(null),
   amount: z.number().nullable().default(null),
   date: z.string().nullable().default(null),
@@ -301,6 +305,13 @@ export const PayoutAccountChanged = z.object({
 });
 export type PayoutAccountChanged = z.infer<typeof PayoutAccountChanged>;
 
+/**
+ * A message for MediCare's own staff (review 4.G): everyone in the HQ account holding `permission` gets it by e-mail
+ * (plans waiting for approval, approved or rejected).
+ */
+export const StaffNotice = z.object({ permission: z.string(), subject: z.string(), message: z.string(), linkPath: z.string(), dedupe: z.string() });
+export type StaffNotice = z.infer<typeof StaffNotice>;
+
 export const EventTypes = {
   tenantProvisioned: 'tenant.provisioned',
   tenantUpdated: 'tenant.updated',
@@ -312,6 +323,7 @@ export const EventTypes = {
   contractChanged: 'subscription.contract_changed',
   subscriptionStatusChanged: 'subscription.status_changed',
   billingNotice: 'subscription.billing_notice',
+  staffNotice: 'subscription.staff_notice',
   doctorCreated: 'provider.doctor_created',
   doctorUpdated: 'provider.doctor_updated',
   availabilityChanged: 'scheduling.availability_changed',

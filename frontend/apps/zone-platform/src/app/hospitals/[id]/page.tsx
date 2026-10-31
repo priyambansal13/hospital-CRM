@@ -116,6 +116,7 @@ export default async function HospitalPage({ params, searchParams }: { params: P
                 <input type="hidden" name="hospitalId" value={h.id} /><input type="hidden" name="feature" value={f.key} />
                 <input name="limit" type="number" min={0} placeholder="unlimited" aria-label={`${f.name} limit`} className="mc-input-sm" style={{ width: 100 }} />
                 <input name="reason" required minLength={3} placeholder="reason" aria-label="Reason" className="mc-input-sm" style={{ width: 160 }} />
+                <input name="until" type="date" aria-label="Until (optional)" title="Ends by itself on this date (optional)" className="mc-input-sm" />
                 <button className="mc-btn mc-btn-ghost">Set</button>
                 {f.override ? <button className="mc-btn mc-btn-ghost" name="reset" value="1">Back to plan</button> : null}
               </form>
@@ -176,6 +177,7 @@ export default async function HospitalPage({ params, searchParams }: { params: P
             <select name="module" aria-label="Module" required>{registry.filter((m) => !m.internal && !m.alwaysOn).map((m) => <option key={m.key} value={m.key}>{m.name}</option>)}</select>
             <select name="state" aria-label="State"><option value="on">on</option><option value="off">off</option><option value="plan">as the plan says</option></select>
             <input name="reason" required minLength={3} placeholder="reason (pilot, support case…)" aria-label="Reason" className="mc-input-sm" style={{ width: 220 }} />
+            <input name="until" type="date" aria-label="Until (optional)" title="Ends by itself on this date (optional)" className="mc-input-sm" />
             <button className="mc-btn mc-btn-ghost">Save</button>
           </form>
         </Card>

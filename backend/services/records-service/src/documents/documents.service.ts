@@ -128,6 +128,22 @@ export class DocumentsService {
   }
 
   /**
+   * Retention (review H-5): a removed document is kept DOCUMENT_PURGE_DAYS (30) in case it was removed by mistake,
+   * then the file and the record are deleted for good. Returns how many.
+   */
+  async purgeRemoved() {
+    const days = Number(process.env.DOCUMENT_PURGE_DAYS ?? 30);
+    const c = await this.db.current();
+    const { rows } = await c.query('SELECT id, storage_key FROM medical_documents WHERE deleted_at < now() - make_interval(days => $1) LIMIT 100', [days]);
+    for (const d of rows) {
+      await this.storage.delete(this.bucket(), d.storage_key).catch(() => undefined); // already gone is fine
+      await c.query('UPDATE medical_documents SET superseded_by = NULL WHERE superseded_by = $1', [d.id]);
+      await c.query('DELETE FROM medical_documents WHERE id = $1', [d.id]);
+    }
+    return rows.length;
+  }
+
+  /**
    * A document produced by the hospital itself (e.g. a verified lab report PDF): stored straight in clean/ (no scan
    * needed for our own output), on the timeline, optionally replacing an earlier version.
    */

@@ -38,8 +38,9 @@ const Reject = z.object({ note: z.string().trim().min(3).max(300) });
 const Addons = z.array(z.object({ code: Code, quantity: z.number().int().min(1).max(100).optional() })).max(20).default([]);
 const Assign = z.object({ plan: Code, addons: Addons, reason: z.string().trim().min(3).max(300) });
 const Simulate = z.object({ versionId: z.uuid(), addons: Addons });
-const ModuleOverride = z.object({ state: z.enum(['on', 'off', 'plan']), reason: z.string().trim().min(3).max(300) });
-const FeatureOverride = z.object({ value: z.object({ enabled: z.boolean().optional(), limit: z.number().int().min(0).nullable().optional() }).nullable(), reason: z.string().trim().min(3).max(300) });
+const Until = z.iso.date().refine((d) => d > new Date().toISOString().slice(0, 10), 'a date after today').nullable().default(null);
+const ModuleOverride = z.object({ state: z.enum(['on', 'off', 'plan']), reason: z.string().trim().min(3).max(300), until: Until });
+const FeatureOverride = z.object({ value: z.object({ enabled: z.boolean().optional(), limit: z.number().int().min(0).nullable().optional() }).nullable(), reason: z.string().trim().min(3).max(300), until: Until });
 const NewCoupon = z.object({ code: z.string().trim().toUpperCase().pipe(z.string().regex(/^[A-Z0-9_]{3,30}$/)), description: z.string().trim().min(3).max(120), percentOff: z.number().positive().max(100).nullable().default(null), amountOff: z.number().positive().nullable().default(null), months: z.number().int().positive().max(36).nullable().default(null), maxRedemptions: z.number().int().positive().nullable().default(null), validUntil: z.iso.date().nullable().default(null) })
   .refine((c) => !!c.percentOff !== !!c.amountOff, 'percent off or an amount off');
 const OfflinePayment = z.object({ reference: z.string().trim().min(3).max(80) });
@@ -186,7 +187,10 @@ export class ConsoleController {
     const t = await this.tenant(id);
     const q = parse(Assign, body);
     // the console never hands out internal plans (MediCare HQ's own): allowInternal stays off
-    return this.plans.change(t.id, { plan: q.plan, addons: q.addons, by: who(a).label, reason: q.reason });
+    const r = await this.plans.change(t.id, { plan: q.plan, addons: q.addons, by: who(a).label, reason: q.reason });
+    // the owner hears when MediCare moves the hospital to another plan (review 4.G)
+    await this.billing.announce(t.id, { kind: 'PLAN_CHANGED', plan: q.plan, date: new Date().toISOString(), dedupe: `plan:${t.id}:${Date.now()}` }).catch(() => undefined);
+    return r;
   }
 
   @Put('hospitals/:id/modules/:key')
@@ -195,7 +199,7 @@ export class ConsoleController {
     const t = await this.tenant(id);
     if (t.plan?.internal) throw notFound('hospital');
     const q = parse(ModuleOverride, body);
-    return this.plans.overrideModule(t.id, parse(ModuleKey, key), q.state, who(a).label, q.reason);
+    return this.plans.overrideModule(t.id, parse(ModuleKey, key), q.state, who(a).label, q.reason, q.until);
   }
 
   @Put('hospitals/:id/features/:key')
@@ -204,7 +208,7 @@ export class ConsoleController {
     const t = await this.tenant(id);
     if (t.plan?.internal) throw notFound('hospital');
     const q = parse(FeatureOverride, body);
-    return this.plans.overrideFeature(t.id, parse(FeatureKey, key), q.value, who(a).label, q.reason);
+    return this.plans.overrideFeature(t.id, parse(FeatureKey, key), q.value, who(a).label, q.reason, q.until);
   }
 
   // ---- billing
