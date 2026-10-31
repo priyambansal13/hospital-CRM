@@ -1,4 +1,4 @@
-# Handoff: where work stopped (2026-10-30, after wave 4)
+# Handoff: where work stopped (2026-10-31, after wave 5)
 
 ## State
 - Phases 0–22 are built (Phase 22: AI foundation and the knowledge-only concierge, `ai-assistant-service` on 4415).
@@ -7,11 +7,13 @@
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
   - Wave 3 (front desk and lab completeness, screens for existing APIs, missing notifications): fixed 2026-10-30.
   - Wave 4 (production readiness that needs no provider account): done 2026-10-30. See §8 for what each item still needs.
+  - Wave 5 (the remaining smaller gaps: E-9 amend form, owner and MediCare-staff notices, B-7 real client IP and OTP caps, document purge, override end dates, OpenTelemetry tracing, Playwright in CI): done 2026-10-31.
 - Tests:
   - `mc test gaps` covers wave 1.
   - `mc test wave2` covers wave 2 (45 checks).
   - `mc test wave3` covers wave 3 (31 checks).
   - `mc test wave4` covers wave 4 (48 checks).
+  - `mc test wave5` covers wave 5 (15 checks).
   - The tenancy leak test has 1086 checks and found 0 leaks.
 - Git: one repo for all three folders, at https://github.com/priyambansal13/hospital-CRM (`main`).
   - Waves 2 and 3 are pushed.
@@ -29,17 +31,25 @@ Choose one:
    - Gemini;
    - ClamAV;
    - a GCP project for staging.
-3. **Remaining smaller gaps:**
-   - E-9: the doctor's form for amending diagnoses;
-   - owner and MediCare-staff notifications;
-   - B-7 rate limits;
-   - Playwright in CI;
-   - OpenTelemetry tracing;
-   - purging soft-deleted documents;
+3. **What is still open from the review** (small; none blocks Phase 23):
    - support "act as" (Phase 31);
-   - approvals and expiry for overrides and coupons.
+   - captcha on signup and patient OTP;
+   - approvals for overrides and coupons;
+   - the first GitHub run of the manual integration job (it now includes Playwright).
+
+**Fix first (configuration, 2026-10-31):** after `mc dev` was restarted, the services picked up a `GEMINI_API_KEY` (or Vertex setting) that Google rejects (401). The assistant then calls Gemini instead of the offline dev model, and that breaks `mc test assistant`, `plans`, `onboarding`, part of `wave2` and `wave5`, and `p22-assistant.spec.ts` (turning on the AI module seeds embeddings). Either set a valid key, or put `LLM_PROVIDER=dev` in `backend/.env` and restart `mc dev`, then rerun those suites. Locally, tracing is on (`OTEL_EXPORTER_OTLP_ENDPOINT` in `backend/.env`, Jaeger container `mc-jaeger`, UI on :16686). To turn it off, remove the line, run `docker rm -f mc-jaeger`, and restart `mc dev`.
 
 **Not run, on purpose:** `mc tenant purge`. It permanently destroys a hospital's data, and running it was blocked as irreversible. The user decides whether to run it (only on DELETED test hospitals, and only after `mc tenant export`).
+
+## Wave 5 notes worth knowing
+- **Tracing:**
+  - Every service starts with `--import @mc/nest-common/tracing`; it does nothing unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set (in the environment or `backend/.env`).
+  - To look at traces locally: `docker run -d --name mc-jaeger -p 127.0.0.1:4318:4318 -p 127.0.0.1:16686:16686 jaegertracing/jaeger:2.11.0`, add `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318` to `backend/.env`, restart `mc dev`, open http://localhost:16686.
+  - Events carry `traceparent`; consumer spans are named `<event type> process`.
+- **Signups:** a sweep (every 30 s, `SIGNUP_SWEEP_MS`) moves PROVISIONING signups to READY (owner e-mail) or FAILED after 10 minutes (staff notice to `customer:manage:tenant` on the HQ account, `HQ_SLUG`).
+- **Client IP:** use `clientIp(req)` from `@mc/nest-common`, never `req.ip`. Kong sets X-Real-IP from trusted proxies (`KONG_TRUSTED_IPS`).
+- **OTP caps:** `OTP_PER_IP_PER_10_MIN` (100000 in dev via `mc configure`) and `OTP_PER_HOSPITAL_PER_HOUR` (500).
+- **Purges and expiries:** `DOCUMENT_PURGE_DAYS` (30); override `until` dates are enforced by the billing tick.
 
 ## Wave 4 notes worth knowing
 - **SaaS payments:**
@@ -100,7 +110,7 @@ Choose one:
 ## Before working
 - From `platform/`, start the dev stack with `node scripts/mc.mjs dev` (run it in the background). After pulling new migrations, run `node scripts/mc.mjs migrate`.
 - Do not stop the agentic-commerce or PayFlow Docker containers.
-- Each folder's `.github/workflows` sits inside that folder, so GitHub doesn't run it. Moving them to the repo's top-level `.github/` with path filters is an open to-do.
+- CI lives in the repo's top-level `.github/workflows` (path filters per folder).
 - After each wave:
   - update the fix log in ROLE-FLOWS-AND-GAPS.md;
   - update the Status section of IMPLEMENTATION-PLAN.md;

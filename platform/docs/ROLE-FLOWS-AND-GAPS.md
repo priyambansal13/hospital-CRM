@@ -551,10 +551,24 @@ Verified by `mc test wave4` (48 checks), unit tests for the adapters, the tenanc
 | H-6 CI | A `security` workflow runs CodeQL, `pnpm audit` (high and above) for both apps, and a secret scan, weekly too. The manual integration job seeds the demo hospitals and runs all API suites. Upgrading nodemailer 7 → 10 cleared four high advisories. | Playwright in CI |
 | H-7 console | Support can extend a trial (to at most 60 days ahead), add credit notes (taken off the next invoice), take a hospital offline and back, delete it (the slug must be typed), and reactivate it. All of these are in the platform audit log with the reason. | Support access ("act as", Phase 31); approvals and expiry for overrides and coupons |
 
-Not in wave 3 and still open:
-- E-9: the doctor's form for amending diagnoses.
-- The hospital owner's and MediCare staff's notifications in 4.G.
-- Wave 4 (production integrations).
+Not in wave 3, and closed since: E-9 and the 4.G owner and MediCare staff notifications (wave 5, below); wave 4 (above).
+
+### Wave 5: remaining smaller gaps, done 2026-10-31
+
+Verified by `mc test wave5` (15 checks), `w5-amend.spec.ts` (Playwright), unit tests for `clientIp` and trace scrubbing, and the full regression with tracing on (2026-10-31): static checks pass; the tenancy leak test passes (1086 checks, 0 leaks); 16 of 21 API suites pass (billing failed once on timing and passed on rerun); Playwright 53/54. Every remaining failure (`assistant`, `plans`, `onboarding`, the wave2 desk-alert count, the wave5 "ready" check, `p22-assistant.spec.ts`) comes from one configuration problem: the restarted stack picked up a Gemini API key that Google rejects (401), so the assistant called Gemini instead of the offline dev model. Turning on the AI module (which seeds embeddings) then fails, and that is what `plan set` waits on. Rerun them with `LLM_PROVIDER=dev` or a valid key.
+
+| Gap | What changed | Still needs |
+|---|---|---|
+| E-9 amending diagnoses | The doctor's amend form on a signed visit edits the chief complaint, notes and diagnoses (keep or remove each, add up to two, pick the primary) with a reason. Only changed fields are sent; the amendment keeps the before and after. | — |
+| 4.G owner notices | The hospital owner is e-mailed when the subscription expires, is cancelled or is reactivated, when a bank-transfer invoice is issued, when MediCare changes the plan, and when a hospital from self-serve signup is ready. | — |
+| 4.G MediCare staff notices | `subscription.staff_notice` reaches MediCare staff by permission (HQ account): plan versions waiting for approval, published or sent back; failed signups (`customer:manage:tenant`), so "our team has been told" is now true. A sweep in tenant-service settles signups every 30 s, so READY and FAILED happen without the status page open. | — |
+| B-7 rate limits | Services see the real client address (`clientIp()`, X-Real-IP set by Kong from trusted proxies; a spoofed header is overwritten). Kong rate limits by IP. Patient OTP is capped per phone, per IP (`OTP_PER_IP_PER_10_MIN`) and per hospital (`OTP_PER_HOSPITAL_PER_HOUR`, 500). | Captcha on signup and OTP |
+| H-5 document purge | Documents removed more than `DOCUMENT_PURGE_DAYS` (30) ago are deleted for good (object and row), hourly. | — |
+| H-7 override end dates | Module and feature overrides take an optional end date (`until`, console form); the billing tick removes them when it passes. | Approvals for overrides and coupons |
+| H-3 tracing | OpenTelemetry, preloaded with `--import @mc/nest-common/tracing` (dev, start, Docker, CI), off unless `OTEL_EXPORTER_OTLP_ENDPOINT` is set. HTTP (named by route template), fetch, pg and Redis spans; events carry `traceparent`, so a consumer's work joins the trace of the request that caused it. Query strings and Redis arguments are never exported (they can hold phone numbers). Verified with Jaeger: console request → event → notification consumer → entitlement call in one trace. | A collector and backend in the cluster; dashboards |
+| H-6 Playwright in CI | The manual integration job builds and starts the zones and runs the Playwright suite after the API suites (traces uploaded on failure). | Its first run on GitHub (it is manual) |
+
+Still open: support "act as" (Phase 31); captcha; approvals for overrides and coupons; the real-provider runs.
 
 ---
 
