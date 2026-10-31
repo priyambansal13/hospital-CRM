@@ -1,6 +1,7 @@
 import { ZoneFrame } from '@mc/features';
 import { Button, Card, Icon, iconForSpecialty, PageHeader } from '@mc/ui';
 import { BookingPaused } from '@/lib/booking-paused';
+import { MyPanel } from '@/lib/my-panel';
 import { getSpecialties } from '@/lib/directory';
 import { publicModules } from '@/lib/modules';
 import { ZONES } from '@/lib/zones';
@@ -16,6 +17,7 @@ export default async function CareHome() {
   const specialties = (await getSpecialties()).filter((s) => s.doctorCount > 0);
   return (
     <ZoneFrame zone="patient" path="/care" zones={ZONES} requireAuth={false}>
+      <MyPanel />
       <PageHeader title="Find a doctor" subtitle="Search by name or choose a specialty." />
       <Card>
         <form method="get" action="/care/doctors" className="mc-form">

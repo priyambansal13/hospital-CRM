@@ -17,6 +17,7 @@ features:
 settings:
   - { key: appointments.cancel_cutoff_hours, name: Patients can cancel or move online until (hours before), type: int, default: 2, min: 0, max: 72 }
 nav:
+  - { key: doctor-today, label: Today, zone: doctor, href: /doctor, permissions: [schedule:manage:own], audience: staff }
   - { key: my-schedule, label: My schedule, zone: doctor, href: /doctor/schedule, permissions: [schedule:manage:own], audience: staff }
   - { key: schedules-admin, label: Schedules, zone: admin, href: /admin/schedules, permissions: [schedule:manage:branch, admin:access:tenant] }
   - { key: my-appointments, label: My appointments, zone: patient, href: /care/appointments, permissions: [appointment:read:own], audience: patient }

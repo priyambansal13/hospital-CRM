@@ -26,6 +26,9 @@ test.describe.serial('doctor schedule', () => {
 
   test('the doctor sets weekly hours and leave; overlaps are rejected', async ({ page }) => {
     await staffLogin(page, CITY, email, '/doctor');
+    // a doctor with a profile lands on "Today", then opens their schedule
+    await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), / })).toBeVisible();
+    await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'My schedule' }).click();
     await expect(page).toHaveURL(/\/doctor\/schedule/);
     await expect(page.getByRole('heading', { name: 'My schedule' })).toBeVisible();
     await expect(page.getByText('No working hours yet')).toBeVisible();

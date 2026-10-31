@@ -26,6 +26,9 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, .4); --shadow-lg: 0 16px 40px rgba(0, 0, 0, .5); color-scheme: dark;
 }
 
+/* colours derived from the brand are recomputed where a hospital's brand is set (custom properties resolve where they
+   are declared, so :root alone would keep the default teal) */
+.mc-frame, .mc-shell, .mc-auth { --brand-soft: color-mix(in srgb, var(--brand) 10%, transparent); --brand-ink: color-mix(in srgb, var(--brand) 85%, #000); --ring: 0 0 0 3px color-mix(in srgb, var(--brand) 28%, transparent); }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; scroll-behavior: smooth; }
 body { margin: 0; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; }
@@ -37,7 +40,8 @@ h3 { letter-spacing: -.01em; }
 ::selection { background: color-mix(in srgb, var(--brand) 25%, transparent); }
 .mc-muted { color: var(--muted); margin: 4px 0 0; }
 .mc-meta { color: var(--muted); font-size: 14px; }
-.mc-empty { color: var(--muted); margin: 0; padding: 18px; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.mc-empty { color: var(--muted); margin: 0; padding: 22px 18px 18px; text-align: center; border: 1px dashed var(--border); border-radius: var(--radius-sm); background: var(--surface-2); }
+.mc-empty::before { content: ''; display: block; width: 40px; height: 40px; margin: 0 auto 8px; border-radius: 12px; background: var(--brand-soft) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 13h4l2 3h4l2-3h4'/%3E%3Cpath d='M5.5 5h13L21 13v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-5z'/%3E%3C/svg%3E") center / 22px no-repeat; }
 .mc-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 
 /* ---------- frame: public / patient (top bar) ---------- */
@@ -59,6 +63,15 @@ h3 { letter-spacing: -.01em; }
 .mc-footer-inner { max-width: 1180px; margin: 0 auto; padding: 28px 24px; display: flex; flex-wrap: wrap; gap: 16px 32px; justify-content: space-between; color: var(--muted); font-size: 14px; }
 .mc-footer a { color: var(--muted); text-decoration: none; }
 .mc-footer a:hover { color: var(--text); }
+
+/* the patient's many links: a bar under the header (one row, scrolls sideways on small screens) */
+.mc-subnav { position: sticky; top: 64px; z-index: 19; background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: saturate(160%) blur(12px); border-bottom: 1px solid var(--border); }
+.mc-subnav > div { max-width: 1180px; margin: 0 auto; padding: 6px 16px; display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; }
+.mc-subnav > div::-webkit-scrollbar { display: none; }
+.mc-subnav a { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 10px; color: var(--muted); text-decoration: none; font-weight: 600; font-size: 14px; white-space: nowrap; }
+.mc-subnav a svg { width: 16px; height: 16px; opacity: .8; }
+.mc-subnav a:hover { background: var(--bg-soft); color: var(--text); }
+.mc-subnav a.active { color: var(--brand); background: var(--brand-soft); }
 
 /* ---------- frame: staff (sidebar + topbar) ---------- */
 .mc-shell { min-height: 100vh; display: grid; grid-template-columns: var(--sidebar) 1fr; }
@@ -182,6 +195,19 @@ input[type='checkbox'], input[type='radio'] { accent-color: var(--brand); width:
 .mc-select-sm, .mc-input-sm { height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); color: var(--text); font: inherit; font-size: 14px; }
 .mc-input-sm { width: 120px; }
 .mc-login { max-width: 440px; margin: 8vh auto; display: grid; gap: 20px; }
+/* sign-in: a branded side and the forms */
+.mc-auth { min-height: 100vh; display: grid; grid-template-columns: minmax(320px, 1fr) minmax(360px, 1fr); }
+.mc-auth-side { position: relative; overflow: hidden; color: #fff; padding: 40px 48px; display: flex; flex-direction: column; justify-content: space-between; gap: 32px;
+  background: radial-gradient(700px 400px at 100% 0%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 60%), radial-gradient(600px 500px at 0% 100%, rgba(255,255,255,.12), transparent 60%), linear-gradient(140deg, var(--brand-ink), var(--brand)); }
+.mc-auth-side h1 { color: #fff; font-size: clamp(1.9rem, 3.4vw, 2.8rem); line-height: 1.1; margin: 0 0 24px; max-width: 520px; }
+.mc-auth-perks { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; max-width: 480px; }
+.mc-auth-perks li { display: flex; gap: 12px; align-items: center; font-weight: 600; opacity: .95; }
+.mc-auth-perks span { width: 34px; height: 34px; flex: none; border-radius: 10px; display: grid; place-items: center; background: rgba(255, 255, 255, .16); }
+.mc-auth-foot { margin: 0; opacity: .85; font-size: 14px; }
+.mc-auth-foot a { color: #fff; }
+.mc-auth-form { display: grid; align-items: center; padding: 24px; background: var(--bg); }
+.mc-auth-form .mc-login { margin: 0 auto; width: 100%; }
+@media (max-width: 860px) { .mc-auth { grid-template-columns: 1fr; } .mc-auth-side { padding: 28px 20px; } .mc-auth-side h1 { font-size: 1.7rem; } }
 
 /* tables */
 .mc-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }

@@ -122,6 +122,12 @@ export async function ZoneFrame({ zone, path, zones, requireAuth = true, wide = 
     const current = items.filter((n) => path === n.href || path.startsWith(n.href + '/')).sort((a, b) => b.href.length - a.href.length)[0];
     nav = items.map((n) => ({ key: n.key, label: n.label, href: `${base}${n.href}`, active: n === current, group: AREA[n.zone] ?? n.zone }));
     staff = caps.actor.kind === 'staff';
+    // patients: what they use most first (manifests list items by module)
+    if (!staff) {
+      const ORDER = ['/care/doctors', '/care/appointments', '/care/tests', '/care/lab-orders', '/care/timeline', '/care/prescriptions', '/care/bills', '/care/assistant', '/care/profile', '/care/access-log', '/care/sharing'];
+      const rank = (href: string) => { const i = ORDER.findIndex((o) => href.endsWith(o)); return i < 0 ? ORDER.length : i; };
+      nav.sort((a, b) => rank(a.href) - rank(b.href));
+    }
     role = staff ? ROLE_NAME(caps.roles) : undefined;
   }
   if (!session) nav = await visitorNav(branding.slug, base, path);

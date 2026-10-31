@@ -92,11 +92,14 @@ export function AppFrame(props: {
       {script}
       <header className="mc-header">
         {brand}
-        <nav className="mc-nav" aria-label="Main">
-          {props.nav.map((n) => (
-            <a key={n.key} href={n.href} className={n.active ? 'active' : undefined} aria-current={n.active ? 'page' : undefined}>{n.label}</a>
-          ))}
-        </nav>
+        {/* many links (a signed-in patient): a second bar under the header; a few: in the header itself */}
+        {props.nav.length > 6 ? <span style={{ flex: 1 }} /> : (
+          <nav className="mc-nav" aria-label="Main">
+            {props.nav.map((n) => (
+              <a key={n.key} href={n.href} className={n.active ? 'active' : undefined} aria-current={n.active ? 'page' : undefined}>{n.label}</a>
+            ))}
+          </nav>
+        )}
         <ThemeToggle />
         {props.user ? (
           <div className="mc-user">
@@ -107,6 +110,15 @@ export function AppFrame(props: {
           <div className="mc-user"><a href={props.signInHref} className="mc-btn mc-btn-primary">Sign in</a></div>
         ) : null}
       </header>
+      {props.nav.length > 6 ? (
+        <nav className="mc-subnav" aria-label="Main">
+          <div>
+            {props.nav.map((n) => (
+              <a key={n.key} href={n.href} className={n.active ? 'active' : undefined} aria-current={n.active ? 'page' : undefined}><Icon name={iconFor(n.key, n.label)} />{n.label}</a>
+            ))}
+          </div>
+        </nav>
+      ) : null}
       <main className={`mc-main${props.wide ? ' mc-main-wide' : ''}`}>{props.children}</main>
       <footer className="mc-footer">
         <div className="mc-footer-inner">
