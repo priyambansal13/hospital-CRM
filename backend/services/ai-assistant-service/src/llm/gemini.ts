@@ -47,6 +47,20 @@ export class GeminiLlm implements LlmClient {
     };
   }
 
+  readonly transcribeModel = process.env.GEMINI_TRANSCRIBE_MODEL ?? 'gemini-3.5-transcribe';
+
+  async transcribe(audio: Buffer, mimeType: string): Promise<{ text: string; model: string }> {
+    const res = await this.ai.models.generateContent({
+      model: this.transcribeModel,
+      contents: [{ role: 'user', parts: [
+        { inlineData: { mimeType, data: audio.toString('base64') } },
+        { text: 'Transcribe this consultation word for word. Start each turn on a new line with "Doctor:" or "Patient:" (or "Other:"). Do not summarise or add anything.' },
+      ] }],
+      config: { abortSignal: AbortSignal.timeout(120_000) },
+    });
+    return { text: res.text ?? '', model: res.modelVersion ?? this.transcribeModel };
+  }
+
   async embed(texts: string[], kind: 'query' | 'document'): Promise<number[][]> {
     const res = await this.ai.models.embedContent({
       model: this.embedModel,

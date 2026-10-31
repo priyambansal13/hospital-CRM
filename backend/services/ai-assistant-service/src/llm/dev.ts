@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { NO_ANSWER, parseUserTurn } from '../chat/prompts.js';
 import { devAgentStep } from './dev-agent.js';
 import { devSummary } from './dev-copilot.js';
+import { devSoap } from './dev-scribe.js';
 import { EMBED_DIM, type GenerateRequest, type GenerateResult, type LlmClient, normalise } from './llm.js';
 
 const STOP = new Set('a an the is are was were be to of in on at for and or what when where how which who whom can could do does did i my me we our you your it its this that there with from by as please tell about any have has get need want hospital see know go come make like also just will would should much many some'.split(' '));
@@ -31,7 +32,8 @@ export class DevLlm implements LlmClient {
   async generate(req: GenerateRequest): Promise<GenerateResult> {
     const usage = (out: number) => ({ input: Math.ceil(JSON.stringify(req.turns).length / 4), output: out, cached: 0 });
     if (req.purpose === 'copilot') {
-      const text = JSON.stringify(devSummary(req.turns.at(-1)?.text ?? ''));
+      const turn = req.turns.at(-1)?.text ?? '';
+      const text = JSON.stringify(turn.includes('<transcript>') ? devSoap(turn) : devSummary(turn));
       return { text, calls: [], finishReason: 'STOP', model: this.copilotModel, usage: usage(Math.ceil(text.length / 4)) };
     }
     const step = req.tools?.length ? devAgentStep(req.turns, req.tools) : null;
@@ -54,6 +56,13 @@ export class DevLlm implements LlmClient {
     return { text, calls: [], finishReason: 'STOP', model: this.chatModel, usage: { input: Math.ceil((req.system.length + last.length) / 4), output: Math.ceil(text.length / 4), cached: 0 } };
   }
 
+  /** The dev provider cannot hear audio: it reads the transcript a mock recording carries in its WAV comment (ICMT). */
+  async transcribe(audio: Buffer, _mimeType: string): Promise<{ text: string; model: string }> {
+    const text = wavComment(audio);
+    if (!text) throw new Error('the dev provider only "transcribes" mock recordings (a WAV with the transcript in its comment); set LLM_PROVIDER=gemini for real audio');
+    return { text, model: 'dev-transcript' };
+  }
+
   async embed(texts: string[], _kind?: 'query' | 'document'): Promise<number[][]> {
     return texts.map((t) => {
       const v: number[] = Array.from({ length: EMBED_DIM }, () => 0);
@@ -68,4 +77,23 @@ export class DevLlm implements LlmClient {
       return normalise(v);
     });
   }
+}
+
+/** The ICMT (comment) text of a RIFF/WAV file's LIST/INFO chunk, if any. */
+export function wavComment(b: Buffer): string | null {
+  if (b.length < 12 || b.toString('ascii', 0, 4) !== 'RIFF' || b.toString('ascii', 8, 12) !== 'WAVE') return null;
+  for (let at = 12; at + 8 <= b.length;) {
+    const id = b.toString('ascii', at, at + 4);
+    const size = b.readUInt32LE(at + 4);
+    if (id === 'LIST' && b.toString('ascii', at + 8, at + 12) === 'INFO') {
+      for (let i = at + 12; i + 8 <= at + 8 + size;) {
+        const sub = b.toString('ascii', i, i + 4);
+        const len = b.readUInt32LE(i + 4);
+        if (sub === 'ICMT') return b.toString('utf8', i + 8, i + 8 + len).replace(/\0+$/, '');
+        i += 8 + len + (len % 2);
+      }
+    }
+    at += 8 + size + (size % 2);
+  }
+  return null;
 }

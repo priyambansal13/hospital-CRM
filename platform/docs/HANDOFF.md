@@ -1,7 +1,7 @@
-# Handoff: where work stopped (2026-10-31, after Phase 24)
+# Handoff: where work stopped (2026-10-31, after Phase 25: M5 complete)
 
 ## State
-- Phases 0–24 are built (Phase 22: AI foundation and the knowledge-only concierge, `ai-assistant-service` on 4415; Phase 23: the concierge's booking tools with Confirm cards; Phase 24: the lab report explainer and the doctor's pre-visit summary; both 2026-10-31).
+- Phases 0–25 are built; M5 (AI) is complete. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
 - The flow review is in [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md). See §8 "Fix log" for details.
   - Wave 1 (15 gaps): fixed 2026-10-25.
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
@@ -15,24 +15,27 @@
   - `mc test wave4` covers wave 4 (48 checks).
   - `mc test wave5` covers wave 5 (15 checks).
   - `mc test concierge` is the Phase 23 booking-task eval (28 checks); `mc test copilot` covers Phase 24 (report explainer and pre-visit summary, 27 checks). Run both before the leak test, which uses a card and a summary they leave.
-  - The tenancy leak test has 1108 checks and found 0 leaks.
+  - `mc test scribe` (prescription safety + scribe, 26 checks) and `mc test whatsapp` (20 checks) cover Phase 25; the scribe suite also leaves a draft the leak test uses.
+  - The tenancy leak test has 1141 checks and found 0 leaks.
 - Git: one repo for all three folders, at https://github.com/priyambansal13/hospital-CRM (`main`).
-  - Everything up to Phase 24 is pushed.
+  - Everything up to Phase 25 is pushed.
   - CI workflows are in `.github/workflows` (backend, frontend, platform), with path filters. They pass on GitHub, as does the security workflow (2026-10-31, Phase 24 commit c7e1a07).
   - Image builds wait for the `GCP_WIF_PROVIDER` repo variable.
   - The integration job is manual (workflow_dispatch).
 
 ## Resume here (ask first)
 Choose one:
-1. **Phase 25** (ambient scribe + WhatsApp, IMPLEMENTATION-PLAN.md). It needs real Gemini (transcription) and a WhatsApp Business account for its full shape; ask which parts to build against the dev provider.
+1. **M6** (Phase 26 onwards: memberships and other growth modules, IMPLEMENTATION-PLAN.md), ordered by customer demand: ask which first.
 2. **Real-provider runs**, once the user provides keys or accounts:
-   - Gemini: a valid key, then `LLM_PROVIDER=gemini` and `mc test assistant`, `mc test concierge` and `mc test copilot` against the real model (prompt tuning; set `GEMINI_COPILOT_MODEL` if `gemini-3.1-pro-preview` is not available);
+   - Gemini: a valid key, then `LLM_PROVIDER=gemini` and `mc test assistant`, `mc test concierge` `mc test copilot` and `mc test scribe` against the real model (prompt tuning; set `GEMINI_COPILOT_MODEL` / `GEMINI_TRANSCRIBE_MODEL` if the defaults are not available), and a real recorded consultation;
+   - WhatsApp: a WhatsApp Business account (Meta Cloud API): `WHATSAPP_PROVIDER=meta`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, the webhook URL registered with Meta, `mc whatsapp link <slug> <phoneNumberId> <number>`;
+   - a licensed drug database behind the prescription-safety rules (the starter formulary is for development);
    - Razorpay: test keys, the recurring adapter for `SAAS_PAYMENTS=razorpay`, and Route;
    - MSG91 with DLT templates;
    - Cloud KMS (`KEY_WRAPPER=gcp-kms`);
    - ClamAV;
    - a GCP project for staging.
-3. **What is still open from the review** (small; none blocks Phase 25):
+3. **What is still open from the review** (small):
    - support "act as" (Phase 31);
    - captcha on signup and patient OTP;
    - approvals for overrides and coupons;
@@ -41,6 +44,11 @@ Choose one:
 **Local LLM setting (2026-10-31):** the services pick up a `GEMINI_API_KEY` that Google rejects (401), so `backend/.env` now has `LLM_PROVIDER=dev` (the offline dev model). Remove that line once a valid key is set. Locally, tracing is on (`OTEL_EXPORTER_OTLP_ENDPOINT` in `backend/.env`, Jaeger container `mc-jaeger`, UI on :16686). To turn it off, remove the line, run `docker rm -f mc-jaeger`, and restart `mc dev`.
 
 **Not run, on purpose:** `mc tenant purge`. It permanently destroys a hospital's data, and running it was blocked as irreversible. The user decides whether to run it (only on DELETED test hospitals, and only after `mc tenant export`).
+
+## Phase 25 notes worth knowing
+- **Prescription safety:** `records-service/src/prescribing/` (`drug-data.ts` starter formulary + interaction rules, `safety.ts` checks, `prescribing.ts` APIs and the scribe's recordings). A major interaction refuses a prescription with `INTERACTION_CONFLICT` unless `interactionOverride` is given; the consult page asks for the reason.
+- **Scribe:** consent → recording (records, encrypted, deleted on sign or after `SCRIBE_AUDIO_HOURS`) → `POST /api/assistant/v1/assistant/scribe/encounters/:id/drafts` (transcribe, SOAP JSON, checks) → the consult page's draft form → "Use in visit notes" (PATCH with `aiDraftId`, then `drafts/:id/apply`). Feature `ai.scribe`, permission `copilot:use:own`. The dev model "transcribes" only WAV files that carry the transcript in their ICMT comment (see `tests/scribe.mjs` `mockRecording`).
+- **WhatsApp:** `src/whatsapp/` in ai-assistant-service; webhook `/api/assistant/v1/public/whatsapp/webhook`; numbers in control table `assistant.whatsapp_numbers` (`mc whatsapp link|list`); patients in `assistant.wa_links`. Feature `ai.whatsapp` is off by default. The assistant caches a hospital's features for 30 s, so a switch takes up to 30 s to apply.
 
 ## Phase 24 notes worth knowing
 - **Report explainer:** tools `list_my_reports` + `explain_report` (feature `ai.reports`). A report with any critical value is never explained: `ChatService` returns a fixed reply as soon as `explain_report` reports `criticalHeld`.

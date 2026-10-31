@@ -67,11 +67,16 @@ export async function issuePrescription(f: FormData) {
   const { accessToken: token } = await actionSession();
   const path = str(f, 'back');
   try {
-    await api(`/api/records/v1/encounters/${str(f, 'encounterId')}/prescriptions`, { token, idempotencyKey: str(f, 'idempotencyKey'), body: { ...body, allergyOverride: str(f, 'allergyOverride') || null } });
+    await api(`/api/records/v1/encounters/${str(f, 'encounterId')}/prescriptions`, { token, idempotencyKey: str(f, 'idempotencyKey'), body: { ...body, allergyOverride: str(f, 'allergyOverride') || null, interactionOverride: str(f, 'interactionOverride') || null } });
   } catch (e) {
-    // allergy clash (or allergies unreadable): back to the form, filled in, asking for a reason (review C-3)
+    // allergy clash (or allergies unreadable), or a major interaction (Phase 25): back to the form, filled in, asking
+    // for a reason (review C-3); a reason already given is kept
+    const keep = { ...body, allergyOverride: str(f, 'allergyOverride') || null };
     if (e instanceof ApiError && (e.code === 'ALLERGY_CONFLICT' || e.code === 'ALLERGIES_UNAVAILABLE')) {
-      return back(path, { error: msg(e), allergy: '1', rx: Buffer.from(JSON.stringify(body)).toString('base64url') });
+      return back(path, { error: msg(e), allergy: '1', rx: Buffer.from(JSON.stringify(keep)).toString('base64url') });
+    }
+    if (e instanceof ApiError && e.code === 'INTERACTION_CONFLICT') {
+      return back(path, { error: msg(e), interaction: '1', ...(keep.allergyOverride ? { allergy: '1' } : {}), rx: Buffer.from(JSON.stringify(keep)).toString('base64url') });
     }
     return back(path, { error: msg(e) });
   }

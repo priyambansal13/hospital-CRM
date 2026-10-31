@@ -8,6 +8,8 @@ export interface Encounter {
   patient: { id: string; name: string; mrn: string; age: number | null; gender: string | null };
   doctor: { id: string; name: string };
   vitals: { bp?: string; pulse?: number; tempC?: number; weightKg?: number; heightCm?: number; spo2?: number; respRate?: number };
+  /** notes taken over from an AI scribe draft (Phase 25); the patient's consent to recording */
+  aiAssisted?: boolean; scribeConsent?: { at: string; method: string } | null;
   chiefComplaint: string | null; notes?: string | null; diagnoses: Diagnosis[]; prescriptions: Prescription[];
   amendments: { reason: string; changed: string[]; at: string; by: string | null }[];
   access?: { purpose: string; breakGlassUntil: string | null };

@@ -177,6 +177,8 @@ When a report is published, the patient can ask "what does my report mean?". The
 ### 4.5 Channels
 
 - **WhatsApp:** the WhatsApp Business API webhook goes to the AI gateway; the patient is identified by verified phone number + OTP for sensitive actions. Action cards become WhatsApp interactive buttons. No report contents in WhatsApp, only an app deep link.
+*As built (Phase 25): WhatsApp as above, with the phone linked by the hospital's SMS login code (a normal patient session, 30 days) instead of a per-action OTP; feature `ai.whatsapp`, off until switched on per hospital. The voice bot is not built.*
+
 - **Voice bot (phone line):** telephony (e.g. Exotel/Twilio media streams) → the same Concierge tools. Uses the Gemini **Live API** (`gemini-3.8-live`) for low-latency streaming audio in and out, with the same tools. Short replies, and a "press 0 for reception" escape at all times. Language detected per call (English, Hindi, regional).
 
 ---
@@ -196,6 +198,8 @@ When a report is published, the patient can ask "what does my report mean?". The
 *As built (Phase 24, 2026-10-31): the pre-visit summary, made when the doctor asks (not automatically at check-in), from the chart, allergies, today's triage and the last 4 verified lab reports; references E/P/A/L/T, and a citation check that drops lines citing nothing real or carrying numbers the cited records do not have. Ask the chart, result review, prescription safety and the scribe are not built yet.*
 
 Nothing the copilot writes enters the medical record until the doctor edits and **signs** the encounter (LLD §6.6). The signed record stores `ai_assisted: true` and the draft version, for audit and quality review.
+
+*As built (Phase 25, 2026-10-31): scribe (consent, encrypted recording deleted on sign, transcript → SOAP JSON with the schema below, checked against the formulary, the lab catalog, ICD-10 and the deterministic safety rules; the doctor's edited version is kept as `final`) and deterministic prescription safety (starter formulary and interaction rules in records-service; not a licensed drug database). Ask the chart and result review are not built. See IMPLEMENTATION-PLAN.md Phase 25.*
 
 ### 5.2 Scribe output schema (structured output)
 

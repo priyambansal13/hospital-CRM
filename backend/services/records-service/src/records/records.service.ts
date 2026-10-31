@@ -1,4 +1,6 @@
 import { type Allergy, allergyConflicts } from './allergy-check.js';
+import { currentMedicines } from '../prescribing/prescribing.js';
+import { checkPrescription } from '../prescribing/safety.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { type BreakGlassGranted, EventTypes, type PrescriptionIssued, Topics } from '@mc/contracts';
 import { conflict, CONTROL_DB, DomainError, forbidden, notFound, dateOnly } from '@mc/nest-common';
@@ -66,6 +68,7 @@ export class RecordsService {
       id: e.id, appointmentId: e.appointment_id, status: e.status, startedAt: e.started_at, signedAt: e.signed_at, version: e.version,
       patient: pat ? toPatient(pat) : { id: e.patient_id }, doctor: doc ?? { id: e.doctor_id, name: 'Doctor' },
       vitals: e.vitals ?? {},
+      aiAssisted: !!e.ai_assisted, scribeConsent: e.scribe_consent_at ? { at: e.scribe_consent_at, method: e.scribe_consent_method } : null,
       chiefComplaint: await this.crypto.decrypt(t, `encounters.complaint:${e.id}`, e.complaint_enc),
       notes: opts.notes ? await this.crypto.decrypt(t, `encounters.notes:${e.id}`, e.notes_enc) : undefined,
       diagnoses: dx.map((d) => ({ code: d.icd10_code, description: d.description, isPrimary: d.is_primary })),
@@ -135,13 +138,15 @@ export class RecordsService {
   }
 
   /** Draft changes while OPEN (author only); optimistic lock on version. */
-  async update(actor: Actor, id: string, v: { version: number; vitals?: Vitals; chiefComplaint?: string | null; notes?: string | null; diagnoses?: DiagnosisIn[] }) {
+  async update(actor: Actor, id: string, v: { version: number; vitals?: Vitals; chiefComplaint?: string | null; notes?: string | null; diagnoses?: DiagnosisIn[]; aiDraftId?: string }) {
     return this.db.tx(async (c) => {
       const e = await this.encounterRow(c, id, true);
       const doctor = await this.author(c, actor, e);
       if (e.status !== 'OPEN') throw conflict('ENCOUNTER_SIGNED', 'this visit is signed; add an amendment instead');
       if (e.version !== v.version) throw conflict('VERSION_CONFLICT', 'the visit changed in another window; reload');
       const changed = await this.applyContent(c, e, v);
+      // the doctor took the notes over from an AI scribe draft (they still edit and sign them)
+      if (v.aiDraftId) await c.query('UPDATE encounters SET ai_assisted = true, ai_draft_id = $2 WHERE id = $1', [id, v.aiDraftId]);
       await c.query('UPDATE encounters SET version = version + 1, updated_at = now() WHERE id = $1', [id]);
       await this.audit.record({ actorId: actor.id, actorKind: 'staff', actorName: doctor.name, action: 'UPDATE', resourceType: 'ENCOUNTER', resourceId: id, patientId: e.patient_id, purpose: 'TREATMENT', changes: changed });
       return this.encounterDto(c, await this.encounterRow(c, id));
@@ -232,7 +237,7 @@ export class RecordsService {
     return res?.ok ? ((await res.json()) as Allergy[]) : null;
   }
 
-  async prescribe(actor: Actor, encounterId: string, v: { items: ItemIn[]; advice?: string | null; followUpOn?: string | null; allergyOverride?: string | null }) {
+  async prescribe(actor: Actor, encounterId: string, v: { items: ItemIn[]; advice?: string | null; followUpOn?: string | null; allergyOverride?: string | null; interactionOverride?: string | null }) {
     // allergy check before anything is written (docs/ROLE-FLOWS-AND-GAPS.md C-3): a clash needs the doctor's reason
     const { rows: [pe] } = await this.db.query('SELECT patient_id FROM encounters WHERE id = $1', [encounterId]);
     if (!pe) throw notFound('encounter');
@@ -244,13 +249,20 @@ export class RecordsService {
         throw conflict('ALLERGY_CONFLICT', `recorded allergy: ${conflicts.map((x) => `${x.drug} vs ${x.substance} (${x.severity.toLowerCase()})`).join('; ')}. Change the medicine, or give a reason to prescribe anyway`, { conflicts });
       }
     }
+    // a major interaction, within the prescription or with what the patient takes now (Phase 25, deterministic)
+    if (!v.interactionOverride) {
+      const major = checkPrescription({ items: v.items, allergies: [], current: await currentMedicines(await this.db.current(), pe.patient_id) }).interactions.filter((x) => x.severity === 'MAJOR');
+      if (major.length) {
+        throw conflict('INTERACTION_CONFLICT', `major interaction: ${major.map((x) => `${x.a} + ${x.b}${x.withCurrent ? ' (taken now)' : ''}: ${x.effect}`).join('; ')}. Change the medicine, or give a reason to prescribe anyway`, { interactions: major });
+      }
+    }
     return this.db.tx(async (c) => {
       const e = await this.encounterRow(c, encounterId, true);
       const doctor = await this.author(c, actor, e);
       const id = randomUUID();
       const { rows: [{ no }] } = await c.query(`SELECT 'RX-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('prescription_seq')::text, 6, '0') AS no`);
-      await c.query('INSERT INTO prescriptions (id, prescription_no, encounter_id, patient_id, doctor_id, advice_enc, follow_up_on, allergy_override_reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)',
-        [id, no, encounterId, e.patient_id, doctor.id, await this.crypto.encrypt(this.tid(), `prescriptions.advice:${id}`, v.advice), v.followUpOn ?? null, v.allergyOverride ?? null]);
+      await c.query('INSERT INTO prescriptions (id, prescription_no, encounter_id, patient_id, doctor_id, advice_enc, follow_up_on, allergy_override_reason, interaction_override_reason) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
+        [id, no, encounterId, e.patient_id, doctor.id, await this.crypto.encrypt(this.tid(), `prescriptions.advice:${id}`, v.advice), v.followUpOn ?? null, v.allergyOverride ?? null, v.interactionOverride ?? null]);
       let pos = 0;
       for (const i of v.items) {
         await c.query('INSERT INTO prescription_items (id, prescription_id, position, drug_name, strength, form, dosage, duration_days, instructions) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)',

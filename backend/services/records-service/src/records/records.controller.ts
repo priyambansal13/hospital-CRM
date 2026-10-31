@@ -6,26 +6,27 @@ import type pg from 'pg';
 import { z } from 'zod';
 import { prescriptionPdf } from './prescription-pdf.js';
 import { RecordsService } from './records.service.js';
+import { ScribeService } from '../prescribing/prescribing.js';
 import { Vitals } from './vitals.js';
 
 const Uuid = z.uuid();
 const id = (v: string, what: string) => { if (!Uuid.safeParse(v ?? '').success) throw notFound(what); return v; };
 const text = (max: number) => z.string().trim().max(max).nullable();
 const Diagnosis = z.object({ code: z.string().trim().regex(/^[A-Z]\d{2}(\.\d{1,2})?$/, 'ICD-10 code like E11.9').nullable().optional(), description: text(200).optional(), isPrimary: z.boolean().optional() });
-const Update = z.object({ version: z.number().int(), vitals: Vitals.optional(), chiefComplaint: text(500).optional(), notes: text(10_000).optional(), diagnoses: z.array(Diagnosis).max(10).optional() });
+const Update = z.object({ version: z.number().int(), vitals: Vitals.optional(), chiefComplaint: text(500).optional(), notes: text(10_000).optional(), diagnoses: z.array(Diagnosis).max(10).optional(), aiDraftId: z.uuid().optional() });
 const Amend = z.object({ reason: z.string().trim().min(5).max(300), chiefComplaint: text(500).optional(), notes: text(10_000).optional(), diagnoses: z.array(Diagnosis).max(10).optional() });
 const Item = z.object({
   drugName: z.string().trim().min(2).max(150), strength: text(40).optional(), form: text(30).optional(),
   dosage: z.string().trim().min(1).max(40), durationDays: z.number().int().min(1).max(365).nullable().optional(), instructions: text(200).optional(),
 });
-const Prescribe = z.object({ items: z.array(Item).min(1).max(20), advice: text(2000).optional(), followUpOn: z.iso.date().nullable().optional(), allergyOverride: z.string().trim().min(5, 'say why (at least 5 characters)').max(300).nullable().optional() });
+const Prescribe = z.object({ items: z.array(Item).min(1).max(20), advice: text(2000).optional(), followUpOn: z.iso.date().nullable().optional(), allergyOverride: z.string().trim().min(5, 'say why (at least 5 characters)').max(300).nullable().optional(), interactionOverride: z.string().trim().min(5, 'say why (at least 5 characters)').max(300).nullable().optional() });
 const BreakGlass = z.object({ reason: z.string().trim().min(10, 'say why (at least 10 characters)').max(300) });
 
 /** Clinical records (docs/LLD.md §6.6). Coarse permission on the route; the treating-relationship policy inside. */
 @Controller('v1')
 @RequireModule('emr')
 export class RecordsController {
-  constructor(private readonly records: RecordsService, @Inject(CONTROL_DB) private readonly control: pg.Pool) {}
+  constructor(private readonly records: RecordsService, private readonly scribe: ScribeService, @Inject(CONTROL_DB) private readonly control: pg.Pool) {}
 
   @Get('icd10')
   @RequirePermission('record:write:treating')
@@ -65,8 +66,11 @@ export class RecordsController {
   @Post('encounters/:id/sign')
   @HttpCode(200)
   @RequirePermission('record:write:treating')
-  sign(@Param('id') e: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
-    return this.records.sign(actor, id(e, 'encounter'), parse(z.object({ version: z.number().int() }), body).version);
+  async sign(@Param('id') e: string, @Body() body: unknown, @CurrentActor() actor: Actor) {
+    const signed = await this.records.sign(actor, id(e, 'encounter'), parse(z.object({ version: z.number().int() }), body).version);
+    // the visit is signed: any consultation recording is deleted (docs/AI-AGENTS.md §5.1)
+    await this.scribe.purge({ encounterId: e }, 'SIGNED');
+    return signed;
   }
 
   @Post('encounters/:id/amendments')

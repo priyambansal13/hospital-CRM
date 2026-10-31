@@ -8,6 +8,7 @@ import { notFound } from 'next/navigation';
 import { addDiagnosis, orderLabTests, finishVisit, issuePrescription, makePrimary, removeDiagnosis, saveDraft, signVisit, startVisit } from '@/lib/consult-actions';
 import { AllergyPanel, DocumentsPanel, loadAllergies } from '@/lib/clinical-panels';
 import { CopilotPanel } from '@/lib/copilot';
+import { ScribePanel } from '@/lib/scribe';
 import { EncounterCard } from '@/lib/encounter-view';
 import { Flash } from '@/lib/flash';
 import { finishSignLater } from '@/lib/visit-actions';
@@ -23,12 +24,13 @@ const Hidden = ({ e, back }: { e: Encounter; back: string }) => (
 );
 
 /** The consultation: notes, diagnoses (ICD-10), sign, prescription — for the appointment in front of the doctor. */
-export default async function Consult({ params, searchParams }: { params: Promise<{ appointmentId: string }>; searchParams: Promise<{ ok?: string; error?: string; icd?: string; unsigned?: string; allergy?: string; rx?: string }> }) {
+export default async function Consult({ params, searchParams }: { params: Promise<{ appointmentId: string }>; searchParams: Promise<{ ok?: string; error?: string; icd?: string; unsigned?: string; allergy?: string; interaction?: string; rx?: string }> }) {
   const { appointmentId } = await params;
   const path = `/doctor/consult/${appointmentId}`;
   const caps = await zoneCapabilities('doctor', path);
   // the copilot: AI module, the plan's feature and the doctor's permission (Phase 24)
   const copilot = caps.modules.includes('ai') && !!caps.features['ai.copilot']?.enabled && can(caps, 'copilot:use:own');
+  const scribe = caps.modules.includes('ai') && !!caps.features['ai.scribe']?.enabled && can(caps, 'copilot:use:own');
   const { accessToken: token } = (await getSession())!;
   const sp = await searchParams;
   const appt = await api<Appt>(`/api/scheduling/v1/appointments/${encodeURIComponent(appointmentId)}`, { token }).catch((e) => (e instanceof ApiError && e.status === 404 ? notFound() : Promise.reject(e)));
@@ -40,7 +42,7 @@ export default async function Consult({ params, searchParams }: { params: Promis
   const labCatalog = enc ? await api<{ packages: { id: string; name: string; price: number }[]; tests: { id: string; name: string; category: string }[] }>('/api/diagnostics/v1/public/lab-catalog', { token }).catch(() => null) : null;
   const p = enc?.patient;
   // a prescription sent back because of an allergy clash: refill the form (review C-3)
-  let rx: { items: { drugName: string; strength: string | null; form: string | null; dosage: string; durationDays: number | null; instructions: string | null }[]; advice: string | null; followUpOn: string | null } | null = null;
+  let rx: { items: { drugName: string; strength: string | null; form: string | null; dosage: string; durationDays: number | null; instructions: string | null }[]; advice: string | null; followUpOn: string | null; allergyOverride?: string | null } | null = null;
   try { rx = sp.rx ? JSON.parse(Buffer.from(sp.rx, 'base64url').toString()) : null; } catch { rx = null; }
   const rxRow = (i: number) => rx?.items[i];
 
@@ -62,6 +64,7 @@ export default async function Consult({ params, searchParams }: { params: Promis
         </Card>
       ) : (
         <>
+          {scribe ? <ScribePanel token={token} enc={{ ...enc, scribeConsent: enc.scribeConsent ?? null }} back={path} /> : null}
           <Card title={`Visit · ${enc.status.toLowerCase()}`}>
             <form action={saveDraft} className="mc-form">
               <Hidden e={enc} back={path} />
@@ -179,7 +182,13 @@ export default async function Consult({ params, searchParams }: { params: Promis
               {sp.allergy ? (
                 <div className="mc-field-wide">
                   <Alert tone="error">This prescription clashes with a recorded allergy (or allergies could not be checked). Change the medicine, or give your reason; it is recorded.</Alert>
-                  <TextArea label="Reason to prescribe despite the allergy" name="allergyOverride" rows={2} maxLength={300} />
+                  <TextArea label="Reason to prescribe despite the allergy" name="allergyOverride" rows={2} maxLength={300} defaultValue={rx?.allergyOverride ?? undefined} />
+                </div>
+              ) : null}
+              {sp.interaction ? (
+                <div className="mc-field-wide">
+                  <Alert tone="error">A major drug interaction (from the drug rules). Change the medicine, or give your reason; it is recorded.</Alert>
+                  <TextArea label="Reason to prescribe despite the interaction" name="interactionOverride" rows={2} maxLength={300} />
                 </div>
               ) : null}
               <Button>Issue prescription</Button>

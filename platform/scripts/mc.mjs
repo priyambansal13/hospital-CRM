@@ -36,9 +36,11 @@
 //   test wave2 / wave3 / wave4        waves 2–4 of the flow review
 //   tenant export|purge <slug>        offboarding: export a hospital; destroy a deleted one's data (--confirm <slug>)
 //   keys rotate <slug> | keys rewrap  data key rotation; re-wrap data keys with the current master key / KMS
+//   whatsapp link <slug> <phoneNumberId> <number> | whatsapp list <slug>   a hospital's WhatsApp Business number (Phase 25)
 //   test console                      platform console: plan builder, two-person approval, impact, move hospitals, audit
 //   k8s render <env>                  write deploy/environments/<env>/{generated.yaml,apps.json} from service/zone metadata
 //   k8s check <env>                   helm lint + render every app + kubeconform schema check (needs helm, docker)
+//   seed showcase                     a demo hospital with believable data (Aarogya Hospitals, aarogya.localhost:3400)
 //   seed demo                         create the demo hospitals citycare + sunrise, and MediCare's own account medicare (platform console at medicare.localhost:3400/platform)
 //   setup                             configure + infra up + install + build + bootstrap + migrate + gateway sync
 //
@@ -435,6 +437,19 @@ async function keysCmd(action, args) {
   } else fail('keys rotate <slug> | keys rewrap');
 }
 
+/** A hospital's WhatsApp Business number (Phase 25): the assistant answers messages to it once ai.whatsapp is on. */
+async function whatsappCmd(action, args) {
+  const f = flags(args);
+  const t = await tenantBySlug(f._[0] ?? fail('usage: whatsapp link|list <slug> …'));
+  if (action === 'link') {
+    const [, phoneNumberId, displayNumber] = f._;
+    if (!phoneNumberId || !displayNumber) fail('usage: whatsapp link <slug> <phoneNumberId> "<+91 display number>"');
+    log(JSON.stringify(await api(svcUrl('assistant'), `/internal/tenants/${t.id}/whatsapp`, { method: 'POST', body: { phoneNumberId, displayNumber } })));
+  } else if (action === 'list') {
+    log(JSON.stringify(await api(svcUrl('assistant'), `/internal/tenants/${t.id}/whatsapp`)));
+  } else fail('whatsapp link <slug> <phoneNumberId> <displayNumber> | whatsapp list <slug>');
+}
+
 async function tenantBySlug(slug) {
   const ts = await api(svcUrl('tenant'), '/internal/tenants');
   return ts.find((x) => x.slug === slug) ?? fail(`no tenant ${slug}`);
@@ -607,6 +622,7 @@ const main = async () => {
     case 'gateway': if (sub === 'sync') return gatewaySync(); return fail('gateway sync');
     case 'tenant': return tenant(sub, rest);
     case 'keys': return keysCmd(sub, rest);
+    case 'whatsapp': return whatsappCmd(sub, rest);
     case 'module': return moduleCmd(sub, rest);
     case 'plan': return planCmd(sub, rest);
     case 'billing': return billingCmd(sub, rest);
@@ -640,9 +656,12 @@ const main = async () => {
       if (sub === 'wave5') return run(`node ${join(PLATFORM, 'tests/wave5.mjs')}`, PLATFORM);
       if (sub === 'concierge') return run(`node ${join(PLATFORM, 'tests/concierge.mjs')}`, PLATFORM);
       if (sub === 'copilot') return run(`node ${join(PLATFORM, 'tests/copilot.mjs')}`, PLATFORM);
-      return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2|wave3|wave4|wave5|concierge|copilot');
+      if (sub === 'scribe') return run(`node ${join(PLATFORM, 'tests/scribe.mjs')}`, PLATFORM);
+      if (sub === 'whatsapp') return run(`node ${join(PLATFORM, 'tests/whatsapp.mjs')}`, PLATFORM);
+      return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2|wave3|wave4|wave5|concierge|copilot|scribe|whatsapp');
     case 'seed':
-      if (sub !== 'demo') return fail('seed demo');
+      if (sub === 'showcase') return run(`node ${join(PLATFORM, 'scripts/seed-showcase.mjs')}`, PLATFORM);
+      if (sub !== 'demo') return fail('seed demo | seed showcase');
       for (const [slug, name, plan] of [['citycare', 'CityCare Clinic', 'HOSPITAL_ENTERPRISE'], ['sunrise', 'Sunrise Diagnostics', 'HOSPITAL_PRO'], ['medicare', 'MediCare HQ', 'MEDICARE_HQ']]) {
         const ts = await api(svcUrl('tenant'), '/internal/tenants');
         if (ts.some((t) => t.slug === slug)) log(`${slug} exists`);

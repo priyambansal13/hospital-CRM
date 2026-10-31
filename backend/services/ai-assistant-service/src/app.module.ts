@@ -9,6 +9,10 @@ import { ChatService } from './chat/chat.service.js';
 import { CopilotController } from './copilot/copilot.controller.js';
 import { CopilotService } from './copilot/copilot.service.js';
 import { KbService } from './kb/kb.service.js';
+import { ScribeController } from './scribe/scribe.controller.js';
+import { ScribeService } from './scribe/scribe.service.js';
+import { InternalWhatsAppController, WhatsAppWebhookController } from './whatsapp/whatsapp.controller.js';
+import { WhatsAppService } from './whatsapp/whatsapp.service.js';
 import { LLM } from './llm/llm.js';
 import { createLlm } from './llm/provider.js';
 
@@ -59,7 +63,7 @@ class KnowledgeJobs implements OnModuleInit, OnApplicationBootstrap, OnApplicati
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'assistant', control: true, tenant: true, relay: false }), EntitlementsModule],
-  controllers: [InternalKeysController, InternalPurgeController, ChatController, HandoffsController, KnowledgeController, CopilotController],
-  providers: [{ provide: LLM, useFactory: createLlm }, FieldCrypto, KbService, ChatService, CopilotService, KnowledgeJobs],
+  controllers: [InternalKeysController, InternalPurgeController, ChatController, HandoffsController, KnowledgeController, CopilotController, ScribeController, WhatsAppWebhookController, InternalWhatsAppController],
+  providers: [{ provide: LLM, useFactory: createLlm }, FieldCrypto, KbService, ChatService, CopilotService, ScribeService, WhatsAppService, KnowledgeJobs],
 })
 export class AppModule {}

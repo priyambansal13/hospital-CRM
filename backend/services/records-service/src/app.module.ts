@@ -18,6 +18,7 @@ import { RecordAccess } from './records/access.js';
 import { AuditClient } from './records/audit.client.js';
 import { RecordsController } from './records/records.controller.js';
 import { RecordsService } from './records/records.service.js';
+import { InternalRecordingsController, PrescribingController, ScribeService } from './prescribing/prescribing.js';
 
 /** Read models: doctors (who is a doctor), patients (demographics for documents), appointments (treating check). */
 /** VIRUS_SCANNER=clamav (clamd host/port) everywhere real; "dev-eicar" only in dev (ClamAV needs ~1.3 GB RAM). */
@@ -112,9 +113,9 @@ class RecordsConsumers implements OnModuleInit {
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'records', control: true, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [InternalKeysController, InternalPurgeController, InternalExportController, TriageController, UnsignedEncountersController, RecordsController, DocumentsController, InternalCareAccessController, InternalDocumentsController, InternalStorageController, InternalEncounterStatusController],
+  controllers: [InternalKeysController, InternalPurgeController, InternalExportController, TriageController, UnsignedEncountersController, RecordsController, DocumentsController, InternalCareAccessController, InternalDocumentsController, InternalStorageController, InternalEncounterStatusController, PrescribingController, InternalRecordingsController],
   providers: [
-    FieldCrypto, AuditClient, RecordAccess, RecordsService, TriageService, TimelineService, ObjectStorage, DocumentsService, ScanJob, RecordsConsumers,
+    FieldCrypto, AuditClient, RecordAccess, RecordsService, TriageService, TimelineService, ObjectStorage, DocumentsService, ScanJob, RecordsConsumers, ScribeService,
     { provide: VIRUS_SCANNER, useFactory: scannerFactory },
   ],
 })

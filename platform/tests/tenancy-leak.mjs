@@ -159,6 +159,8 @@ const main = async () => {
   // a Confirm card (run `mc test concierge` once): another hospital must not confirm or close it
   const [aiAction, aiActionStatus] = psql(`SELECT id || '|' || status FROM assistant.pending_actions ORDER BY created_at LIMIT 1`).split('|');
   // a pre-visit summary (run `mc test copilot` once): another hospital must not make, read or rate it
+  // a scribe draft and its visit (run `mc test scribe` once): another hospital must not draft, read, take over or record
+  const [soapDraft, soapEnc, soapStatus] = psql(`SELECT id || '|' || encounter_id || '|' || status FROM assistant.clinical_drafts WHERE kind = 'SOAP' ORDER BY created_at LIMIT 1`).split('|');
   const [aiDraft, aiDraftAppt, aiDraftRating] = psql(`SELECT id || '|' || appointment_id || '|' || coalesce(rating::text, '') FROM assistant.clinical_drafts WHERE status = 'DRAFT' ORDER BY created_at LIMIT 1`).split('|');
   const [aiArticle, aiArticleTitle] = psql(`SELECT id || '|' || title FROM assistant.kb_articles WHERE source = 'FAQ' AND source_ref = 'parking'`).split('|');
   const secrets = [aiConv, aiMsg, aiHandoff, aiArticle, me.id, me.tenant.id, branch.id, branch.name, 'CityCare', doctor.id, doctor.name, spec.id, hours.id, leave.id, selfP.id, selfP.mrn, child.id, 'Leak Patient', appt.id, appt.appointmentNo, wait.id, invoice.id, invoice.invoiceNo, encounter.id, rxId, docId, consentId, allergyId, labOrderId, reportOrderId, verifyCode, visitId];
@@ -203,6 +205,9 @@ const main = async () => {
     'records:GET /v1/encounters/by-appointment/:appointmentId': { appointmentId: encounter.appointmentId },
     'records:GET /v1/patients/:patientId/chart': { patientId: encounter.patientId },
     'records:POST /v1/patients/:patientId/break-glass': { patientId: encounter.patientId, body: { reason: 'pwned emergency access attempt' } },
+    'records:POST /v1/patients/:patientId/prescription-check': { patientId: encounter.patientId, body: { items: [{ drugName: 'Ibuprofen' }] } },
+    'records:POST /v1/encounters/:id/scribe-consent': { id: encounter.id, body: { method: 'VERBAL' } },
+    'records:POST /v1/encounters/:id/recordings': { id: encounter.id, body: { mimeType: 'audio/wav', contentBase64: 'UklGRiQAAABXQVZF' } },
     'records:GET /v1/prescriptions/:id': { id: rxId },
     'records:GET /v1/prescriptions/:id/pdf': { id: rxId },
     'records:GET /v1/documents/:id': { id: docId },
@@ -299,6 +304,9 @@ const main = async () => {
     'assistant:GET /v1/assistant/copilot/appointments/:appointmentId/summary': { appointmentId: aiDraftAppt },
     'assistant:POST /v1/assistant/copilot/appointments/:appointmentId/summary': { appointmentId: aiDraftAppt },
     'assistant:POST /v1/assistant/copilot/drafts/:id/feedback': { id: aiDraft, body: { rating: 1, reason: null } },
+    'assistant:POST /v1/assistant/scribe/encounters/:encounterId/drafts': { encounterId: soapEnc, body: { recordingId: soapEnc } },
+    'assistant:GET /v1/assistant/scribe/encounters/:encounterId/draft': { encounterId: soapEnc },
+    'assistant:POST /v1/assistant/scribe/drafts/:id/apply': { id: soapDraft, body: { final: { subjective: 'pwned' } } },
     'assistant:POST /v1/assistant/handoffs/:id/close': { id: aiHandoff, body: { note: 'pwned' } },
     'assistant:PUT /v1/assistant/knowledge/:id': { id: aiArticle, body: { title: 'pwned', version: 1 } },
     'assistant:DELETE /v1/assistant/knowledge/:id': { id: aiArticle },
@@ -354,6 +362,8 @@ const main = async () => {
       }
     }
   }
+  // citycare's scribe draft must not have been taken over
+  psql(`SELECT status FROM assistant.clinical_drafts WHERE id = '${soapDraft}'`) === soapStatus ? ok() : fail('citycare scribe draft was taken over by another hospital');
   // citycare's pre-visit summary must keep its rating
   psql(`SELECT coalesce(rating::text, '') FROM assistant.clinical_drafts WHERE id = '${aiDraft}'`) === aiDraftRating ? ok() : fail('citycare pre-visit summary was rated by another hospital');
   // citycare's Confirm card must keep its status

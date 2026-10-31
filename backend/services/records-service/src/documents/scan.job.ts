@@ -3,6 +3,7 @@ import { PLACEMENTS } from '@mc/nest-common';
 import { type PlacementSource, TenantContext } from '@mc/tenancy';
 import { createHash } from 'node:crypto';
 import { DocumentsService } from './documents.service.js';
+import { ScribeService } from '../prescribing/prescribing.js';
 
 const shardOf = (id: string, n: number) => createHash('md5').update(id).digest().readUInt32BE(0) % n;
 
@@ -13,7 +14,7 @@ export class ScanJob implements OnApplicationBootstrap, OnApplicationShutdown {
   private timer?: NodeJS.Timeout;
   private running = false;
   private lastPurge = 0;
-  constructor(private readonly docs: DocumentsService, @Inject(PLACEMENTS) private readonly placements: PlacementSource) {}
+  constructor(private readonly docs: DocumentsService, private readonly scribe: ScribeService, @Inject(PLACEMENTS) private readonly placements: PlacementSource) {}
 
   onApplicationBootstrap() {
     if (process.env.MC_DISABLE_JOBS === 'true') return;
@@ -37,6 +38,9 @@ export class ScanJob implements OnApplicationBootstrap, OnApplicationShutdown {
         if (purge) {
           const gone = await TenantContext.run(t, () => this.docs.purgeRemoved()).catch((e) => { this.log.warn(`${t.slug}: purge: ${(e as Error).message}`); return 0; });
           if (gone) this.log.log(`${t.slug}: ${gone} removed document(s) deleted for good`);
+          // scribe recordings never outlive SCRIBE_AUDIO_HOURS, even if the visit is never signed
+          const audio = await TenantContext.run(t, () => this.scribe.purge({ olderThanHours: Number(process.env.SCRIBE_AUDIO_HOURS ?? 24) }, 'EXPIRED')).catch(() => 0);
+          if (audio) this.log.log(`${t.slug}: ${audio} consultation recording(s) deleted (older than the limit)`);
         }
       }
       if (total) this.log.log(`scanned ${total} document(s)`);

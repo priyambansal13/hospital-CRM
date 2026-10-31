@@ -8,7 +8,7 @@ export function EncounterCard({ e }: { e: Encounter }) {
     <div id={`enc-${e.id}`}>
     <Card title={`${day(e.startedAt)} · ${e.doctor.name}`}>
       <p className="mc-meta" style={{ margin: 0 }}>
-        <Badge tone={e.status === 'OPEN' ? 'warning' : 'success'}>{e.status.toLowerCase()}</Badge> {vitalsLine(e.vitals)}
+        <Badge tone={e.status === 'OPEN' ? 'warning' : 'success'}>{e.status.toLowerCase()}</Badge>{e.aiAssisted ? <> <Badge tone="neutral">AI-assisted notes</Badge></> : null} {vitalsLine(e.vitals)}
       </p>
       {e.chiefComplaint ? <p><strong>Complaint:</strong> {e.chiefComplaint}</p> : null}
       {e.diagnoses.length ? <p><strong>Diagnosis:</strong> {e.diagnoses.map((d) => `${d.description}${d.code ? ` (${d.code})` : ''}`).join('; ')}</p> : null}

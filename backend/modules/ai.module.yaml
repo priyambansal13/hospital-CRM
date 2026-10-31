@@ -3,10 +3,11 @@
 # human handoff to the front desk. Phase 23: tools (find doctors and times, my appointments, lab tests) and Confirm
 # cards for booking, moving and cancelling (the patient's tap runs the normal booking API). Phase 24: the report
 # explainer (structured lab values; critical values are never explained first) and the doctor's pre-visit summary
-# (every line cites the record it came from; nothing enters the medical record).
+# (every line cites the record it came from; nothing enters the medical record). Phase 25: the AI scribe (recorded
+# consultation → SOAP draft the doctor takes over and signs) and the assistant on WhatsApp (per hospital, off by default).
 key: ai
 name: AI assistant
-version: 3
+version: 4
 dependsOn: [core]
 services: [ai-assistant-service]
 lifecycle: [assistant]
@@ -14,12 +15,14 @@ permissions:
   - { code: assistant:chat:own, description: Chat with the hospital's AI assistant }
   - { code: knowledge:manage:tenant, description: Edit what the AI assistant knows (FAQs, policies, emergency information) }
   - { code: assistant_handoff:manage:branch, description: See chats patients handed to a person and close them }
-  - { code: copilot:use:own, description: Use the AI copilot for own patients (pre-visit summary) }
+  - { code: copilot:use:own, description: Use the AI copilot for own patients (pre-visit summary, scribe) }
 features:
   - { key: ai.concierge, name: AI assistant messages, type: METERED, unit: messages }
   - { key: ai.booking, name: Booking from the AI assistant, type: BOOLEAN }
   - { key: ai.reports, name: Lab report explainer, type: BOOLEAN }
   - { key: ai.copilot, name: Doctor copilot (pre-visit summary), type: BOOLEAN }
+  - { key: ai.scribe, name: AI scribe (consultation to draft notes), type: BOOLEAN }
+  - { key: ai.whatsapp, name: Assistant on WhatsApp, type: BOOLEAN, default: false }
 nav:
   - { key: assistant-chat, label: Ask us, zone: patient, href: /care/assistant, permissions: [assistant:chat:own], audience: patient }
   - { key: assistant-handoffs, label: Chat requests, zone: desk, href: /desk/assistant, permissions: [assistant_handoff:manage:branch], audience: staff }

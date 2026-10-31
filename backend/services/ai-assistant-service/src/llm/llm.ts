@@ -46,6 +46,8 @@ export interface LlmClient {
   readonly copilotModel: string;
   readonly embedModel: string;
   generate(req: GenerateRequest): Promise<GenerateResult>;
+  /** Speech to text with speaker labels ("Doctor:" / "Patient:" lines) for the scribe. */
+  transcribe(audio: Buffer, mimeType: string): Promise<{ text: string; model: string }>;
   /** Unit-length vectors of EMBED_DIM numbers; `kind` lets providers optimise for queries vs documents. */
   embed(texts: string[], kind: 'query' | 'document'): Promise<number[][]>;
 }

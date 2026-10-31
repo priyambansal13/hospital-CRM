@@ -11,6 +11,7 @@ import { blockedReply, checkOutput } from '../safety/output-policy.js';
 import { conciergeSystem, EMERGENCY_MARK, NO_ANSWER, PROMPTS, userTurn } from './prompts.js';
 import { asPatient, type FamilyMember, localDate, type Proposal, ToolError, toolsFor } from './tools.js';
 
+export type Channel = 'WEB' | 'WHATSAPP';
 type Kind = 'TEXT' | 'ANSWER' | 'EMERGENCY' | 'BLOCKED' | 'FALLBACK' | 'HANDOFF' | 'LIMIT' | 'ACTION';
 /** A Confirm card (the model proposed it; only the patient's tap runs it). */
 export interface ActionCard {
@@ -56,14 +57,14 @@ export class ChatService {
 
   private aad = (id: string) => `assistant.messages:${id}`;
 
-  private async conversation(c: Queryable, actor: Actor, id: string | undefined, language: string) {
+  private async conversation(c: Queryable, actor: Actor, id: string | undefined, language: string, channel: Channel = 'WEB') {
     if (id) {
       const { rows: [cv] } = await c.query('SELECT * FROM conversations WHERE id = $1 FOR UPDATE', [id]);
       if (!cv || cv.user_id !== actor.id) throw notFound('conversation');
       if (cv.status === 'CLOSED') throw new DomainError(409, 'CONVERSATION_CLOSED', 'this chat is closed; start a new one');
       return cv;
     }
-    const { rows: [cv] } = await c.query(`INSERT INTO conversations (id, user_id, language, prompt_version) VALUES ($1,$2,$3,$4) RETURNING *`, [randomUUID(), actor.id, language, PROMPTS.concierge.version]);
+    const { rows: [cv] } = await c.query(`INSERT INTO conversations (id, user_id, language, prompt_version, channel) VALUES ($1,$2,$3,$4,$5) RETURNING *`, [randomUUID(), actor.id, language, PROMPTS.concierge.version, channel]);
     return cv;
   }
 
@@ -87,7 +88,7 @@ export class ChatService {
     if (n > RATE.max) throw new DomainError(429, 'TOO_MANY_MESSAGES', 'too many messages; please wait a few minutes');
   }
 
-  async send(actor: Actor, input: { conversationId?: string; text: string }) {
+  async send(actor: Actor, input: { conversationId?: string; text: string }, channel: Channel = 'WEB') {
     const t = TenantContext.require();
     const text = input.text.trim();
     if (!text || text.length > MAX_CHARS) throw new DomainError(400, 'BAD_MESSAGE', `a message is 1 to ${MAX_CHARS} characters`);
@@ -96,7 +97,7 @@ export class ChatService {
 
     // 1. user message stored first (a crash later still leaves the question on record)
     const { cv, user } = await this.db.tx(async (c) => {
-      const cv = await this.conversation(c, actor, input.conversationId, language);
+      const cv = await this.conversation(c, actor, input.conversationId, language, channel);
       return { cv, user: await this.append(c, cv.id, { role: 'user', kind: 'TEXT', text }) };
     });
     const proposed: string[] = [];
@@ -130,7 +131,8 @@ export class ChatService {
 
     // 4. knowledge, who is asking, and only the tools this patient may use here (plan, modules, roles) → the model
     const caps = await this.entitlements.capabilities(t.id, { id: actor.id, kind: actor.kind });
-    const tools = toolsFor(caps);
+    // no report contents on WhatsApp (docs/AI-AGENTS.md §4.5): the report tools are not offered there
+    const tools = toolsFor(caps).filter((x) => channel === 'WEB' || !['list_my_reports', 'explain_report'].includes(x.decl.name));
     const byName = new Map(tools.map((x) => [x.decl.name, x]));
     const family = tools.length ? await this.family(actor, t) : [];
     const ctx = { actor, tenant: t, family, propose: (p: Proposal) => this.propose(cv.id, actor, p).then((id) => { proposed.push(id); return id; }) };

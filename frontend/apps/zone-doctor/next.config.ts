@@ -9,7 +9,8 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   outputFileTracingRoot: join(process.cwd(), '../..'),
   poweredByHeader: false,
-  experimental: { serverActions: { allowedOrigins: ['*.localhost:3400', '*.medicare.app'] } },
+  // 15 MB: consultation recordings for the AI scribe go through a server action
+  experimental: { serverActions: { allowedOrigins: ['*.localhost:3400', '*.medicare.app'], bodySizeLimit: '15mb' } },
 };
 
 export default nextConfig;
