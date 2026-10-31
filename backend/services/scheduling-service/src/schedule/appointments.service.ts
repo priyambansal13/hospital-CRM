@@ -1,3 +1,4 @@
+import { type MemberRules, MembershipRules, membersOnly } from './membership.js';
 import { Injectable } from '@nestjs/common';
 import { type AppointmentChanged, EventTypes, Topics } from '@mc/contracts';
 import { conflict, DomainError, forbidden, notFound } from '@mc/nest-common';
@@ -42,7 +43,7 @@ export const toAppointment = (r: any) => ({
   startsAt: r.starts_at, endsAt: r.ends_at, localDate: r.local_date, localTime: r.local_time, mode: r.mode,
   reason: r.reason, fee: r.fee == null ? null : Number(r.fee), paymentMode: r.payment_mode,
   rescheduledFrom: r.rescheduled_from, rescheduleCount: r.reschedule_count, cancelReason: r.cancel_reason, cancelledAt: r.cancelled_at,
-  source: r.source, bookedVia: r.booked_via ?? null, tokenNo: r.token_no, checkedInAt: r.checked_in_at, startedAt: r.started_at, completedAt: r.completed_at, noShowAt: r.no_show_at,
+  source: r.source, bookedVia: r.booked_via ?? null, memberBenefit: r.member_benefit ?? null, tokenNo: r.token_no, checkedInAt: r.checked_in_at, startedAt: r.started_at, completedAt: r.completed_at, noShowAt: r.no_show_at,
   paymentStatus: r.payment_status, invoiceId: r.invoice_id, paidAt: r.paid_at, holdExpiresAt: r.hold_expires_at,
   version: r.version, createdAt: r.created_at,
 });
@@ -57,12 +58,14 @@ export interface Booking {
   paymentMode?: 'ONLINE' | 'AT_CLINIC';
   /** booked from the AI assistant's Confirm card (Phase 23) */
   via?: 'ASSISTANT' | null;
+  /** membership rules for a patient's own booking (Phase 26); the front desk is not limited by them */
+  rules?: MemberRules;
 }
 export type AppointmentDto = ReturnType<typeof toAppointment>;
 
 @Injectable()
 export class AppointmentsService {
-  constructor(private readonly db: TenantDbRouter, private readonly patients: PatientsClient, private readonly entitlements: EntitlementsClient, private readonly billing: BillingClient) {}
+  constructor(private readonly db: TenantDbRouter, private readonly patients: PatientsClient, private readonly entitlements: EntitlementsClient, private readonly billing: BillingClient, private readonly membership: MembershipRules) {}
 
   async find(c: Queryable, id: string) {
     const { rows } = await c.query(`${APPT_SELECT} WHERE a.id = $1`, [id]);
@@ -91,14 +94,15 @@ export class AppointmentsService {
   async book(actor: Actor, input: { slotId: string; patientId: string; reason: string | null; paymentMode: 'ONLINE' | 'AT_CLINIC' }, via: 'ASSISTANT' | null = null) {
     if (actor.kind !== 'patient') throw forbidden('PATIENTS_ONLY', 'staff book through the front desk');
     const tenant = TenantContext.require();
+    const caps = await this.entitlements.capabilities(tenant.id, actor);
     if (input.paymentMode === 'ONLINE') {
-      const caps = await this.entitlements.capabilities(tenant.id, actor);
       if (!caps.modules.includes('billing') || caps.features['billing.online_payments']?.enabled === false) {
         throw new DomainError(422, 'ONLINE_PAYMENT_UNAVAILABLE', 'this hospital does not take online payments; choose pay at the hospital');
       }
     }
     const patient = await this.patients.access(tenant.id, input.patientId, actor.id);
-    const appt = await this.bookingTx((c) => this.bookSlot(c, actor, input.slotId, { patient, reason: input.reason, source: 'ONLINE', paymentMode: input.paymentMode, via }));
+    const rules = await this.membership.rulesFor(tenant.id, caps, patient.accountPersonId);
+    const appt = await this.bookingTx((c) => this.bookSlot(c, actor, input.slotId, { patient, reason: input.reason, source: 'ONLINE', paymentMode: input.paymentMode, via, rules }));
     if (appt.status !== 'PENDING_PAYMENT') return appt;
     // after commit (never across a network call): open the invoice + gateway order; if billing is down, give the slot back
     let payment: OnlineCheckout;
@@ -141,8 +145,23 @@ export class AppointmentsService {
     const slot = slotRows[0];
     if (!slot) throw notFound('slot');
     if (slot.mode === 'VIDEO' && !POLICY.videoEnabled) throw new DomainError(422, 'VIDEO_NOT_AVAILABLE', 'video consultations are not available yet; please book an in-person visit');
-    const slotFee = (slot.branch_fees as { branchId: string; fee: number }[]).find((f) => f.branchId === slot.branch_id)?.fee ?? null;
-    const payOnline = b.paymentMode === 'ONLINE';
+    let slotFee = (slot.branch_fees as { branchId: string; fee: number }[]).find((f) => f.branchId === slot.branch_id)?.fee ?? null;
+    // memberships (Phase 26): how far ahead, member-only times, the month's free video consults
+    const r = online ? b.rules : undefined;
+    let benefit: 'FREE_VIDEO' | null = null;
+    if (r?.active) {
+      if (r.windowDays && new Date(slot.starts_at).getTime() > Date.now() + r.windowDays * 86_400_000) {
+        throw new DomainError(422, 'BOOKING_WINDOW', r.member ? `${r.member.planName} members can book up to ${r.windowDays} days ahead` : `you can book up to ${r.windowDays} days ahead; members can book further`, { windowDays: r.windowDays, member: !!r.member });
+      }
+      if (membersOnly(slot.id, slot.starts_at, r.priorityPct) && !r.member?.priorityAccess) {
+        throw conflict('MEMBERS_ONLY', 'this time is held for members until 24 hours before; pick another time or become a member', { membersOnly: true });
+      }
+      if (slot.mode === 'VIDEO' && r.member && r.member.freeVideoConsultsPerMonth > 0) {
+        const { rows: [u] } = await c.query(`SELECT count(*)::int n FROM appointments WHERE account_person_id = $1 AND member_benefit = 'FREE_VIDEO' AND status NOT IN ('CANCELLED','EXPIRED','RESCHEDULED') AND date_trunc('month', created_at) = date_trunc('month', now())`, [b.patient.accountPersonId]);
+        if (u.n < r.member.freeVideoConsultsPerMonth) { benefit = 'FREE_VIDEO'; slotFee = 0; }
+      }
+    }
+    const payOnline = b.paymentMode === 'ONLINE' && benefit === null;
     if (payOnline && !(slotFee && slotFee > 0)) throw new DomainError(422, 'NOTHING_TO_PAY', 'this appointment has no fee to pay online');
     if (online ? slot.doctor_status !== 'ACTIVE' : slot.doctor_status === 'INACTIVE') throw new DomainError(422, 'DOCTOR_NOT_BOOKABLE', 'this doctor is not taking bookings');
     await this.assertPatientFree(c, b.patient, slot.starts_at, slot.ends_at, online);
@@ -158,7 +177,7 @@ export class AppointmentsService {
           : await c.query(`UPDATE slots SET status = 'BOOKED', version = version + 1 WHERE id = $1 AND status = 'OPEN' AND ends_at > now() RETURNING *`, [slotId]);
       if (!rows[0]) throw new SlotTaken(slot.doctor_id, slot.starts_at);
       const s = rows[0];
-      return await this.insert(c, actor, b, { slotId: s.id, doctorId: s.doctor_id, branchId: s.branch_id, startsAt: s.starts_at, endsAt: s.ends_at, mode: s.mode, fee: slotFee, source: b.source, holdUntil: payOnline ? s.held_until : null });
+      return await this.insert(c, actor, b, { slotId: s.id, doctorId: s.doctor_id, branchId: s.branch_id, startsAt: s.starts_at, endsAt: s.ends_at, mode: s.mode, fee: slotFee, source: b.source, holdUntil: payOnline ? s.held_until : null, benefit });
     } catch (e) {
       if ((e as any).code === UNIQUE_VIOLATION) throw new SlotTaken(slot.doctor_id, slot.starts_at);
       throw e;
@@ -191,15 +210,15 @@ export class AppointmentsService {
     if (online && counts.active >= POLICY.maxActivePerPatient) throw new DomainError(422, 'TOO_MANY_ACTIVE_BOOKINGS', `at most ${POLICY.maxActivePerPatient} upcoming appointments per patient`);
   }
 
-  private async insert(c: Queryable, actor: Actor, b: Booking, v: { slotId: string | null; doctorId: string; branchId: string; startsAt: Date | string; endsAt: Date | string; mode: string; fee: number | null; source: string; holdUntil?: Date | string | null }) {
+  private async insert(c: Queryable, actor: Actor, b: Booking, v: { slotId: string | null; doctorId: string; branchId: string; startsAt: Date | string; endsAt: Date | string; mode: string; fee: number | null; source: string; holdUntil?: Date | string | null; benefit?: 'FREE_VIDEO' | null }) {
     const id = randomUUID();
     const pending = !!v.holdUntil;
     const { rows: no } = await c.query(`SELECT 'APT-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('appointment_seq')::text, 6, '0') AS no`);
     await c.query(
-      `INSERT INTO appointments (id, appointment_no, slot_id, patient_id, patient_name, patient_mrn, account_person_id, booked_by, doctor_id, branch_id, starts_at, ends_at, mode, status, reason, fee, source, payment_mode, payment_status, hold_expires_at, booked_via)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+      `INSERT INTO appointments (id, appointment_no, slot_id, patient_id, patient_name, patient_mrn, account_person_id, booked_by, doctor_id, branch_id, starts_at, ends_at, mode, status, reason, fee, source, payment_mode, payment_status, hold_expires_at, booked_via, member_benefit)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
       [id, no[0].no, v.slotId, b.patient.id, b.patient.fullName, b.patient.mrn, b.patient.accountPersonId, actor.id, v.doctorId, v.branchId, v.startsAt, v.endsAt, v.mode,
-        pending ? 'PENDING_PAYMENT' : 'CONFIRMED', b.reason, v.fee, v.source, pending ? 'ONLINE' : 'AT_CLINIC', v.fee && v.fee > 0 ? 'UNPAID' : 'NOT_DUE', v.holdUntil ?? null, b.via ?? null],
+        pending ? 'PENDING_PAYMENT' : 'CONFIRMED', b.reason, v.fee, v.source, pending ? 'ONLINE' : 'AT_CLINIC', v.fee && v.fee > 0 ? 'UNPAID' : 'NOT_DUE', v.holdUntil ?? null, b.via ?? null, v.benefit ?? null],
     );
     const appt = await this.find(c, id);
     // a pending online booking is announced as booked only once paid (notifications confirm on "booked")

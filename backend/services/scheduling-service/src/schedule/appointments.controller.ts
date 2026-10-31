@@ -5,6 +5,7 @@ import { type Actor, type PlacementSource, TenantContext, TenantDbRouter } from 
 import { z } from 'zod';
 import { AppointmentsService, LIVE, POLICY, toAppointment } from './appointments.service.js';
 import { ScheduleService } from './schedule.service.js';
+import { MembershipRules, membersOnly } from './membership.js';
 
 const Uuid = z.uuid();
 const id = (v: string, what: string) => { if (!Uuid.safeParse(v).success) throw notFound(what); return v; };
@@ -17,7 +18,13 @@ const Days = z.coerce.number().int().min(1).max(60).default(14);
 @Controller('v1')
 @RequireModule('appointments')
 export class AppointmentsController {
-  constructor(private readonly db: TenantDbRouter, private readonly svc: AppointmentsService, private readonly schedule: ScheduleService) {}
+  constructor(private readonly db: TenantDbRouter, private readonly svc: AppointmentsService, private readonly schedule: ScheduleService, private readonly membership: MembershipRules) {}
+
+  /** the share of times held for members (0 when the hospital has no memberships) */
+  private async heldPct() {
+    const t = TenantContext.require();
+    return (await this.membership.moduleOn(t.id)) ? this.membership.priorityPct(t.id) : 0;
+  }
 
   /** Bookable times for a published doctor, grouped by local date (public: patients browse before signing in). */
   @Get('public/doctors/:doctorId/slots')
@@ -36,10 +43,11 @@ export class AppointmentsController {
       [doctorId, POLICY.minLeadMinutes, n, POLICY.videoEnabled],
     );
     const fees = new Map((d[0].branch_fees as { branchId: string; fee: number }[]).map((f) => [f.branchId, f.fee]));
+    const pct = await this.heldPct();
     const byDate = new Map<string, { date: string; slots: unknown[] }>();
     for (const r of rows) {
       if (!byDate.has(r.local_date)) byDate.set(r.local_date, { date: r.local_date, slots: [] });
-      byDate.get(r.local_date)!.slots.push({ slotId: r.id, startsAt: r.starts_at, localTime: r.local_time, mode: r.mode, branch: { id: r.branch_id, name: r.branch_name }, fee: fees.get(r.branch_id) ?? null });
+      byDate.get(r.local_date)!.slots.push({ slotId: r.id, startsAt: r.starts_at, localTime: r.local_time, mode: r.mode, branch: { id: r.branch_id, name: r.branch_name }, fee: fees.get(r.branch_id) ?? null, membersOnly: membersOnly(r.id, r.starts_at, pct) });
     }
     return { doctor: { id: d[0].id, name: d[0].name }, days: [...byDate.values()] };
   }
@@ -55,7 +63,7 @@ export class AppointmentsController {
     const r = rows[0];
     if (!r) throw notFound('slot');
     const fee = (r.branch_fees as { branchId: string; fee: number }[]).find((f) => f.branchId === r.branch_id)?.fee ?? null;
-    return { slotId: r.id, available: r.status === 'OPEN' && new Date(r.starts_at).getTime() > Date.now() + POLICY.minLeadMinutes * 60_000, startsAt: r.starts_at, localDate: r.local_date, localTime: r.local_time, mode: r.mode, doctor: { id: r.doctor_id, name: r.doctor_name }, branch: { id: r.branch_id, name: r.branch_name }, fee };
+    return { slotId: r.id, available: r.status === 'OPEN' && new Date(r.starts_at).getTime() > Date.now() + POLICY.minLeadMinutes * 60_000, startsAt: r.starts_at, localDate: r.local_date, localTime: r.local_time, mode: r.mode, doctor: { id: r.doctor_id, name: r.doctor_name }, branch: { id: r.branch_id, name: r.branch_name }, fee, membersOnly: membersOnly(r.id, r.starts_at, await this.heldPct()) };
   }
 
   @Post('appointments')

@@ -8,15 +8,16 @@ import type pg from 'pg';
 import { type GatewayPayment, PAYMENT_GATEWAY, type PaymentGateway, toPaise, toRupees } from '../gateway/gateway.js';
 
 export interface OnlineInvoiceInput {
-  sourceType: 'APPOINTMENT' | 'LAB_ORDER'; sourceId: string; patientId: string; patientName: string; patientMrn: string; accountPersonId: string;
-  branchId: string; branchName: string; description: string; amount: number; expiresAt: string;
+  sourceType: 'APPOINTMENT' | 'LAB_ORDER' | 'MEMBERSHIP'; sourceId: string; patientId: string; patientName: string; patientMrn: string; accountPersonId: string;
+  /** null only for memberships (not tied to a branch) */
+  branchId: string | null; branchName: string | null; description: string; amount: number; expiresAt: string;
 }
 
 const money = (v: unknown) => Number(v ?? 0);
 export const toInvoice = (r: any) => ({
   id: r.id, invoiceNo: r.invoice_no, status: r.status, paymentMode: r.payment_mode,
   source: { type: r.source_type, id: r.source_id }, patient: { id: r.patient_id, name: r.patient_name, mrn: r.patient_mrn },
-  branch: { id: r.branch_id, name: r.branch_name }, description: r.description,
+  branch: { id: r.branch_id, name: r.branch_name ?? (r.source_type === 'MEMBERSHIP' ? 'Membership' : null) }, description: r.description,
   subtotal: money(r.subtotal), discount: money(r.discount), tax: money(r.tax), total: money(r.total), currency: r.currency,
   amountPaid: money(r.amount_paid), amountRefunded: money(r.amount_refunded),
   payBy: r.pay_by, issuedAt: r.issued_at, paidAt: r.paid_at, voidedAt: r.voided_at, voidReason: r.void_reason,

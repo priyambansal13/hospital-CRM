@@ -1,12 +1,13 @@
 import { StatsController } from './schedule/stats.controller.js';
 import { Injectable, Module, type OnModuleInit } from '@nestjs/common';
-import { BranchChanged, DoctorChanged, EventTypes, PaymentSucceeded, RefundProcessed, Topics } from '@mc/contracts';
+import { BranchChanged, DoctorChanged, EventTypes, MembershipChanged, PaymentSucceeded, RefundProcessed, Topics } from '@mc/contracts';
 import { ConsumerRegistry, CoreModule } from '@mc/nest-common';
 import { EntitlementsModule } from '@mc/entitlements-sdk';
 import type { Queryable } from '@mc/tenancy';
 import { AppointmentsController, InternalAppointmentsController, InternalNextSlotsController } from './schedule/appointments.controller.js';
 import { AppointmentsService } from './schedule/appointments.service.js';
 import { BillingClient } from './schedule/billing.client.js';
+import { MembershipRules } from './schedule/membership.js';
 import { HoldExpiryJob } from './schedule/hold-expiry.job.js';
 import { HorizonJob } from './schedule/horizon.job.js';
 import { NoShowJob } from './schedule/no-show.job.js';
@@ -42,7 +43,7 @@ async function upsertDoctor(c: Queryable, data: unknown, svc: ScheduleService, a
 
 @Injectable()
 class SchedulingConsumers implements OnModuleInit {
-  constructor(private readonly registry: ConsumerRegistry, private readonly svc: ScheduleService, private readonly appts: AppointmentsService) {}
+  constructor(private readonly registry: ConsumerRegistry, private readonly svc: ScheduleService, private readonly appts: AppointmentsService, private readonly membership: MembershipRules) {}
   onModuleInit() {
     this.registry.register({
       group: 'scheduling.branches',
@@ -70,6 +71,8 @@ class SchedulingConsumers implements OnModuleInit {
           if (p.sourceType === 'APPOINTMENT') await this.appts.onPaymentSucceeded(db!, p);
         },
         [EventTypes.refundProcessed]: (e, db) => this.appts.onRefundProcessed(db!, RefundProcessed.parse(e.data)),
+        // a membership started or ended: drop the cached benefits so the next booking sees it at once
+        [EventTypes.membershipChanged]: async (e) => { this.membership.forget(e.tenantId!, MembershipChanged.parse(e.data).accountPersonId); },
       },
     });
   }
@@ -78,6 +81,6 @@ class SchedulingConsumers implements OnModuleInit {
 @Module({
   imports: [CoreModule.forRoot({ schema: 'scheduling', control: false, tenant: true, relay: true }), EntitlementsModule],
   controllers: [InternalAgendaController, UpcomingAppointmentsController, ScheduleController, AppointmentsController, InternalAppointmentsController, InternalNextSlotsController, DeskController, QueueController, InternalQueueController, StatsController],
-  providers: [ScheduleService, AppointmentsService, QueueService, PatientsClient, BillingClient, HorizonJob, NoShowJob, HoldExpiryJob, AgendaJob, SchedulingConsumers],
+  providers: [ScheduleService, AppointmentsService, QueueService, PatientsClient, BillingClient, MembershipRules, HorizonJob, NoShowJob, HoldExpiryJob, AgendaJob, SchedulingConsumers],
 })
 export class AppModule {}

@@ -201,16 +201,34 @@ export type WaitlistSlotAvailable = z.infer<typeof WaitlistSlotAvailable>;
 /** billing.payment_succeeded: an invoice is paid in full (online or at the counter). */
 export const PaymentSucceeded = z.object({
   invoiceId: z.uuid(), invoiceNo: z.string(), paymentId: z.uuid(),
-  sourceType: z.enum(['APPOINTMENT', 'LAB_ORDER']), sourceId: z.uuid(),
+  sourceType: z.enum(['APPOINTMENT', 'LAB_ORDER', 'MEMBERSHIP']), sourceId: z.uuid(),
   accountPersonId: z.uuid(), patientName: z.string(),
   amount: z.number(), method: z.string().nullable(), channel: z.enum(['ONLINE', 'COUNTER']),
 });
 export type PaymentSucceeded = z.infer<typeof PaymentSucceeded>;
 
+/** Membership benefits (Phase 26): what a tier gives its members (each hospital sets its own). */
+export const MembershipBenefits = z.object({
+  bookingWindowDays: z.number().int().min(1).max(180),
+  priorityAccess: z.boolean(),
+  freeVideoConsultsPerMonth: z.number().int().min(0).max(30),
+  labDiscountPct: z.number().int().min(0).max(50),
+  freeHomeCollection: z.boolean(),
+  familyMembers: z.number().int().min(1).max(10),
+});
+export type MembershipBenefits = z.infer<typeof MembershipBenefits>;
+
+/** billing.membership_changed: an account joined, renewed, or its membership ended. */
+export const MembershipChanged = z.object({
+  membershipId: z.uuid(), accountPersonId: z.uuid(), patientName: z.string(), planCode: z.string(), planName: z.string(),
+  status: z.enum(['ACTIVE', 'EXPIRED', 'CANCELLED']), endsAt: z.string(), benefits: MembershipBenefits,
+});
+export type MembershipChanged = z.infer<typeof MembershipChanged>;
+
 /** billing.refund_processed: money is on its way back; invoiceStatus is REFUNDED or PARTIALLY_REFUNDED. */
 export const RefundProcessed = z.object({
   invoiceId: z.uuid(), invoiceNo: z.string(), refundId: z.uuid(),
-  sourceType: z.enum(['APPOINTMENT', 'LAB_ORDER']), sourceId: z.uuid(),
+  sourceType: z.enum(['APPOINTMENT', 'LAB_ORDER', 'MEMBERSHIP']), sourceId: z.uuid(),
   accountPersonId: z.uuid(), patientName: z.string(),
   amount: z.number(), invoiceStatus: z.string(), reason: z.string().nullable(),
 });
@@ -343,6 +361,7 @@ export const EventTypes = {
   doctorAgenda: 'scheduling.doctor_agenda',
   paymentUnapplied: 'scheduling.payment_unapplied',
   paymentSucceeded: 'billing.payment_succeeded',
+  membershipChanged: 'billing.membership_changed',
   refundProcessed: 'billing.refund_processed',
   invoiceVoided: 'billing.invoice_voided',
   encounterSigned: 'records.encounter_signed',

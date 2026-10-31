@@ -1,7 +1,7 @@
-# Handoff: where work stopped (2026-10-31, after Phase 25: M5 complete)
+# Handoff: where work stopped (2026-10-31, after Phase 26: patient memberships)
 
 ## State
-- Phases 0–25 are built; M5 (AI) is complete. UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
+- Phases 0–26 are built; M5 (AI) is complete, M6 has started (Phase 26, patient memberships, 2026-10-31). UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
 - The flow review is in [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md). See §8 "Fix log" for details.
   - Wave 1 (15 gaps): fixed 2026-10-25.
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
@@ -16,16 +16,17 @@
   - `mc test wave5` covers wave 5 (15 checks).
   - `mc test concierge` is the Phase 23 booking-task eval (28 checks); `mc test copilot` covers Phase 24 (report explainer and pre-visit summary, 27 checks). Run both before the leak test, which uses a card and a summary they leave.
   - `mc test scribe` (prescription safety + scribe, 26 checks) and `mc test whatsapp` (20 checks) cover Phase 25; the scribe suite also leaves a draft the leak test uses.
-  - The tenancy leak test has 1141 checks and found 0 leaks.
+  - `mc test memberships` (22 checks) covers Phase 26; it switches the module on for citycare and resets it afterwards.
+  - The tenancy leak test has 1173 checks and found 0 leaks.
 - Git: one repo for all three folders, at https://github.com/priyambansal13/hospital-CRM (`main`).
-  - Everything up to Phase 25 is pushed.
+  - Everything up to Phase 26 is pushed.
   - CI workflows are in `.github/workflows` (backend, frontend, platform), with path filters. They pass on GitHub, as does the security workflow (2026-10-31, UI v2 commit 486ac93).
   - Image builds wait for the `GCP_WIF_PROVIDER` repo variable.
   - The integration job is manual (workflow_dispatch).
 
 ## Resume here (ask first)
 Choose one:
-1. **M6** (Phase 26 onwards: memberships and other growth modules, IMPLEMENTATION-PLAN.md), ordered by customer demand: ask which first.
+1. **M6, Phases 27–29** (workflow rules/custom fields/integrations, video consultations, analytics and the Ops agent; IMPLEMENTATION-PLAN.md), ordered by customer demand: ask which first. Phase 28 (video) would also exercise the members' free video allowance.
 2. **Real-provider runs**, once the user provides keys or accounts:
    - Gemini: a valid key, then `LLM_PROVIDER=gemini` and `mc test assistant`, `mc test concierge` `mc test copilot` and `mc test scribe` against the real model (prompt tuning; set `GEMINI_COPILOT_MODEL` / `GEMINI_TRANSCRIBE_MODEL` if the defaults are not available), and a real recorded consultation;
    - WhatsApp: a WhatsApp Business account (Meta Cloud API): `WHATSAPP_PROVIDER=meta`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, the webhook URL registered with Meta, `mc whatsapp link <slug> <phoneNumberId> <number>`;
@@ -44,6 +45,12 @@ Choose one:
 **Local LLM setting (2026-10-31):** the services pick up a `GEMINI_API_KEY` that Google rejects (401), so `backend/.env` now has `LLM_PROVIDER=dev` (the offline dev model). Remove that line once a valid key is set. Locally, tracing is on (`OTEL_EXPORTER_OTLP_ENDPOINT` in `backend/.env`, Jaeger container `mc-jaeger`, UI on :16686). To turn it off, remove the line, run `docker rm -f mc-jaeger`, and restart `mc dev`.
 
 **Not run, on purpose:** `mc tenant purge`. It permanently destroys a hospital's data, and running it was blocked as irreversible. The user decides whether to run it (only on DELETED test hospitals, and only after `mc tenant export`).
+
+## Phase 26 notes worth knowing
+- The module is off by default; `mc module enable <slug> memberships` switches it on (seeds Care+ and Family+). It is on for aarogya (showcase). Leave it off on citycare: other suites book further ahead than the 14-day free window.
+- Booking rules apply only to a patient's own online booking (`b.rules` in `bookSlot`); the front desk is never limited.
+- Members-only times are not stored: `membersOnly(slotId, startsAt, pct)` (scheduling `membership.ts`) is a stable hash, so the public slot list and the booking check always agree.
+- Membership invoices have no branch (`invoices_branch_required` check allows that only for MEMBERSHIP); the invoice DTO shows the branch name "Membership". Branch-scoped staff do not see them.
 
 ## UI v2 notes worth knowing (2026-10-31)
 - **Design system** (`frontend/packages/ui`): `theme.css` v2 (tokens, Plus Jakarta Sans, dark mode by system or the toggle, stored in `localStorage` `mc-theme`); class names are a stable contract for all zones. New components: `Kpi`, `Bars`, `Columns`, `Icon`, `iconFor` (label first, then key), `iconForSpecialty`. Client parts in `src/shell.tsx` (command palette, theme toggle, mobile menu).

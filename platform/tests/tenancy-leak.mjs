@@ -119,6 +119,8 @@ const main = async () => {
 
   // a visit and a prescription (clinical data is not readable by the admin through the API; ids come from the DB)
   const psql = (sql) => execFileSync('docker', ['compose', '--env-file', join(PLATFORM, '.env'), '-f', join(PLATFORM, 'infra/docker-compose.yml'), 'exec', '-T', 'postgres', 'psql', '-qAt', '-U', 'postgres', '-d', `t_${A}`, '-c', sql], { encoding: 'utf8' }).trim();
+  // a membership tier (seeded when the module is switched on; `mc test memberships` does that)
+  const tierId = psql(`SELECT id FROM billing.membership_plans ORDER BY sort LIMIT 1`) || '00000000-0000-0000-0000-000000000001';
   const [encId, encAppt, encPatient] = psql(`SELECT id || '|' || coalesce(appointment_id::text, '') || '|' || patient_id FROM records.encounters ORDER BY started_at LIMIT 1`).split('|');
   const rxId = psql('SELECT id FROM records.prescriptions ORDER BY issued_at LIMIT 1');
   if (!encId || !rxId) throw new Error('fixture setup failed: no encounter/prescription in citycare yet — run `mc test records` once');
@@ -262,6 +264,7 @@ const main = async () => {
     'patient:GET /v1/patients/:patientId/allergies': { patientId: allergyPatient },
     'patient:POST /v1/patients/:patientId/allergies': { patientId: allergyPatient, body: { substance: 'pwned allergy' } },
     'billing:GET /v1/invoices/:id/pdf': { id: invoice.id },
+    'billing:PATCH /v1/membership-plans/:id': { id: tierId, body: { price: 1, version: 1 } },
     'billing:POST /v1/invoices/:id/refunds': { id: invoice.id, body: { amount: 1, reason: 'pwned refund' } },
     'patient:PATCH /v1/me/dependents/:id': { id: child.id, body: { fullName: 'pwned', version: 0 } },
     'notification:PUT /v1/notification-templates/:id': { id: template.id, body: { body: 'pwned template body', active: true } },

@@ -39,6 +39,7 @@ export default async function ConfirmBooking({ params, searchParams }: { params:
     <ZoneFrame zone="patient" path={path} zones={ZONES}>
       <PageHeader title="Confirm your appointment" />
       <Flash ok={sp.ok} error={sp.error} />
+      {slot.membersOnly ? <Alert tone="info">★ This time is held for members until 24 hours before. <a href="/care/membership">About membership</a></Alert> : null}
       <div className="mc-split">
       <div className="mc-split-main">
       {!self ? (

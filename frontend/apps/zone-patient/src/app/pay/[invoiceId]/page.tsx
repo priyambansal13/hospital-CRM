@@ -7,6 +7,7 @@ import { type Appointment, fmtDay, fmtTime } from '@/lib/booking';
 import { simulatePayment, verifyPayment } from '@/lib/booking-actions';
 import { inr, invoiceDetail } from '@/lib/billing';
 import type { LabOrder } from '@/lib/lab';
+import { myMembership } from '@/lib/membership';
 import { Flash } from '@/lib/flash';
 import { RazorpayButton } from '@/lib/razorpay-checkout';
 import { ZONES } from '@/lib/zones';
@@ -24,11 +25,13 @@ export default async function PayPage({ params, searchParams }: { params: Promis
   const { accessToken: token } = (await getSession())!;
   const inv = await invoiceDetail(token, invoiceId).catch((e) => (e instanceof ApiError && e.status === 404 ? notFound() : Promise.reject(e)));
   const isLab = inv.source.type === 'LAB_ORDER';
-  const appt = isLab ? null : await api<Appointment & { holdExpiresAt: string | null; paymentStatus: string }>(`/api/scheduling/v1/appointments/${inv.source.id}`, { token }).catch(() => null);
+  const isMembership = inv.source.type === 'MEMBERSHIP';
+  const appt = isLab || isMembership ? null : await api<Appointment & { holdExpiresAt: string | null; paymentStatus: string }>(`/api/scheduling/v1/appointments/${inv.source.id}`, { token }).catch(() => null);
   const lab = isLab ? await api<LabOrder>(`/api/diagnostics/v1/lab-orders/${inv.source.id}`, { token }).catch(() => null) : null;
   const sp = await searchParams;
   const paid = ['PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'].includes(inv.status);
-  const status = appt?.status ?? lab?.status;
+  const mem = isMembership ? await myMembership(token).catch(() => null) : null;
+  const status = appt?.status ?? lab?.status ?? (isMembership ? (mem?.membership?.invoiceId === inv.id && mem.membership.status === 'ACTIVE' ? 'ACTIVE' : 'PENDING_PAYMENT') : undefined);
   const confirming = paid && status === 'PENDING_PAYMENT';
   const lost = paid && status === 'EXPIRED';
   const minutesLeft = inv.payBy ? Math.max(0, Math.ceil((Date.parse(inv.payBy) - Date.now()) / 60_000)) : null;
@@ -36,7 +39,7 @@ export default async function PayPage({ params, searchParams }: { params: Promis
   return (
     <ZoneFrame zone="patient" path={path} zones={ZONES}>
       {confirming ? <meta httpEquiv="refresh" content="2" /> : null}
-      <PageHeader title={paid ? 'Payment' : isLab ? 'Pay to confirm your lab booking' : 'Pay to confirm your appointment'} subtitle={`${inv.invoiceNo} · ${inv.patient.name}`} />
+      <PageHeader title={paid ? 'Payment' : isMembership ? 'Pay for your membership' : isLab ? 'Pay to confirm your lab booking' : 'Pay to confirm your appointment'} subtitle={`${inv.invoiceNo} · ${inv.patient.name}`} />
       <Flash ok={paid ? undefined : sp.ok} error={sp.error} />
       {appt ? (
         <Card title="Appointment">
@@ -59,14 +62,23 @@ export default async function PayPage({ params, searchParams }: { params: Promis
         </Card>
       ) : null}
 
+      {isMembership ? (
+        <Card title="Membership">
+          <dl className="mc-summary">
+            <dt>For</dt><dd>{inv.description}</dd>
+            <dt>Amount</dt><dd>{inr(inv.total)}</dd>
+          </dl>
+        </Card>
+      ) : null}
+
       {inv.status === 'ISSUED' && inv.checkout ? (
         <Card title={`Pay ${inr(inv.total)}`}>
           <p className="mc-muted" style={{ marginTop: 0 }}>
-            We are holding this time for you{inv.payBy ? ` until ${at(inv.payBy)} (${minutesLeft} min)` : ''}. Your appointment is confirmed as soon as the payment goes through.
+            {isMembership ? `Your membership starts as soon as the payment goes through${inv.payBy ? ` (pay by ${at(inv.payBy)})` : ''}.` : <>We are holding this time for you{inv.payBy ? ` until ${at(inv.payBy)} (${minutesLeft} min)` : ''}. Your appointment is confirmed as soon as the payment goes through.</>}
           </p>
           {inv.payments.find((p) => p.lastError) ? <Alert tone="error">Last attempt failed: {inv.payments.find((p) => p.lastError)!.lastError}</Alert> : null}
           {inv.checkout.gateway === 'RAZORPAY' ? (
-            <RazorpayButton keyId={inv.checkout.keyId} orderId={inv.checkout.orderId} amountPaise={Math.round(inv.total * 100)} hospital={inv.branch.name} description={inv.description} invoiceId={inv.id} label={`Pay ${inr(inv.total)}`} action={verifyPayment} />
+            <RazorpayButton keyId={inv.checkout.keyId} orderId={inv.checkout.orderId} amountPaise={Math.round(inv.total * 100)} hospital={inv.branch?.name ?? 'Membership'} description={inv.description} invoiceId={inv.id} label={`Pay ${inr(inv.total)}`} action={verifyPayment} />
           ) : (
             <form action={simulatePayment} className="mc-form">
               <input type="hidden" name="invoiceId" value={inv.id} />
@@ -82,20 +94,21 @@ export default async function PayPage({ params, searchParams }: { params: Promis
 
       {inv.status === 'VOID' ? (
         <Card title="This payment window has closed">
-          <p className="mc-muted">The time was held for {inv.payBy ? 'a few minutes' : 'a while'} and has been released. {appt ? <a href={`/care/doctors/${appt.doctor.id}`}>Book again</a> : null}</p>
+          <p className="mc-muted">{isMembership ? <>Nothing was charged. <a href="/care/membership">Join again</a></> : <>The time was held for {inv.payBy ? 'a few minutes' : 'a while'} and has been released.</>} {appt ? <a href={`/care/doctors/${appt.doctor.id}`}>Book again</a> : null}</p>
         </Card>
       ) : null}
 
-      {confirming ? <Alert tone="info">Payment received. Confirming your {isLab ? 'lab booking' : 'appointment'}…</Alert> : null}
+      {confirming ? <Alert tone="info">Payment received. Confirming your {isMembership ? 'membership' : isLab ? 'lab booking' : 'appointment'}…</Alert> : null}
       {paid && lab && ['BOOKED', 'SAMPLE_COLLECTED', 'IN_LAB'].includes(lab.status) ? (
         <Alert tone="success">Paid {inr(inv.amountPaid)}. Your lab visit {lab.orderNo} is booked.{lab.preparation ? ` Before you come: ${lab.preparation}.` : ''}</Alert>
       ) : null}
       {paid && appt && ['CONFIRMED', 'CHECKED_IN', 'IN_PROGRESS', 'COMPLETED'].includes(appt.status) ? (
         <Alert tone="success">Paid {inr(inv.amountPaid)}. Your appointment {appt.appointmentNo} is confirmed.</Alert>
       ) : null}
+      {paid && isMembership && status === 'ACTIVE' ? <Alert tone="success">Paid {inr(inv.amountPaid)}. Welcome to {mem!.membership!.plan.name}! <a href="/care/membership">See your benefits</a></Alert> : null}
       {lost ? <Alert tone="error">Your payment arrived after the time was given to someone else, so we are refunding {inr(inv.amountPaid)} in full.</Alert> : null}
       {paid ? (
-        <p><a className="mc-btn mc-btn-ghost" href={isLab ? '/care/lab-orders' : '/care/appointments'}>{isLab ? 'My lab tests' : 'My appointments'}</a> <a className="mc-btn mc-btn-ghost" href={`/care/bills/${inv.id}/pdf`}>Download receipt (PDF)</a></p>
+        <p><a className="mc-btn mc-btn-ghost" href={isMembership ? '/care/membership' : isLab ? '/care/lab-orders' : '/care/appointments'}>{isMembership ? 'My membership' : isLab ? 'My lab tests' : 'My appointments'}</a> <a className="mc-btn mc-btn-ghost" href={`/care/bills/${inv.id}/pdf`}>Download receipt (PDF)</a></p>
       ) : null}
     </ZoneFrame>
   );

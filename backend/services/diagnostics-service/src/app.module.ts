@@ -3,7 +3,7 @@ import { BranchChanged, EventTypes, PaymentSucceeded, RefundProcessed, Topics } 
 import { ConsumerRegistry, CoreModule, ModuleHooks, PLACEMENTS, retryInBackground } from '@mc/nest-common';
 import { EntitlementsClient, EntitlementsModule } from '@mc/entitlements-sdk';
 import { type PlacementSource, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
-import { AuditClient, BillingClient, CareAccessClient, PatientsClient } from './lab/clients.js';
+import { AuditClient, BillingClient, CareAccessClient, MembershipClient, PatientsClient } from './lab/clients.js';
 import { LabHoldExpiryJob } from './lab/hold-expiry.job.js';
 import { HomeAdminController, HomeDispatchController, MyVisitsController, PublicHomeController } from './lab/home.controller.js';
 import { HomeService } from './lab/home.service.js';
@@ -70,6 +70,6 @@ class DiagnosticsConsumers implements OnModuleInit, OnApplicationBootstrap {
 @Module({
   imports: [CoreModule.forRoot({ schema: 'diagnostics', control: false, tenant: true, relay: true }), EntitlementsModule],
   controllers: [InternalLabJobsController, PublicLabController, PublicHomeController, HomeAdminController, HomeDispatchController, MyVisitsController, LabOrdersController, LabBenchController, LabCatalogAdminController, LabResultsController, ResultsAccessController],
-  providers: [LabService, ResultsService, HomeService, PatientsClient, CareAccessClient, AuditClient, BillingClient, LabHoldExpiryJob, TatJob, CriticalEscalationJob, DiagnosticsConsumers],
+  providers: [LabService, ResultsService, HomeService, PatientsClient, CareAccessClient, AuditClient, BillingClient, MembershipClient, LabHoldExpiryJob, TatJob, CriticalEscalationJob, DiagnosticsConsumers],
 })
 export class AppModule {}

@@ -16,10 +16,11 @@ export function SlotPicker({ data, selected, dateHref, slotHref }: { data: SlotD
         <section key={branch} aria-label={`${fmtDay(day.date, { weekday: 'long', day: 'numeric', month: 'long' })} at ${branch}`}>
           <h3 className="mc-meta" style={{ margin: '16px 0 8px' }}>{fmtDay(day.date, { weekday: 'long', day: 'numeric', month: 'long' })} · {branch}{slots[0].fee != null ? ` · ₹${slots[0].fee}` : ''}</h3>
           <div className="mc-times">
-            {slots.map((s) => <a key={s.slotId} className="mc-time" href={slotHref(s.slotId)}>{fmtTime(s.localTime)}{s.mode === 'VIDEO' ? ' · Video' : ''}</a>)}
+            {slots.map((s) => <a key={s.slotId} className={s.membersOnly ? 'mc-time mc-slot-member' : 'mc-time'} title={s.membersOnly ? 'Members only (open to everyone 24 hours before)' : undefined} href={slotHref(s.slotId)}>{fmtTime(s.localTime)}{s.mode === 'VIDEO' ? ' · Video' : ''}{s.membersOnly ? <span className="mc-sr-only"> (members only)</span> : null}</a>)}
           </div>
         </section>
       ))}
+      {day.slots.some((s) => s.membersOnly) ? <p className="mc-meta">★ Members-only times: open to everyone 24 hours before. <a href="/care/membership">About membership</a></p> : null}
     </div>
   );
 }

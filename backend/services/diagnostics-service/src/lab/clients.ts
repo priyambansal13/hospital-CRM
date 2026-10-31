@@ -63,3 +63,14 @@ export class BillingClient {
     return (await res.json()) as OnlineCheckout;
   }
 }
+
+export interface MemberBenefits { member: boolean; planName?: string; benefits?: { labDiscountPct: number; freeHomeCollection: boolean } }
+
+/** billing-service: what an account's membership gives (Phase 26). Unreachable → no benefits (nobody gets one they did not buy). */
+@Injectable()
+export class MembershipClient {
+  async benefits(personId: string): Promise<MemberBenefits> {
+    const res = await call(`${svc('BILLING', 4409)}/internal/tenants/${TenantContext.require().id}/members/${personId}`);
+    return res?.ok ? ((await res.json()) as MemberBenefits) : { member: false };
+  }
+}

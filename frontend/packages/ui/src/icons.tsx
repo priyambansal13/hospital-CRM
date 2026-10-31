@@ -54,7 +54,7 @@ export function Icon({ name, size }: { name: string; size?: number }) {
 /** A fitting icon for a navigation item, from its key or label. */
 export function iconFor(key: string, label: string): string {
   const rules: [RegExp, string][] = [
-    [/waiting|overdue|due\b|pending/, 'clock'], [/with (a )?doctor|in progress/, 'stethoscope'], [/no-show|cancel|rejected/, 'alert'], [/done|completed|verified|published/, 'shield'], [/collected|cash|refund|outstanding|paid/, 'receipt'], [/booked/, 'calendar'],
+    [/member/, 'heart'], [/waiting|overdue|due\b|pending/, 'clock'], [/with (a )?doctor|in progress/, 'stethoscope'], [/no-show|cancel|rejected/, 'alert'], [/done|completed|verified|published/, 'shield'], [/collected|cash|refund|outstanding|paid/, 'receipt'], [/booked/, 'calendar'],
     [/home.?collection|home.?visit|dispatch|phleb/, 'truck'], [/overview|^home|dashboard|^today$/, 'home'], [/family/, 'users'], [/sharing|access/, 'key'], [/bill/, 'receipt'], [/health record/, 'clipboard'], [/staff|team|people/, 'users'], [/doctor|consult|visit/, 'stethoscope'], [/schedule|appointment|calendar|book(?! test)/, 'calendar'],
     [/branch/, 'building'], [/lab|test|sample|catalog/, 'flask'], [/result|report/, 'file'], [/critical/, 'alert'], [/worklist|pending|queue|board/, 'queue'],
     [/chat|message|assistant|ask/, 'chat'], [/knowledge|ai/, 'sparkles'], [/setting|setup/, 'settings'], [/invoice|billing|bill|collection|payment/, 'receipt'],

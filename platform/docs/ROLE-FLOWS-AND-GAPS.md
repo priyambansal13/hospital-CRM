@@ -570,6 +570,15 @@ Verified by `mc test wave5` (15 checks), `w5-amend.spec.ts` (Playwright), unit t
 
 Still open: support "act as" (Phase 31); captcha; approvals for overrides and coupons; the real-provider runs.
 
+### New flows after the review: Phase 26 memberships (2026-10-31)
+
+Not gap fixes, but they change role flows (details in IMPLEMENTATION-PLAN.md Phase 26):
+- **Admin:** Memberships screen (tiers with price, period and benefits; members; monthly revenue). Needs `membership:manage:tenant`.
+- **Patient:** Membership screen (compare, join, renew; paid on the usual pay page). Non-members of a hospital with memberships can book only `memberships.free_window_days` ahead and see ★ members-only times they cannot take until 24 h before. Members get lab discounts as a DISCOUNT line.
+- **Front desk:** unchanged; desk bookings ignore the membership rules.
+
+Still open: membership cancellation with refund, auto-renewal, enforcing `familyMembers`.
+
 ---
 
 ## 7. What works well (keep it)

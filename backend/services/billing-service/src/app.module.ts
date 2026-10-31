@@ -1,3 +1,5 @@
+import { InternalMembersController, MembersController, MembershipJobs, MembershipPlansController, MyMembershipController } from './memberships/memberships.controller.js';
+import { MembershipsService } from './memberships/memberships.service.js';
 import { Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { AppointmentChanged, EventTypes, LabOrderChanged, PaymentUnapplied, TenantProvisioned, Topics } from '@mc/contracts';
 import { ConsumerRegistry, CoreModule, isDev, REDIS, type Redis } from '@mc/nest-common';
@@ -59,10 +61,10 @@ class BillingConsumers implements OnModuleInit {
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'billing', control: true, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [BillingController, WebhookController, InternalInvoicesController, PaymentAccountController],
+  controllers: [BillingController, WebhookController, InternalInvoicesController, PaymentAccountController, MembershipPlansController, MembersController, MyMembershipController, InternalMembersController],
   providers: [
     { provide: PAYMENT_GATEWAY, useFactory: gatewayFactory, inject: [REDIS] },
-    BillingService, PaymentAccountService, RefundJob, BillingConsumers,
+    BillingService, PaymentAccountService, RefundJob, BillingConsumers, MembershipsService, MembershipJobs,
   ],
 })
 export class AppModule {}

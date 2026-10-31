@@ -4,7 +4,7 @@ import { conflict, DomainError, forbidden, notFound, dateOnly } from '@mc/nest-c
 import { assertInBranch, branchesFor, EntitlementsClient, inBranch } from '@mc/entitlements-sdk';
 import { type Actor, addToOutbox, envelope, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
-import { AuditClient, BillingClient, CareAccessClient, type Patient, PatientsClient } from './clients.js';
+import { AuditClient, BillingClient, CareAccessClient, MembershipClient, type Patient, PatientsClient } from './clients.js';
 import { DEFAULT_HOME_WINDOWS, DEFAULT_PACKAGES, DEFAULT_TESTS, DEFAULT_WINDOWS } from './default-catalog.js';
 
 export const LAB_POLICY = {
@@ -48,6 +48,7 @@ export class LabService {
     private readonly audit: AuditClient,
     private readonly billing: BillingClient,
     private readonly entitlements: EntitlementsClient,
+    private readonly membership: MembershipClient,
   ) {}
 
   private tid() { return TenantContext.require().id; }
@@ -230,6 +231,7 @@ export class LabService {
         await c.query(`UPDATE lab_orders SET total = total + $2, payment_status = CASE WHEN payment_status = 'NOT_DUE' THEN 'UNPAID' ELSE payment_status END WHERE id = $1`, [orderId, fee]);
       }
     }
+    if (actor.kind === 'patient' && cur.payment_status !== 'PAID') await this.memberDiscount(c, actor, orderId);
     const { rows: [o] } = await c.query('SELECT total, payment_status FROM lab_orders WHERE id = $1', [orderId]);
     const alreadyPaid = cur.payment_status === 'PAID' && o.payment_status === 'PAID';
     const online = paymentMode === 'ONLINE' && money(o.total) > 0 && !alreadyPaid;
@@ -251,6 +253,29 @@ export class LabService {
     }
     await this.createSamples(c, orderId);
     return online;
+  }
+
+  /**
+   * Memberships (Phase 26): a member's lab discount and free home collection, as one negative DISCOUNT line, worked
+   * out again whenever the patient (re)books an unpaid order (the home fee may have been added since).
+   */
+  private async memberDiscount(c: Queryable, actor: Actor, orderId: string) {
+    if (!(await this.caps(actor)).modules.includes('memberships')) return;
+    const { rows: [o] } = await c.query('SELECT account_person_id FROM lab_orders WHERE id = $1', [orderId]);
+    const m = await this.membership.benefits(o.account_person_id);
+    const { rows: lines } = await c.query(`SELECT kind, price FROM lab_order_lines WHERE order_id = $1`, [orderId]);
+    const sum = (k: string[]) => lines.filter((l) => k.includes(l.kind)).reduce((a, l) => a + money(l.price), 0);
+    const off = m.member && m.benefits
+      ? Math.round(sum(['TEST', 'PACKAGE']) * m.benefits.labDiscountPct) / 100 + (m.benefits.freeHomeCollection ? sum(['HOME_VISIT']) : 0)
+      : 0;
+    const before = -sum(['DISCOUNT']);
+    if (Math.abs(off - before) < 0.005) return;
+    await c.query(`DELETE FROM lab_order_lines WHERE order_id = $1 AND kind = 'DISCOUNT'`, [orderId]);
+    if (off > 0) {
+      const what = [m.benefits!.labDiscountPct ? `${m.benefits!.labDiscountPct}% off tests` : '', m.benefits!.freeHomeCollection && sum(['HOME_VISIT']) ? 'free home collection' : ''].filter(Boolean).join(', ');
+      await c.query(`INSERT INTO lab_order_lines (id, order_id, kind, ref_id, code, name, price) VALUES ($1,$2,'DISCOUNT',$2,'MEMBER',$3,$4)`, [randomUUID(), orderId, `${m.planName ?? 'Member'} benefit: ${what}`.slice(0, 200), -off]);
+    }
+    await c.query(`UPDATE lab_orders SET total = total + $2, payment_status = CASE WHEN total + $2 > 0 THEN (CASE WHEN payment_status = 'NOT_DUE' THEN 'UNPAID' ELSE payment_status END) ELSE 'NOT_DUE' END WHERE id = $1`, [orderId, before - off]);
   }
 
   async visitLog(c: Queryable, visitId: string, status: string, actor: Actor | null, note: string | null = null, byName: string | null = null) {

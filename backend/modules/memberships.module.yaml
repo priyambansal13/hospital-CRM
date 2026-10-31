@@ -1,0 +1,23 @@
+# Patient memberships (IMPLEMENTATION-PLAN.md Phase 26, FEATURES-AND-PLANS.md §3.2): each hospital sells its own tiers
+# (names, prices, benefits) to its patients, paid into its connected account. Benefits are enforced where they apply:
+# scheduling (booking window, member-only priority slots, free video consults), diagnostics (lab discount, free home
+# collection). Without the module nothing changes for patients.
+key: memberships
+name: Patient memberships
+version: 1
+dependsOn: [billing, appointments]
+services: [billing-service]
+lifecycle: [billing]
+permissions:
+  - { code: membership:manage:tenant, description: Define the hospital's membership tiers and see members }
+  - { code: membership:buy:own, description: Join or renew a membership }
+features:
+  - { key: memberships.tiers, name: Membership tiers, type: LIMIT }
+settings:
+  - { key: memberships.free_window_days, name: How far ahead non-members can book (days), type: int, default: 14, min: 1, max: 90 }
+  - { key: memberships.priority_percent, name: Share of times held for members until 24 hours before (%), type: int, default: 20, min: 0, max: 50 }
+nav:
+  - { key: memberships-admin, label: Memberships, zone: admin, href: /admin/memberships, permissions: [membership:manage:tenant, admin:access:tenant] }
+  - { key: my-membership, label: Membership, zone: patient, href: /care/membership, permissions: [membership:buy:own], audience: patient }
+defaultRoleGrants:
+  PATIENT: [membership:buy:own]
