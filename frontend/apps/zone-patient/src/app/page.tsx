@@ -1,5 +1,5 @@
 import { ZoneFrame } from '@mc/features';
-import { Button, Card, PageHeader } from '@mc/ui';
+import { Button, Card, Icon, iconForSpecialty, PageHeader } from '@mc/ui';
 import { BookingPaused } from '@/lib/booking-paused';
 import { getSpecialties } from '@/lib/directory';
 import { publicModules } from '@/lib/modules';
@@ -32,6 +32,7 @@ export default async function CareHome() {
           <div className="mc-grid">
             {specialties.map((s) => (
               <a key={s.code} href={`/care/doctors?specialty=${s.code}`} className="mc-card mc-specialty">
+                <span className="mc-tile-icon" style={{ marginBottom: 10 }}><Icon name={iconForSpecialty(s.code)} /></span>
                 <h3>{s.name}</h3>
                 <p className="mc-meta" style={{ margin: 0 }}>{s.description}</p>
                 <p className="mc-meta" style={{ margin: '8px 0 0' }}>{s.doctorCount} doctor{s.doctorCount === 1 ? '' : 's'}</p>

@@ -53,13 +53,19 @@ export function Icon({ name, size }: { name: string; size?: number }) {
 
 /** A fitting icon for a navigation item, from its key or label. */
 export function iconFor(key: string, label: string): string {
-  const s = `${key} ${label}`.toLowerCase();
   const rules: [RegExp, string][] = [
+    [/waiting|overdue|due\b|pending/, 'clock'], [/with (a )?doctor|in progress/, 'stethoscope'], [/no-show|cancel|rejected/, 'alert'], [/done|completed|verified|published/, 'shield'], [/collected|cash|refund|outstanding|paid/, 'receipt'], [/booked/, 'calendar'],
     [/home.?collection|home.?visit|dispatch|phleb/, 'truck'], [/overview|^home|dashboard/, 'home'], [/staff|team|people/, 'users'], [/doctor|consult|visit/, 'stethoscope'], [/schedule|appointment|calendar|book(?! test)/, 'calendar'],
     [/branch/, 'building'], [/lab|test|sample|catalog/, 'flask'], [/result|report/, 'file'], [/critical/, 'alert'], [/worklist|pending|queue|board/, 'queue'],
     [/chat|message|assistant|ask/, 'chat'], [/knowledge|ai/, 'sparkles'], [/setting|setup/, 'settings'], [/invoice|billing|bill|collection|payment/, 'receipt'],
     [/usage|chart|analytics/, 'chart'], [/audit|role|security/, 'shield'], [/plan|subscription|edition|price/, 'layers'], [/patient|record|timeline|chart/, 'clipboard'],
     [/home collection|home-collection|visit|dispatch|phleb/, 'truck'], [/prescription|medicine/, 'pill'], [/specialt/, 'heart'], [/hospital|customer|tenant/, 'globe'], [/document/, 'file'], [/card|account/, 'card'],
   ];
-  return rules.find(([re]) => re.test(s))?.[1] ?? 'list';
+  // the label says what the screen is; the key only breaks ties (doctor-zone keys all start with "doctor")
+  const by = (t: string) => rules.find(([re]) => re.test(t))?.[1];
+  return by(label.toLowerCase()) ?? by(key.toLowerCase()) ?? 'list';
 }
+
+const SPECIALTY: [RegExp, string][] = [[/CARDIO/, 'heart'], [/DERM/, 'sparkles'], [/PEDIA/, 'baby'], [/ORTHO/, 'bone'], [/OPHTHAL|EYE/, 'eye'], [/NEURO|PSYCH/, 'brain'], [/DENT/, 'tooth'], [/GASTRO/, 'pill'], [/GYN|OBST/, 'heart'], [/ENDO|DIAB/, 'flask'], [/PULMO|CHEST/, 'globe'], [/ENT/, 'chat'], [/URO/, 'flask']];
+/** An icon for a specialty code (GENERAL_MEDICINE → stethoscope). */
+export const iconForSpecialty = (code: string) => SPECIALTY.find(([re]) => re.test(code))?.[1] ?? 'stethoscope';

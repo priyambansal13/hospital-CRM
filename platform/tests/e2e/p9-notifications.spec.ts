@@ -44,6 +44,8 @@ test.describe.serial('notifications', () => {
     await expect(page.getByRole('heading', { name: 'Booking confirmed · SMS · English' })).toBeVisible();
     const form = page.locator('section', { has: page.getByRole('heading', { name: 'Reminder, 2 hours · SMS · English' }) });
     const text = form.locator('textarea[name=body]');
+    // let the page finish loading first: typing before React has taken over the form can mix old and new text
+    await page.waitForLoadState('networkidle');
     const original = await text.inputValue();
     await text.fill(`${original} Bring old reports.`);
     await form.getByRole('button', { name: 'Save' }).click();

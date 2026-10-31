@@ -1,5 +1,5 @@
 import { api } from '@mc/bff';
-import { Icon } from '@mc/ui';
+import { Icon, iconForSpecialty } from '@mc/ui';
 
 /**
  * A hospital's public home page: what a patient needs first, from the hospital's live data (directory, search,
@@ -12,8 +12,6 @@ interface Pkg { id: string; code: string; name: string; description: string | nu
 interface Catalog { packages: Pkg[]; tests: { code: string }[] }
 
 const soft = <T,>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
-const SPECIALTY_ICON: [RegExp, string][] = [[/CARDIO/, 'heart'], [/DERM/, 'sparkles'], [/PEDIA/, 'baby'], [/ORTHO/, 'bone'], [/OPHTHAL|EYE/, 'eye'], [/NEURO|PSYCH/, 'brain'], [/DENT/, 'tooth'], [/GASTRO/, 'pill'], [/GYN|OBST/, 'heart'], [/ENDO|DIAB/, 'flask'], [/PULMO|CHEST/, 'globe'], [/ENT/, 'chat'], [/URO/, 'flask']];
-const iconForSpecialty = (code: string) => SPECIALTY_ICON.find(([re]) => re.test(code))?.[1] ?? 'stethoscope';
 const initials = (name: string) => name.replace(/^Dr\.?\s*/i, '').split(/\s+/).slice(0, 2).map((w) => w[0]).join('').toUpperCase();
 const inr = (n: number) => `₹${new Intl.NumberFormat('en-IN').format(n)}`;
 

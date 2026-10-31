@@ -1,3 +1,4 @@
+import { StatsController } from './schedule/stats.controller.js';
 import { Injectable, Module, type OnModuleInit } from '@nestjs/common';
 import { BranchChanged, DoctorChanged, EventTypes, PaymentSucceeded, RefundProcessed, Topics } from '@mc/contracts';
 import { ConsumerRegistry, CoreModule } from '@mc/nest-common';
@@ -76,7 +77,7 @@ class SchedulingConsumers implements OnModuleInit {
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'scheduling', control: false, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [InternalAgendaController, UpcomingAppointmentsController, ScheduleController, AppointmentsController, InternalAppointmentsController, InternalNextSlotsController, DeskController, QueueController, InternalQueueController],
+  controllers: [InternalAgendaController, UpcomingAppointmentsController, ScheduleController, AppointmentsController, InternalAppointmentsController, InternalNextSlotsController, DeskController, QueueController, InternalQueueController, StatsController],
   providers: [ScheduleService, AppointmentsService, QueueService, PatientsClient, BillingClient, HorizonJob, NoShowJob, HoldExpiryJob, AgendaJob, SchedulingConsumers],
 })
 export class AppModule {}

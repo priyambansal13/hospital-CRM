@@ -1,7 +1,7 @@
 import { getSession } from '@mc/auth';
 import { api } from '@mc/bff';
 import { can, ZoneFrame, zoneCapabilities } from '@mc/features';
-import { Badge, Button, Card, PageHeader, Table } from '@mc/ui';
+import { Badge, Button, Card, iconFor, Kpi, PageHeader, Table } from '@mc/ui';
 import { notFound } from 'next/navigation';
 import { handedBack } from '@/lib/desk-actions';
 import { Flash } from '@/lib/flash';
@@ -50,7 +50,7 @@ export default async function Collections({ searchParams }: { searchParams: Prom
         <>
           <div className="mc-grid">
             {([['At the counter', day.totals.collectedAtCounter], ['Online', day.totals.collectedOnline], ['Refunded', day.totals.refunded], ['Unpaid (all days)', day.totals.outstanding]] as const).map(([label, n]) => (
-              <Card key={label}><p className="mc-muted" style={{ margin: 0 }}>{label}</p><p className="mc-stat">{inr(n)}</p></Card>
+              <Kpi key={label} label={label} value={inr(n)} icon={iconFor('', label)} />
             ))}
           </div>
           <Card title="Today's invoices">

@@ -1,7 +1,7 @@
 import { getSession } from '@mc/auth';
 import { api } from '@mc/bff';
 import { ZoneFrame, zoneCapabilities } from '@mc/features';
-import { Alert, Badge, Button, Card, Chip, Field, PageHeader, Table } from '@mc/ui';
+import { Alert, Badge, Button, Card, Chip, Field, iconFor, Kpi, PageHeader, Table } from '@mc/ui';
 import { ZONES } from '@/lib/zones';
 
 export const dynamic = 'force-dynamic';
@@ -27,7 +27,7 @@ export default async function Billing({ searchParams }: { searchParams: Promise<
       {day.totals.failedRefunds ? <Alert tone="error">{day.totals.failedRefunds} refund(s) failed at the payment gateway and need attention.</Alert> : null}
       <div className="mc-grid">
         {([['Collected online', day.totals.collectedOnline], ['Collected at the counter', day.totals.collectedAtCounter], ['Refunded', day.totals.refunded], ['Outstanding (all days)', day.totals.outstanding]] as const).map(([label, n]) => (
-          <Card key={label}><p className="mc-muted" style={{ margin: 0 }}>{label}</p><p className="mc-stat">{inr(n)}</p></Card>
+          <Kpi key={label} label={label} value={inr(n)} icon={iconFor('', label)} />
         ))}
       </div>
       <Card>

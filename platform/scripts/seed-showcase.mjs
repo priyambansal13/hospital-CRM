@@ -87,4 +87,43 @@ for (const [i, [name, gender, spec, qual, years, langs, fee, at, bio]] of D.entr
 }
 log(`doctors: ${added} added, ${D.length - added - failed} already there${failed ? `, ${failed} failed` : ''}`);
 await waitFor(async () => ((await call('GET', '/api/search/v1/public/search/doctors?limit=50')).items?.length ?? 0) >= D.length, 90000, 3000);
-log(`ready: http://${HOST}:3400 (admin@${SLUG}.test, the dev staff password)`);
+// ---- a week of activity: patients, bookings, today's walk-ins (only when the week is still empty) ----
+const stats = await call('GET', '/api/scheduling/v1/stats/overview', admin);
+if ((stats.next7 ?? []).reduce((n, d) => n + d.count, 0) < 10) {
+  const deskEmail = `desk@${SLUG}.test`;
+  const invite = await call('POST', '/api/iam/v1/staff/invites', admin, { email: deskEmail, name: 'Pooja Desk', roles: ['RECEPTIONIST'] });
+  if (invite.http === 201) await waitFor(async () => (await call('GET', `/api/entitlement/v1/users/${invite.userId}/roles`, admin)).list?.length > 0, 60000, 1000);
+  const desk = await waitFor(() => fetch(KC, { method: 'POST', body: new URLSearchParams({ grant_type: 'password', client_id: 'mc-dev-cli', username: deskEmail, password: env.DEV_STAFF_PASSWORD, scope: `openid organization:${SLUG}` }) }).then((r) => r.json()).then((j) => j.access_token), 60000, 2000);
+  const NAMES = ['Aarav Malhotra', 'Diya Sethi', 'Kabir Anand', 'Saanvi Joshi', 'Ishaan Chawla', 'Anika Reddy', 'Vihaan Kohli', 'Myra Bajaj', 'Reyansh Tandon', 'Aadhya Pillai', 'Arnav Sinha', 'Kiara Dutta', 'Dhruv Saxena', 'Pari Menon', 'Advait Ghosh', 'Navya Bhatia', 'Rudra Kulkarni', 'Siya Mathur', 'Atharv Desai', 'Tara Chopra'];
+  const patients = [];
+  for (const [i, fullName] of NAMES.entries()) {
+    const phone = `+91981${String(5550000 + i).padStart(7, '0')}`;
+    let r = await call('POST', '/api/patient/v1/desk/patients', desk, { phone, fullName, dob: `${1960 + (i * 3) % 50}-0${1 + (i % 9)}-1${i % 9}`, gender: i % 2 ? 'FEMALE' : 'MALE', relation: 'SELF' });
+    if (r.http !== 201) r = ((await call('GET', `/api/patient/v1/desk/patients?q=${encodeURIComponent(phone)}`, desk)).list ?? [])[0] ?? r;
+    if (r.id) patients.push(r);
+  }
+  const docs = (await call('GET', '/api/search/v1/public/search/doctors?limit=50')).items ?? [];
+  let booked = 0;
+  for (const [n, d] of docs.entries()) {
+    const days = (await call('GET', `/api/scheduling/v1/public/doctors/${d.id}/slots?days=7`)).days ?? [];
+    for (const [k, day] of days.entries()) {
+      // a believable spread: busier doctors and busier early-week days
+      const want = Math.max(0, 4 - (n % 4) - Math.floor(k / 2));
+      for (const slot of day.slots.filter((_, j) => j % 3 === 0).slice(0, want)) {
+        const p = patients[(booked * 7 + n) % patients.length];
+        const r = await call('POST', '/api/scheduling/v1/desk/appointments', desk, { patientId: p.id, slotId: slot.slotId, checkIn: false, reason: null });
+        if (r.http === 201) booked++;
+      }
+    }
+  }
+  // today's walk-ins, checked in; half of them paid at the counter
+  let walkIns = 0;
+  for (const [i, d] of docs.slice(0, 8).entries()) {
+    const r = await call('POST', '/api/scheduling/v1/desk/appointments', desk, { patientId: patients[(i * 3) % patients.length].id, walkIn: { doctorId: d.id, branchId: d.branches[0].id } });
+    if (r.http !== 201) continue;
+    walkIns++;
+    if (i % 2 === 0) await waitFor(async () => (await call('POST', '/api/billing/v1/desk/collect', desk, { sourceType: 'APPOINTMENT', sourceId: r.id, method: 'CASH' })).http === 201, 20000, 1000);
+  }
+  log(`activity: ${patients.length} patients, ${booked} bookings this week, ${walkIns} walk-ins waiting today`);
+}
+log(`ready: http://${HOST}:3400 (admin@${SLUG}.test or desk@${SLUG}.test, the dev staff password)`);

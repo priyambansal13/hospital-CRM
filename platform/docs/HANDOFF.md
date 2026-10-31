@@ -1,7 +1,7 @@
 # Handoff: where work stopped (2026-10-31, after Phase 25: M5 complete)
 
 ## State
-- Phases 0–25 are built; M5 (AI) is complete. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
+- Phases 0–25 are built; M5 (AI) is complete. UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
 - The flow review is in [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md). See §8 "Fix log" for details.
   - Wave 1 (15 gaps): fixed 2026-10-25.
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
@@ -44,6 +44,14 @@ Choose one:
 **Local LLM setting (2026-10-31):** the services pick up a `GEMINI_API_KEY` that Google rejects (401), so `backend/.env` now has `LLM_PROVIDER=dev` (the offline dev model). Remove that line once a valid key is set. Locally, tracing is on (`OTEL_EXPORTER_OTLP_ENDPOINT` in `backend/.env`, Jaeger container `mc-jaeger`, UI on :16686). To turn it off, remove the line, run `docker rm -f mc-jaeger`, and restart `mc dev`.
 
 **Not run, on purpose:** `mc tenant purge`. It permanently destroys a hospital's data, and running it was blocked as irreversible. The user decides whether to run it (only on DELETED test hospitals, and only after `mc tenant export`).
+
+## UI v2 notes worth knowing (2026-10-31)
+- **Design system** (`frontend/packages/ui`): `theme.css` v2 (tokens, Plus Jakarta Sans, dark mode by system or the toggle, stored in `localStorage` `mc-theme`); class names are a stable contract for all zones. New components: `Kpi`, `Bars`, `Columns`, `Icon`, `iconFor` (label first, then key), `iconForSpecialty`. Client parts in `src/shell.tsx` (command palette, theme toggle, mobile menu).
+- **Frame:** staff get a sidebar grouped by area (`ZoneFrame` passes each item's zone as the group) and a top bar with the Ctrl/⌘ K palette; patients and visitors get the top bar (visitors: Find a doctor / Lab tests by the hospital's modules) and a footer. `ZoneFrame wide` for full-bleed pages.
+- **Home pages** (zone-shell): `hospital-home.tsx` (live data: search, next available doctors, specialties, doctors, packages, branches) and `platform-home.tsx` (live plans).
+- **Dashboards:** admin overview (KPIs, the week ahead, booking channels, busiest doctors) from `GET /api/scheduling/v1/stats/overview` (scoped to the branches the person manages); desk, lab, billing and collections use `Kpi` tiles.
+- **Showcase data:** `mc seed showcase` creates Aarogya Hospitals (http://aarogya.localhost:3400): 3 branches, 14 doctors with hours, 20 patients, about 125 bookings this week and today's walk-ins. Staff: `admin@aarogya.test`, `desk@aarogya.test`, doctors `<first>.<last>@aarogya.test` (dev staff password). Use it for demos and screenshots; City Care is full of test data.
+- **Tests:** select by role and `aria-current`, not by layout classes (the smoke test was changed so). The palette button is "Go to a screen" (a "Search" label clashed with page search buttons).
 
 ## Phase 25 notes worth knowing
 - **Prescription safety:** `records-service/src/prescribing/` (`drug-data.ts` starter formulary + interaction rules, `safety.ts` checks, `prescribing.ts` APIs and the scribe's recordings). A major interaction refuses a prescription with `INTERACTION_CONFLICT` unless `interactionOverride` is given; the consult page asks for the reason.

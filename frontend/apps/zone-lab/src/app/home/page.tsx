@@ -2,7 +2,7 @@ import { getSession } from '@mc/auth';
 import { api } from '@mc/bff';
 import { branchesFor, ZoneFrame, zoneCapabilities } from '@mc/features';
 import { isReadOnly, ReadOnlyNotice } from '@mc/features/plan';
-import { Badge, Button, Card, Chip, PageHeader, Table } from '@mc/ui';
+import { Badge, Button, Card, Chip, iconFor, Kpi, PageHeader, Table } from '@mc/ui';
 import { Flash } from '@/lib/flash';
 import { addressLine, type Board, VISIT } from '@/lib/home';
 import { assignVisit } from '@/lib/home-actions';
@@ -39,7 +39,7 @@ export default async function HomeBoard({ searchParams }: { searchParams: Promis
         <>
           <div className="mc-grid">
             {([['Overdue', board.totals.overdue ?? 0], ['To assign', board.totals.unassigned], ['Assigned', board.totals.assigned], ['Out now', board.totals.out], ['Collected', board.totals.collected], ['Missed', board.totals.missed]] as const).map(([label, n]) => (
-              <Card key={label}><p className="mc-muted" style={{ margin: 0 }}>{label}</p><p className="mc-stat">{n}</p></Card>
+              <Kpi key={label} label={label} value={n} icon={iconFor('', label)} />
             ))}
           </div>
           <Card title="Visits">

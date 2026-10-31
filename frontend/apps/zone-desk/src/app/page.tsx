@@ -1,7 +1,7 @@
 import { getSession } from '@mc/auth';
 import { api } from '@mc/bff';
 import { can, ZoneFrame, zoneCapabilities } from '@mc/features';
-import { Badge, Button, Card, Chip, PageHeader, Table } from '@mc/ui';
+import { Badge, Button, Card, Chip, iconFor, Kpi, PageHeader, Table } from '@mc/ui';
 import { randomUUID } from 'node:crypto';
 import { LiveRefresh } from '@mc/ui/live';
 import { cancel, checkIn, collectPayment, noShow } from '@/lib/actions';
@@ -82,7 +82,7 @@ export default async function DeskBoard({ searchParams }: { searchParams: Promis
         <>
           <div className="mc-grid">
             {([['Booked today', board.totals.booked], ['Waiting', board.totals.waiting], ['With doctor', board.totals.inProgress], ['Done', board.totals.completed], ['No-show', board.totals.noShow]] as const).map(([label, n]) => (
-              <Card key={label}><p className="mc-muted" style={{ margin: 0 }}>{label}</p><p className="mc-stat">{n}</p></Card>
+              <Kpi key={label} label={label} value={n} icon={iconFor('', label)} />
             ))}
           </div>
           {board.doctors.map((d) => (

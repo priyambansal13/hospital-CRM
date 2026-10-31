@@ -2,7 +2,7 @@ import { getSession } from '@mc/auth';
 import { api } from '@mc/bff';
 import { branchesFor, can, ZoneFrame, zoneCapabilities } from '@mc/features';
 import { isReadOnly, ReadOnlyNotice } from '@mc/features/plan';
-import { Badge, Button, Card, Chip, Field, PageHeader } from '@mc/ui';
+import { Badge, Button, Card, Chip, Field, iconFor, Kpi, PageHeader } from '@mc/ui';
 import { randomUUID } from 'node:crypto';
 import { collectPayment, reject, scan } from '@/lib/actions';
 import { markPerformed } from '@/lib/performed-action';
@@ -117,7 +117,7 @@ export default async function Worklist({ searchParams }: { searchParams: Promise
         <>
           <div className="mc-grid">
             {([['To collect', wl.totals.booked], ['Collected', wl.totals.collected], ['In lab', wl.totals.inLab], ['Recollect', wl.totals.rejected]] as const).map(([label, n]) => (
-              <Card key={label}><p className="mc-muted" style={{ margin: 0 }}>{label}</p><p className="mc-stat">{n}</p></Card>
+              <Kpi key={label} label={label} value={n} icon={iconFor('', label)} />
             ))}
           </div>
           {wl.orders.length ? wl.orders.map((o) => <OrderCard key={o.id} o={o} back={back} canCollect={canCollect} canPay={can(caps, 'payment:collect:branch') && !isReadOnly(caps, 'diagnostics')} />) : <Card><p className="mc-empty">No lab bookings for this day.</p></Card>}

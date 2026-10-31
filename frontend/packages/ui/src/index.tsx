@@ -7,7 +7,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { CommandPalette, NavToggle, ThemeToggle } from './shell.js';
 import { Icon, iconFor } from './icons.js';
 
-export { Icon, iconFor } from './icons.js';
+export { Icon, iconFor, iconForSpecialty } from './icons.js';
 
 export interface FrameNavItem { key: string; label: string; href: string; active?: boolean; /** the area it belongs to (sidebar group) */ group?: string }
 
