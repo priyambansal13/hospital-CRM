@@ -4,30 +4,100 @@
  */
 import type { CSSProperties, ReactNode } from 'react';
 
-export interface FrameNavItem { key: string; label: string; href: string; active?: boolean }
+import { CommandPalette, NavToggle, ThemeToggle } from './shell.js';
+import { Icon, iconFor } from './icons.js';
 
+export { Icon, iconFor } from './icons.js';
+
+export interface FrameNavItem { key: string; label: string; href: string; active?: boolean; /** the area it belongs to (sidebar group) */ group?: string }
+
+/** Applies the remembered light/dark choice before the first paint (no flash). */
+const THEME_SCRIPT = "try{var t=localStorage.getItem('mc-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}";
+const initials = (s: string) => s.replace(/@.*/, '').split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join('') || '?';
+
+/**
+ * The page frame. Staff get a sidebar (their screens grouped by area, with icons), a top bar with the command palette
+ * (Ctrl/⌘ K) and the light/dark switch; patients and visitors get a top bar and a footer.
+ */
 export function AppFrame(props: {
   hospital: { name: string; logoUrl?: string | null; primaryColor?: string; accentColor?: string };
   nav: FrameNavItem[];
-  user?: { label: string; signOutHref: string } | null;
+  user?: { label: string; signOutHref: string; role?: string } | null;
   /** shown when nobody is signed in */
   signInHref?: string;
   homeHref?: string;
+  /** 'sidebar' for staff with several areas */
+  layout?: 'top' | 'sidebar';
+  /** full-bleed pages (the home page) manage their own width */
+  wide?: boolean;
   children: ReactNode;
 }) {
   const style = { '--brand': props.hospital.primaryColor ?? '#0f766e', '--accent': props.hospital.accentColor ?? '#f59e0b' } as CSSProperties;
+  const brand = (
+    <a className="mc-brand" href={props.homeHref ?? '/'}>
+      {props.hospital.logoUrl ? <img src={props.hospital.logoUrl} alt="" className="mc-logo" /> : <span className="mc-logo-mark" aria-hidden>{props.hospital.name.slice(0, 1)}</span>}
+      <span>{props.hospital.name}</span>
+    </a>
+  );
+  const script = <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />;
+  if (props.layout === 'sidebar') {
+    const groups: { title: string; items: FrameNavItem[] }[] = [];
+    for (const n of props.nav) {
+      const title = n.group ?? 'Menu';
+      const g = groups.find((x) => x.title === title) ?? (groups.push({ title, items: [] }), groups.at(-1)!);
+      g.items.push(n);
+    }
+    const current = props.nav.find((n) => n.active);
+    return (
+      <div className="mc-shell" style={style}>
+        {script}
+        <aside className="mc-sidebar" aria-label="Sidebar">
+          {brand}
+          <nav className="mc-side-nav" aria-label="Main">
+            {groups.map((g) => (
+              <div key={g.title} className="mc-side-group">
+                <div className="mc-side-title">{g.title}</div>
+                {g.items.map((n) => (
+                  <a key={n.key} href={n.href} className={n.active ? 'active' : undefined} aria-current={n.active ? 'page' : undefined}>
+                    <Icon name={iconFor(n.key, n.label)} />{n.label}
+                  </a>
+                ))}
+              </div>
+            ))}
+          </nav>
+          {props.user ? (
+            <div className="mc-side-foot">
+              <div className="mc-who">
+                <span className="mc-initials" aria-hidden>{initials(props.user.label)}</span>
+                <div style={{ minWidth: 0 }}><div className="mc-who-name">{props.user.label}</div><div className="mc-who-role">{props.user.role ?? 'Staff'}</div></div>
+              </div>
+              <a href={props.user.signOutHref} className="mc-btn mc-btn-ghost">Sign out</a>
+            </div>
+          ) : null}
+        </aside>
+        <div className="mc-content">
+          <header className="mc-topbar">
+            <NavToggle />
+            <div className="mc-crumb">{current ? <>{current.group && current.group !== current.label ? `${current.group} / ` : ''}<strong>{current.label}</strong></> : <strong>{props.hospital.name}</strong>}</div>
+            <CommandPalette items={props.nav.map((n) => ({ label: n.label, href: n.href, group: n.group ?? '', icon: iconFor(n.key, n.label) }))} />
+            <ThemeToggle />
+          </header>
+          <main className={`mc-main${props.wide ? ' mc-main-wide' : ''}`}>{props.children}</main>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="mc-frame" style={style}>
+      {script}
       <header className="mc-header">
-        <a className="mc-brand" href={props.homeHref ?? '/'}>
-          {props.hospital.logoUrl ? <img src={props.hospital.logoUrl} alt="" className="mc-logo" /> : <span className="mc-logo-mark" aria-hidden>{props.hospital.name.slice(0, 1)}</span>}
-          <span>{props.hospital.name}</span>
-        </a>
+        {brand}
         <nav className="mc-nav" aria-label="Main">
           {props.nav.map((n) => (
             <a key={n.key} href={n.href} className={n.active ? 'active' : undefined} aria-current={n.active ? 'page' : undefined}>{n.label}</a>
           ))}
         </nav>
+        <ThemeToggle />
         {props.user ? (
           <div className="mc-user">
             <span>{props.user.label}</span>
@@ -37,7 +107,13 @@ export function AppFrame(props: {
           <div className="mc-user"><a href={props.signInHref} className="mc-btn mc-btn-primary">Sign in</a></div>
         ) : null}
       </header>
-      <main className="mc-main">{props.children}</main>
+      <main className={`mc-main${props.wide ? ' mc-main-wide' : ''}`}>{props.children}</main>
+      <footer className="mc-footer">
+        <div className="mc-footer-inner">
+          <span>© {new Date().getFullYear()} {props.hospital.name}. In an emergency call <a href="tel:112">112</a> or <a href="tel:108">108</a> (ambulance).</span>
+          <span>Powered by MediCare</span>
+        </div>
+      </footer>
     </div>
   );
 }
@@ -138,4 +214,48 @@ export function CheckboxGroup({ legend, name, options, defaultValues = [] }: { l
 
 export function Chip({ href, children, active }: { href: string; children: ReactNode; active?: boolean }) {
   return <a href={href} className={`mc-chip${active ? ' active' : ''}`} aria-current={active ? 'true' : undefined}>{children}</a>;
+}
+
+/** A KPI tile: a number with a label, an icon, a line underneath; a link when `href` is given. */
+export function Kpi({ label, value, sub, icon = 'chart', href, tone }: { label: string; value: ReactNode; sub?: ReactNode; icon?: string; href?: string; tone?: 'success' | 'warning' | 'danger' }) {
+  const body = (
+    <>
+      <span className="mc-kpi-label"><span className="mc-kpi-icon"><Icon name={icon} /></span>{label}</span>
+      <span className="mc-kpi-value">{value}</span>
+      {sub ? <span className="mc-kpi-sub">{sub}</span> : null}
+    </>
+  );
+  return href ? <a className="mc-kpi" href={href} data-tone={tone}>{body}</a> : <div className="mc-kpi" data-tone={tone}>{body}</div>;
+}
+
+/** Horizontal bars (label, share of the largest or of a limit, value). */
+export function Bars({ rows, max }: { rows: { label: string; value: number; display?: ReactNode; tone?: 'warning' | 'danger' }[]; max?: number }) {
+  const top = max ?? Math.max(1, ...rows.map((r) => r.value));
+  if (!rows.length) return <p className="mc-empty">Nothing yet.</p>;
+  return (
+    <div className="mc-bars">
+      {rows.map((r) => (
+        <div key={r.label} className="mc-bar">
+          <span>{r.label}</span>
+          <div className="mc-bar-track" aria-hidden><div className="mc-bar-fill" data-tone={r.tone} style={{ width: `${Math.min(100, (r.value / top) * 100)}%` }} /></div>
+          <strong>{r.display ?? r.value}</strong>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** Vertical columns (e.g. the next 7 days). */
+export function Columns({ rows }: { rows: { label: string; value: number }[] }) {
+  const top = Math.max(1, ...rows.map((r) => r.value));
+  return (
+    <div className="mc-columns" role="img" aria-label={rows.map((r) => `${r.label}: ${r.value}`).join(', ')}>
+      {rows.map((r) => (
+        <div key={r.label} className="mc-column" title={`${r.label}: ${r.value}`}>
+          <div className="mc-column-bar" style={{ height: `${Math.max(3, (r.value / top) * 100)}%` }} />
+          <small>{r.label}</small>
+        </div>
+      ))}
+    </div>
+  );
 }

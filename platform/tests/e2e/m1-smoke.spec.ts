@@ -26,7 +26,7 @@ test('hospital admin manages branches and staff in the admin zone', async ({ pag
   await row.getByRole('button', { name: 'Deactivate' }).click();
   await expect(page.getByRole('row', { name: new RegExp(name) })).toContainText('Inactive');
   await expect(page.getByRole('row', { name: new RegExp(name) })).toContainText('411001'); // PATCH must not wipe the address
-  await expect(page.locator('.mc-nav a.active')).toHaveText(['Branches']);
+  await expect(page.getByRole('navigation', { name: 'Main' }).locator('a[aria-current="page"]')).toHaveText(['Branches']);
 
   // staff: invite a doctor; the role arrives via events (iam → entitlement)
   await page.getByRole('navigation', { name: 'Main' }).getByRole('link', { name: 'Staff' }).click();

@@ -102,11 +102,17 @@ export interface ZoneInfo { name: string; basePath: string }
  * The common page frame for every zone: hospital branding, nav from capabilities (only deployed zones),
  * signed-in user and sign-out. `requireAuth: false` for public pages (landing, login).
  */
-export async function ZoneFrame({ zone, path, zones, requireAuth = true, children }: { zone: string; path: string; zones: ZoneInfo[]; requireAuth?: boolean; children: ReactNode }) {
+/** Sidebar group titles: the area each zone's screens belong to. */
+const AREA: Record<string, string> = { shell: 'Home', admin: 'Administration', desk: 'Front desk', doctor: 'Doctor', lab: 'Lab', patient: 'Patient services', platform: 'MediCare console', account: 'Subscription' };
+const ROLE_NAME = (roles: string[]) => (roles[0] ?? 'STAFF').toLowerCase().replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+
+export async function ZoneFrame({ zone, path, zones, requireAuth = true, wide = false, children }: { zone: string; path: string; zones: ZoneInfo[]; requireAuth?: boolean; wide?: boolean; children: ReactNode }) {
   const [branding, session] = await Promise.all([getBranding(), getSession()]);
   const base = await origin();
-  let nav: { key: string; label: string; href: string; active?: boolean }[] = [];
+  let nav: { key: string; label: string; href: string; active?: boolean; group?: string }[] = [];
   let banner: ReactNode = null;
+  let role: string | undefined;
+  let staff = false;
   if (requireAuth || session) {
     const caps = await getCapabilities(path);
     if (caps.actor.kind === 'staff') banner = billingBanner(caps, base);
@@ -114,10 +120,15 @@ export async function ZoneFrame({ zone, path, zones, requireAuth = true, childre
     const items = visibleNav(caps, zones.map((z) => z.name));
     // the most specific matching item is the current page (so /admin/branches doesn't also light up /admin)
     const current = items.filter((n) => path === n.href || path.startsWith(n.href + '/')).sort((a, b) => b.href.length - a.href.length)[0];
-    nav = items.map((n) => ({ key: n.key, label: n.label, href: `${base}${n.href}`, active: n === current }));
+    nav = items.map((n) => ({ key: n.key, label: n.label, href: `${base}${n.href}`, active: n === current, group: AREA[n.zone] ?? n.zone }));
+    staff = caps.actor.kind === 'staff';
+    role = staff ? ROLE_NAME(caps.roles) : undefined;
   }
-  const user = session ? { label: session.email ?? session.name ?? (session.kind === 'patient' ? 'Patient' : 'Staff'), signOutHref: `${base}/auth/logout` } : null;
-  return <AppFrame hospital={{ name: branding.name, ...branding.branding }} nav={nav} user={user} signInHref={`${base}/login?next=${encodeURIComponent(path)}`} homeHref={`${base}/`}>{banner}{children}</AppFrame>;
+  if (!session) nav = await visitorNav(branding.slug, base, path);
+  const user = session ? { label: session.email ?? session.name ?? (session.kind === 'patient' ? 'Patient' : 'Staff'), signOutHref: `${base}/auth/logout`, role } : null;
+  // staff get the sidebar (their screens grouped by area); patients and visitors the top bar
+  const layout = staff && nav.length > 0 ? 'sidebar' : 'top';
+  return <AppFrame hospital={{ name: branding.name, ...branding.branding }} nav={nav} user={user} layout={layout} wide={wide} signInHref={`${base}/login?next=${encodeURIComponent(path)}`} homeHref={`${base}/`}>{banner}{children}</AppFrame>;
 }
 
 const day = (d: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' }) : '');
@@ -140,4 +151,15 @@ function billingBanner(caps: Capabilities, base: string): ReactNode {
     case 'TRIALING': return owner ? box('info', <>Free trial until {day(b.trialEndsAt)}. Add a card to continue after it.</>) : null;
     default: return null;
   }
+}
+
+/** What a visitor (not signed in) can open: the hospital's public pages, or MediCare's own on the platform host. */
+async function visitorNav(slug: string, base: string, path: string): Promise<{ key: string; label: string; href: string; active?: boolean }[]> {
+  const items = slug === (process.env.PLATFORM_TENANT_SLUG ?? 'medicare')
+    ? [{ key: 'pricing', label: 'Pricing', href: '/pricing' }, { key: 'signup', label: 'Start a trial', href: '/signup' }]
+    : await api<{ modules: string[] }>('/api/entitlement/v1/public/modules').then((m) => [
+      ...(m.modules.includes('directory') ? [{ key: 'find-doctor', label: 'Find a doctor', href: '/care/doctors' }] : []),
+      ...(m.modules.includes('diagnostics') ? [{ key: 'lab-tests', label: 'Lab tests', href: '/care/tests' }] : []),
+    ]).catch(() => []);
+  return items.map((n) => ({ ...n, href: `${base}${n.href}`, active: path === n.href || path.startsWith(`${n.href}/`) }));
 }
