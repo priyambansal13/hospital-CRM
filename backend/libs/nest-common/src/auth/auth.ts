@@ -79,6 +79,8 @@ function safeEqual(a: string, b: string) {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
+const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
+
 /**
  * Global guard. The tenant ALWAYS comes from the request host (X-Tenant-Host from the zone BFF, else Host),
  * never from the body or query; a token is only accepted on the host of the tenant it was issued for.
@@ -108,6 +110,10 @@ export class AuthGuard implements CanActivate {
     if (!host) throw new DomainError(400, 'TENANT_HOST_REQUIRED', 'no tenant host');
     const tenant = await this.placements.resolveHost(normalizeHost(host));
     if (tenant.status !== 'ACTIVE' && tenant.status !== 'READ_ONLY') throw new DomainError(503, 'TENANT_UNAVAILABLE', `hospital is ${tenant.status}`);
+    // READ_ONLY: records can be read, nothing can change (e.g. the seconds a move to another server takes)
+    if (tenant.status === 'READ_ONLY' && !SAFE_METHODS.has(String(req.method).toUpperCase())) {
+      throw new DomainError(503, 'TENANT_READ_ONLY', 'this hospital is under maintenance for a moment: nothing can be changed right now, try again in a minute', { retryAfterSeconds: 30 });
+    }
     rc.tenant = tenant;
     if (access === 'tenant-public') return true;
 

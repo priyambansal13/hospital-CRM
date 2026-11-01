@@ -18,6 +18,7 @@ data:
     max_client_conn = 4000
     max_db_connections = 60
     server_idle_timeout = 60
+    server_login_retry = 1
     ignore_startup_parameters = extra_float_digits
 ---
 apiVersion: apps/v1

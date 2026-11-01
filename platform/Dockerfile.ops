@@ -1,0 +1,13 @@
+# Operations image (Phase 30): the platform CLI with the Postgres 18 client tools, for the backup and restore-drill
+# CronJobs (and a manual `mc tenant move` Job). Runs as MC_IN_CLUSTER=true MC_PG_MODE=direct: settings from the
+# environment, psql/pg_dump/pg_restore against each server's direct address from the catalog.
+#   docker build -f platform/Dockerfile.ops -t medicare-ops .     (from the repository root)
+FROM postgres:18-alpine
+RUN apk add --no-cache nodejs \
+ && adduser -D -u 1000 mc
+WORKDIR /app
+COPY platform/scripts ./platform/scripts
+# services are reached at SVC_URL_<NAME> (no service metadata needed in this image)
+ENV MC_IN_CLUSTER=true MC_PG_MODE=direct MC_BACKUP_DIR=/backups
+USER 1000
+ENTRYPOINT ["node", "platform/scripts/mc.mjs"]

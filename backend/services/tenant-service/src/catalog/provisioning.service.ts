@@ -4,6 +4,7 @@ import { CONTROL_DB, conflict, DomainError, isDev } from '@mc/nest-common';
 import { addToOutbox, envelope, serviceDbConfig, survive, withTx } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import pg from 'pg';
+import { ServersService, type DbServer } from '../servers/servers.service.js';
 import { CatalogRepo, type TenantRow } from './catalog.repo.js';
 
 export interface CreateTenantInput {
@@ -13,6 +14,8 @@ export interface CreateTenantInput {
   plan?: string;
   source?: 'SALES' | 'SIGNUP';
   adminName?: string;
+  /** a named database server (dedicated hospitals); otherwise the least full shared one */
+  server?: string;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -24,7 +27,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 @Injectable()
 export class ProvisioningService {
   private readonly log = new Logger('Provisioning');
-  constructor(@Inject(CONTROL_DB) private readonly db: pg.Pool, private readonly catalog: CatalogRepo) {}
+  constructor(@Inject(CONTROL_DB) private readonly db: pg.Pool, private readonly catalog: CatalogRepo, private readonly servers: ServersService) {}
 
   async create(input: CreateTenantInput): Promise<TenantRow> {
     const existing = await this.catalog.findBySlug(input.slug);
@@ -33,20 +36,22 @@ export class ProvisioningService {
     const dbName = `t_${input.slug.replaceAll('-', '_')}`;
     const host = `${input.slug}.${process.env.TENANT_BASE_DOMAIN ?? 'localhost'}`;
 
+    // a retried saga keeps the server it started on
+    const server = existing?.dbServer ? await this.servers.get(existing.dbServer) : await this.servers.pick(input.server);
     if (!existing) {
       await withTx(this.db, async (c) => {
         await c.query(
-          `INSERT INTO tenants (id, slug, name, status, db_name, db_host, db_port, plan, admin_email, branding, source)
-           VALUES ($1,$2,$3,'PROVISIONING',$4,$5,$6,$7,$8,$9,$10)`,
-          [id, input.slug, input.name, dbName, process.env.PG_HOST ?? 'localhost', Number(process.env.PG_PORT ?? 61432), input.plan ?? null, input.adminEmail,
+          `INSERT INTO tenants (id, slug, name, status, db_name, db_host, db_port, db_server, plan, admin_email, branding, source)
+           VALUES ($1,$2,$3,'PROVISIONING',$4,$5,$6,$7,$8,$9,$10,$11)`,
+          [id, input.slug, input.name, dbName, server.pooledHost, server.pooledPort, server.id, input.plan ?? null, input.adminEmail,
             { primaryColor: '#0f766e', accentColor: '#f59e0b', logoUrl: null }, input.source ?? 'SALES'],
         );
         await c.query('INSERT INTO tenant_domains (host, tenant_id, is_primary) VALUES ($1, $2, true)', [host, id]);
       });
     }
 
-    await this.step(id, 'create_database', () => this.createDatabase(dbName));
-    await this.step(id, 'tenant_meta', () => this.writeTenantMeta(dbName, id, input.slug));
+    await this.step(id, 'create_database', () => this.createDatabase(server, dbName));
+    await this.step(id, 'tenant_meta', () => this.writeTenantMeta(server, dbName, id, input.slug));
 
     await withTx(this.db, async (c) => {
       await c.query(`UPDATE tenants SET status = 'ACTIVE', updated_at = now() WHERE id = $1`, [id]);
@@ -72,26 +77,29 @@ export class ProvisioningService {
   }
 
   /** CREATE DATABASE … TEMPLATE medicare_template: every schema at the latest version in seconds. */
-  private async createDatabase(dbName: string) {
+  private async createDatabase(server: DbServer, dbName: string) {
     if (!/^t_[a-z0-9_]+$/.test(dbName)) throw new Error(`bad db name ${dbName}`);
-    const { rows } = await this.db.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
-    if (rows.length) return;
-    const template = process.env.TEMPLATE_DB ?? 'medicare_template';
-    // The template must have no open connections (a migration may be running): retry briefly.
-    for (let attempt = 1; ; attempt++) {
-      try {
-        await this.db.query(`CREATE DATABASE ${dbName} TEMPLATE ${template}`);
-        return;
-      } catch (e) {
-        if (attempt >= 10 || !/being accessed by other users/.test((e as Error).message)) throw e;
-        await sleep(500 * attempt);
+    // every server has its own template, kept at the latest version by the migration orchestrator
+    await this.servers.admin(server, 'postgres', async (c) => {
+      const { rows } = await c.query('SELECT 1 FROM pg_database WHERE datname = $1', [dbName]);
+      if (rows.length) return;
+      const template = process.env.TEMPLATE_DB ?? 'medicare_template';
+      // The template must have no open connections (a migration may be running): retry briefly.
+      for (let attempt = 1; ; attempt++) {
+        try {
+          await c.query(`CREATE DATABASE ${dbName} TEMPLATE ${template}`);
+          return;
+        } catch (e) {
+          if (attempt >= 10 || !/being accessed by other users/.test((e as Error).message)) throw e;
+          await sleep(500 * attempt);
+        }
       }
-    }
+    });
   }
 
-  private async writeTenantMeta(dbName: string, tenantId: string, slug: string) {
+  private async writeTenantMeta(server: DbServer, dbName: string, tenantId: string, slug: string) {
     const cfg = serviceDbConfig('tenant');
-    const c = new pg.Client({ host: process.env.PG_HOST ?? 'localhost', port: Number(process.env.PG_PORT ?? 61432), database: dbName, user: cfg.user, password: cfg.password });
+    const c = new pg.Client({ host: server.pooledHost, port: server.pooledPort, database: dbName, user: cfg.user, password: cfg.password });
     survive(c, 'provisioning');
     await c.connect();
     try {
@@ -116,7 +124,7 @@ export class ProvisioningService {
    * unreadable), then the database is dropped. Export it first (`mc tenant export`). Not reversible.
    */
   async purge(id: string, opts: { force?: boolean } = {}) {
-    const { rows: [t] } = await this.db.query('SELECT id, slug, status, db_name, deleted_at, purged_at FROM tenants WHERE id = $1', [id]);
+    const { rows: [t] } = await this.db.query('SELECT id, slug, status, db_name, db_server, deleted_at, purged_at FROM tenants WHERE id = $1', [id]);
     if (!t) throw new DomainError(404, 'NOT_FOUND', 'tenant not found');
     if (t.purged_at) return { tenantId: id, slug: t.slug, alreadyPurged: true };
     assertPurgeable(t, { now: new Date(), days: Number(process.env.PURGE_AFTER_DAYS ?? 30), force: !!opts.force, dev: isDev() });
@@ -128,7 +136,9 @@ export class ProvisioningService {
       done[svc.toLowerCase()] = await res.json();
     }
     if (!/^t_[a-z0-9_]+$/.test(t.db_name)) throw new Error(`bad db name ${t.db_name}`);
-    await this.db.query(`DROP DATABASE IF EXISTS ${t.db_name} WITH (FORCE)`);
+    await this.servers.admin(await this.servers.get(t.db_server), 'postgres', (c) => c.query(`DROP DATABASE IF EXISTS ${t.db_name} WITH (FORCE)`));
+    // the backup key goes too: every backup of this hospital becomes unreadable
+    await this.db.query('DELETE FROM tenant_backup_keys WHERE tenant_id = $1', [id]);
     await this.db.query('UPDATE tenants SET purged_at = now(), updated_at = now() WHERE id = $1', [id]);
     this.log.warn(`${t.slug}: purged (database ${t.db_name} dropped, data keys destroyed)`);
     return { tenantId: id, slug: t.slug, database: t.db_name, ...done };

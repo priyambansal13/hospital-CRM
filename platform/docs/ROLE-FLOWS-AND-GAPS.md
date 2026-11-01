@@ -597,6 +597,18 @@ Still open: HL7 v2 for older LIS, FHIR write/OAuth clients, ABDM and insurance c
 
 Still open: Ops agent actions with approval, the brief on Slack, editable care-gap rules, real Gemini runs.
 
+### New flows after the review: Phase 30 part 1, operating the database layer (2026-11-01)
+
+- **MediCare operations (CLI and Jobs, no screen yet):**
+  - register database servers, and place a hospital on a dedicated server;
+  - move a hospital between servers;
+  - set its release ring, and migrate ring by ring;
+  - back up every hospital nightly (encrypted with the hospital's own key), and run restore drills.
+- **Every staff member and patient of a hospital being moved:** for about 5 seconds, changes are refused with "under maintenance for a moment, try again in a minute"; reading keeps working. Nothing accepted is lost: the move checks content before switching. This is the only user-visible effect.
+- **Change:** a hospital marked READ_ONLY now really refuses changes. Before, it was only a label.
+
+Still open: a console page for servers, moves and backups; the CronJobs and a DR test in a real cluster.
+
 ---
 
 ## 7. What works well (keep it)

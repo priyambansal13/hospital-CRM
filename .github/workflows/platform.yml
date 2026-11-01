@@ -2,10 +2,10 @@
 name: platform-ci
 on:
   pull_request:
-    paths: ['platform/deploy/**', 'platform/scripts/**', 'backend/modules/**', '.github/workflows/platform.yml']
+    paths: ['platform/deploy/**', 'platform/scripts/**', 'platform/Dockerfile.ops', 'backend/modules/**', '.github/workflows/platform.yml']
   push:
     branches: [main]
-    paths: ['platform/deploy/**', 'platform/scripts/**', 'backend/modules/**', '.github/workflows/platform.yml']
+    paths: ['platform/deploy/**', 'platform/scripts/**', 'platform/Dockerfile.ops', 'backend/modules/**', '.github/workflows/platform.yml']
   workflow_dispatch:
 jobs:
   deploy-manifests:
@@ -25,3 +25,19 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
       - run: terraform fmt -check -recursive
       - run: terraform init -backend=false && terraform validate
+  ops-image:
+    # the operations image (backups, restore drills, moves): built on every change, pushed on main once GCP is set up
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -f platform/Dockerfile.ops -t medicare-ops .
+      - run: docker run --rm --entrypoint sh medicare-ops -c 'pg_dump --version && node --version && node platform/scripts/mc.mjs backup 2>&1 | grep -q "backup run"'
+      - if: github.ref == 'refs/heads/main' && vars.GCP_WIF_PROVIDER != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_CI_SA }}
+      - if: github.ref == 'refs/heads/main' && vars.GCP_WIF_PROVIDER != ''
+        run: |
+          gcloud auth configure-docker asia-south1-docker.pkg.dev --quiet
+          docker tag medicare-ops ${{ vars.IMAGE_REGISTRY }}/ops:${{ github.sha }} && docker push ${{ vars.IMAGE_REGISTRY }}/ops:${{ github.sha }}

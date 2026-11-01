@@ -1,7 +1,16 @@
-# Handoff: where work stopped (2026-11-01, after Phase 29: analytics and the Ops agent)
+# Handoff: where work stopped (2026-11-01, after Phase 30 part 1: database servers, moves, rings, backups)
 
 ## State
-- Phases 0–27 and 29 are built; M5 (AI) is complete; M6: Phase 26 (patient memberships) and Phase 27 (custom fields, forms, workflow rules, webhooks, API keys, FHIR read API, LIS connector; new integration-service on 4416) done 2026-10-31; Phase 29 (analytics warehouse and dashboards, new analytics-service on 4417; Ops agent, morning brief, care-gap reminders, no-show outreach) done 2026-11-01. Phase 28 (video) is the only M6 phase left. UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
+- Phases 0–27 and 29 are built; M5 (AI) is complete; M6: Phase 26 (patient memberships) and Phase 27 (custom fields, forms, workflow rules, webhooks, API keys, FHIR read API, LIS connector; new integration-service on 4416) done 2026-10-31; Phase 29 (analytics warehouse and dashboards, new analytics-service on 4417; Ops agent, morning brief, care-gap reminders, no-show outreach) done 2026-11-01. Phase 28 (video) is the only M6 phase left and is skipped for now (user decision 2026-11-01). UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
+- **M7 started: Phase 30 part 1 done 2026-11-01** (IMPLEMENTATION-PLAN.md, Phase 30):
+  - a database-server registry, with a second local Postgres (`postgres-b`, registered as pg-2, DEDICATED, by `mc test servers`);
+  - dedicated-server hospitals (`mc tenant create --server`);
+  - `mc tenant move` (logical replication, about 5 s read-only);
+  - release rings (`mc migrate --max-ring`, `mc migrate status`, `mc tenant ring`);
+  - encrypted per-hospital backups with restore drills (`mc backup run|list|drill|status`);
+  - the ops image, and CronJobs and Terraform for backups (written, not yet run in a cluster).
+  - Tests: `mc test servers` (27), `mc test backups` (15).
+  - Local infra changes: Postgres `wal_level=logical`, `max_connections=600`; PgBouncer idle timeout 20 s and `server_login_retry` 1 s; new secrets `REPLICATION_PASSWORD` and `BACKUP_MASTER_KEY` (`mc configure`).
 - The flow review is in [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md). See §8 "Fix log" for details.
   - Wave 1 (15 gaps): fixed 2026-10-25.
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
@@ -37,7 +46,7 @@
 
 ## Resume here (ask first)
 Choose one:
-1. **M6, Phase 28** (video consultations; IMPLEMENTATION-PLAN.md): the last M6 phase; it would also exercise the members' free video allowance. Then M7 (production readiness).
+1. **Phase 30 part 2** (ask first): k6 load test at the platform target, chaos tests (Kafka, Redis and payment-provider outages), SLOs and alerts (including backup age and failed drills from `internal/backups/summary`), on-call runbooks (move, restore, failed migration ring), a public status page, and production Terraform (India, Cloud SQL servers as SHARED/DEDICATED, written and validated, not applied). Phase 28 (video consultations) is skipped for now (user decision 2026-11-01); when it returns it would also exercise the members' free video allowance.
 2. **Real-provider runs**, once the user provides keys or accounts:
    - Gemini: a valid key, then `LLM_PROVIDER=gemini` and `mc test assistant`, `mc test concierge` `mc test copilot` and `mc test scribe` against the real model, plus the Ops agent, the morning brief and a Batch Mode job (prompt tuning; set `GEMINI_COPILOT_MODEL` / `GEMINI_TRANSCRIBE_MODEL` if the defaults are not available), and a real recorded consultation;
    - WhatsApp: a WhatsApp Business account (Meta Cloud API): `WHATSAPP_PROVIDER=meta`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, the webhook URL registered with Meta, `mc whatsapp link <slug> <phoneNumberId> <number>`;

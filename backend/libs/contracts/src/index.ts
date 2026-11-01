@@ -53,7 +53,8 @@ export const TenantProvisioned = z.object({
 });
 export type TenantProvisioned = z.infer<typeof TenantProvisioned>;
 
-export const TenantUpdated = z.object({ tenantId: z.uuid(), slug: z.string(), status: z.string() });
+/** Status changed, or (`server` set) the hospital's database moved to another server: services drop cached pools. */
+export const TenantUpdated = z.object({ tenantId: z.uuid(), slug: z.string(), status: z.string(), server: z.string().optional() });
 export type TenantUpdated = z.infer<typeof TenantUpdated>;
 
 export const BranchChanged = z.object({ branchId: z.uuid(), name: z.string(), active: z.boolean(), timezone: z.string().default('Asia/Kolkata') });
@@ -479,6 +480,8 @@ export interface TenantPlacement {
   dbName: string;
   dbHost: string;
   dbPort: number;
+  /** which Postgres server (tenant-service db_servers) the database is on */
+  dbServer?: string;
   hosts: string[];
 }
 

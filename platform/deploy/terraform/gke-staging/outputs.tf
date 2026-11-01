@@ -3,3 +3,12 @@ output "cloud_sql_private_ip" { value = google_sql_database_instance.pg.private_
 output "redis_host" { value = google_redis_instance.redis.host }
 output "image_registry" { value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.images.repository_id}" }
 output "workload_service_account" { value = google_service_account.workload.email }
+
+output "backups_bucket" {
+  value       = google_storage_bucket.backups.name
+  description = "medicare-platform values: backups.bucket"
+}
+output "ops_service_account" {
+  value       = google_service_account.ops.email
+  description = "medicare-platform values: backups.serviceAccount"
+}

@@ -158,9 +158,13 @@ Each service ships migrations as usual; a **migration orchestrator** (a job in t
 - A failure stops the ring, alerts, and leaves the remaining tenants on the previous version (still compatible).
 - The template DB is updated first so new tenants are always created at the latest version.
 
+*As built (Phase 30):* `mc migrate` / the per-service migration Job. Rings come from `tenants.ring` (0 internal, 1 pilot, 2 everyone); hospitals on DEDICATED servers are ring 3 and run in the weekly `migrate-window` CronJob. Every server has its own template. `mc migrate status` lists hospitals behind.
+
 ### 3.5 Moving a tenant
 
 To move a tenant to another server (rebalancing, upgrade to a dedicated server, region move): set up **logical replication** from the old DB to the new one → catch up → set the tenant `READ_ONLY` for seconds → switch the catalog entry → services reconnect (catalog change event evicts their pools) → `ACTIVE`. Alternatively `pg_dump`/`pg_restore` in a short maintenance window for small tenants.
+
+*As built (Phase 30):* `mc tenant move <slug> <server>` (`platform/scripts/ops.mjs`). Before the switch, the old copy is **fenced**: CONNECT is revoked from PUBLIC and from every service role by name, because the database owner keeps CONNECT otherwise. The move then checks that the new copy has caught up, with matching row counts and per-table content checksums, before switching the catalog. Read-only takes about 5 s locally. Writes during that time get 503 `TENANT_READ_ONLY`, and events for that hospital wait. The old copy is renamed `moved_<db>_<time>` and closed, not dropped. Servers are registered in `db_servers` (SHARED or DEDICATED); see IMPLEMENTATION-PLAN.md, Phase 30.
 
 ### 3.6 Outbox and background jobs with many databases
 

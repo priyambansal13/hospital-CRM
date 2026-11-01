@@ -1,0 +1,3 @@
+# build context for Dockerfile.ops (repository root): only the platform CLI
+*
+!platform/scripts/

@@ -4,6 +4,8 @@ port: 4400
 metricsPort: 9464             # Prometheus /metrics (review H-3)
 schema: ""
 migrations: true                 # run `node dist/migrate.js all` as a pre-install/pre-upgrade hook
+# dedicated servers' hospitals (ring 3) are migrated in this weekly window, not during the rollout
+migrationWindow: { schedule: "0 2 * * 0", timeZone: Asia/Kolkata }
 image:
   registry: ""                   # e.g. asia-south1-docker.pkg.dev/<project>/medicare
   tag: latest

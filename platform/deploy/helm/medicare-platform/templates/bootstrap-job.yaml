@@ -17,6 +17,9 @@ data:
     q postgres "ALTER ROLE svc_{{ .schema }} PASSWORD '${pw//\'/\'\'}'; ALTER ROLE svc_{{ .schema }} SET search_path TO {{ .schema }}, public;"
     {{- end }}{{ end }}
     q postgres "ALTER ROLE svc_tenant CREATEDB;"
+    # copies a hospital to another server when it is moved (mc tenant move): reads everything, writes nothing
+    q postgres "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'mc_replicator') THEN CREATE ROLE mc_replicator LOGIN REPLICATION; END IF; END \$\$;"
+    q postgres "ALTER ROLE mc_replicator PASSWORD '${REPLICATION_PASSWORD//\'/\'\'}'; GRANT pg_read_all_data TO mc_replicator;"
     for db in mc_control medicare_template; do
       [ "$(q postgres "SELECT 1 FROM pg_database WHERE datname = '$db'")" = "1" ] || q postgres "CREATE DATABASE $db"
     done
@@ -24,7 +27,7 @@ data:
     {{- range .Values.services }}{{ if .control }}
     q mc_control "CREATE SCHEMA IF NOT EXISTS {{ .schema }} AUTHORIZATION svc_{{ .schema }};"
     {{- end }}{{ end }}
-    for db in medicare_template $(q postgres "SELECT datname FROM pg_database WHERE datname LIKE 't\_%'"); do
+    for db in medicare_template $(q postgres "SELECT datname FROM pg_database WHERE datname LIKE 't\_%' AND datallowconn"); do
       q "$db" "REVOKE CREATE ON SCHEMA public FROM PUBLIC; CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public; CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
         CREATE TABLE IF NOT EXISTS public.tenant_meta (tenant_id uuid PRIMARY KEY, slug text NOT NULL UNIQUE, created_at timestamptz NOT NULL DEFAULT now());
         ALTER TABLE public.tenant_meta OWNER TO svc_tenant; GRANT SELECT ON public.tenant_meta TO PUBLIC;"

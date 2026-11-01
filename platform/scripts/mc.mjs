@@ -4,9 +4,15 @@
 //   configure                         create .env files with random local secrets (idempotent)
 //   infra up|down|status|logs [svc]|reset
 //   db bootstrap                      roles, control DB, template DB, schemas (reads backend services' "mc" metadata)
-//   migrate                           orchestrator: control → template → every tenant DB, records versions in the catalog
+//   migrate [--max-ring n] | migrate status   control → every server's template → hospitals by release ring (0 internal,
+//                                     1 pilots, 2 everyone, 3 dedicated); stops at the first failure | who is behind
+//   server list | server add <id> --pooled h:p --direct h:p --peer h:p [--kind DEDICATED]   database servers (Phase 30)
+//   tenant move <slug> <server>       move a hospital's database to another server (logical replication, seconds read-only)
+//   tenant ring <slug> <0-3>          the hospital's release ring
+//   backup run <slug>|--all | backup list <slug> | backup drill <slug> [--id x] | --sample n | backup status
+//                                     encrypted per-hospital backups; restore drill into a scratch database and verify
 //   gateway sync                      generate infra/kong/kong.yml from service metadata and hot-reload Kong
-//   tenant create <slug> --name <n> --admin <email> | tenant list
+//   tenant create <slug> --name <n> --admin <email> [--server <id>] | tenant list
 //   plan list                         published plans and add-ons (modules, limits, price)
 //   plan show <slug>                  a hospital's contract: plan, add-ons, overrides, modules and their state, history
 //   plan set <slug> <PLAN> [--addons LAB,BRANCHES_5:2] [--reason text]   move a hospital to a plan (applies now)
@@ -42,6 +48,8 @@
 //   test analytics                    analytics warehouse, semantic layer, branch scoping (Phase 29)
 //   test ops                          Ops agent, morning brief, care-gap reminders, no-show outreach (Phase 29)
 //   test integrations                 webhooks, API keys, FHIR read API, LIS connector (Phase 27)
+//   test servers                      database servers, moving a hospital between them, release rings (Phase 30)
+//   test backups                      encrypted per-hospital backups, restore drills, tampering detected (Phase 30)
 //   test console                      platform console: plan builder, two-person approval, impact, move hospitals, audit
 //   k8s render <env>                  write deploy/environments/<env>/{generated.yaml,apps.json} from service/zone metadata
 //   k8s check <env>                   helm lint + render every app + kubeconform schema check (needs helm, docker)
@@ -56,6 +64,7 @@ import { randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { makeOps } from './ops.mjs';
 
 const PLATFORM = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const ROOT = resolve(PLATFORM, '..');
@@ -80,7 +89,9 @@ function readEnv(file) {
 function writeEnv(file, vars, header) {
   writeFileSync(file, `# ${header}\n` + Object.entries(vars).map(([k, v]) => `${k}=${v}`).join('\n') + '\n');
 }
-const env = () => readEnv(ENV_FILE);
+// In the cluster (the ops image's CronJobs) settings come from the environment (Secret Manager → env), not .env files
+const IN_CLUSTER = process.env.MC_IN_CLUSTER === 'true';
+const env = () => (IN_CLUSTER ? { ...process.env } : readEnv(ENV_FILE));
 
 function flags(args) {
   const out = { _: [] };
@@ -123,7 +134,10 @@ async function api(base, path, { method = 'GET', body, headers = {} } = {}) {
   if (!res.ok) fail(`${method} ${path} → ${res.status} ${typeof data === 'string' ? data : JSON.stringify(data)}`);
   return data;
 }
-const svcUrl = (name) => { const s = services().find((x) => x.schema === name || x.name === name); if (!s) fail(`unknown service ${name}`); return `http://localhost:${s.port}`; };
+const svcUrl = (name) => {
+  if (process.env[`SVC_URL_${name.toUpperCase()}`]) return process.env[`SVC_URL_${name.toUpperCase()}`];
+  const s = services().find((x) => x.schema === name || x.name === name); if (!s) fail(`unknown service ${name}`); return `http://localhost:${s.port}`;
+};
 
 // ---------- commands ----------
 /** backend/.env keys a developer may set by hand; `mc configure` keeps them */
@@ -150,6 +164,10 @@ function configure() {
     RAZORPAY_WEBHOOK_SECRET: cur.RAZORPAY_WEBHOOK_SECRET ?? secret(24),
     // AI assistant: empty = the offline dev provider. Put an AI Studio key here (synthetic data only) to use Gemini.
     GEMINI_API_KEY: cur.GEMINI_API_KEY ?? '',
+    // Phase 30: the role servers use to copy a hospital to another server (logical replication), and the key that
+    // wraps each hospital's backup key (Cloud KMS in production)
+    REPLICATION_PASSWORD: cur.REPLICATION_PASSWORD ?? secret(),
+    BACKUP_MASTER_KEY: cur.BACKUP_MASTER_KEY ?? randomBytes(32).toString('base64url'),
   };
   for (const s of services()) if (s.schema) vars[dbPasswordKey(s.schema)] = cur[dbPasswordKey(s.schema)] ?? secret();
   writeEnv(ENV_FILE, vars, 'LOCAL DEV SECRETS — generated by `mc configure`, never commit');
@@ -209,7 +227,9 @@ function configure() {
   // PgBouncer config + userlist (service roles; plain passwords are allowed by PgBouncer and kept out of git)
   const gen = join(INFRA, 'pgbouncer/generated');
   mkdirSync(gen, { recursive: true });
-  writeFileSync(join(gen, 'pgbouncer.ini'), readFileSync(join(INFRA, 'pgbouncer/pgbouncer.ini.tpl'), 'utf8').replace('${PG_SERVER_HOST}', 'postgres').replace('${PG_SERVER_PORT}', '5432'));
+  const tpl = readFileSync(join(INFRA, 'pgbouncer/pgbouncer.ini.tpl'), 'utf8');
+  writeFileSync(join(gen, 'pgbouncer.ini'), tpl.replace('${PG_SERVER_HOST}', 'postgres').replace('${PG_SERVER_PORT}', '5432'));
+  writeFileSync(join(gen, 'pgbouncer-b.ini'), tpl.replace('${PG_SERVER_HOST}', 'postgres-b').replace('${PG_SERVER_PORT}', '5432'));
   writeFileSync(join(gen, 'userlist.txt'), Object.entries(vars).filter(([k]) => k.startsWith('DB_PASSWORD_SVC_')).map(([k, v]) => `"svc_${k.slice('DB_PASSWORD_SVC_'.length).toLowerCase()}" "${v}"`).join('\n') + '\n');
   log('wrote platform/.env, backend/.env, frontend/.env, infra/pgbouncer/generated/*');
 }
@@ -251,7 +271,7 @@ function dbBootstrap() {
 
   // tenant schemas: template + every existing tenant DB (a service added later gets its schema everywhere)
   const tenantSchemas = svcs.filter((x) => x.tenant).map((s) => `CREATE SCHEMA IF NOT EXISTS ${s.schema} AUTHORIZATION svc_${s.schema};`).join('\n');
-  const tenantDbs = psql('postgres', `SELECT datname FROM pg_database WHERE datname LIKE 't\\_%'`).split('\n').filter(Boolean);
+  const tenantDbs = psql('postgres', `SELECT datname FROM pg_database WHERE datname LIKE 't\\_%' AND datallowconn`).split('\n').filter(Boolean);
   for (const db of ['medicare_template', ...tenantDbs]) {
     psql(db, `REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
@@ -262,6 +282,8 @@ GRANT SELECT ON public.tenant_meta TO PUBLIC;
 ${tenantSchemas}\n`);
   }
   psql('postgres', `ALTER DATABASE medicare_template IS_TEMPLATE true;`);
+  // every registered server (Phase 30): roles, the replication role, template and schemas
+  for (const server of migrationPlan().servers) ops().bootstrapServer(server, svcs, dbPasswords());
 
   // Kafka topics: every published topic + its DLQ (consumers send failures to <topic>.dlq)
   const topics = [...new Set(services().flatMap((s) => s.publishes ?? []))].flatMap((t) => [t, `${t}.dlq`]);
@@ -274,36 +296,90 @@ ${tenantSchemas}\n`);
   log(`bootstrapped roles for ${svcs.length} services; control DB, template DB and ${tenantDbs.length} tenant DB(s) have their schemas`);
 }
 
-function runNode(dir, args) {
-  return execFileSync('node', ['dist/migrate.js', ...args], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'] });
+function runNode(dir, args, server) {
+  const extra = server ? { PG_HOST_DIRECT: server.directHost, PG_PORT_DIRECT: String(server.directPort) } : {};
+  return execFileSync('node', ['dist/migrate.js', ...args], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], env: { ...process.env, ...extra } });
+}
+const composeArgs = () => ['compose', '--env-file', ENV_FILE, '-f', join(INFRA, 'docker-compose.yml')];
+const ops = () => makeOps({ log, fail, env, api, svcUrl, lit, ident, PLATFORM, composeArgs });
+const migratable = () => services().filter((s) => s.schema && existsSync(join(s.dir, 'migrations')));
+/** One server's template at the latest version (new hospitals there are cloned from it). */
+function migrateTemplate(server) {
+  for (const s of migratable().filter((x) => x.tenant)) runNode(s.dir, ['template'], server);
+}
+const dbPasswords = () => Object.fromEntries(services().filter((s) => s.schema).map((s) => [s.schema, env()[dbPasswordKey(s.schema)] ?? fail(`missing ${dbPasswordKey(s.schema)} — run mc configure`)]));
+
+/** The servers and hospitals the orchestrator works through (read from the catalog directly: no service needed). */
+function migrationPlan() {
+  const e = readEnv(join(BACKEND, '.env'));
+  const def = { id: 'pg-1', kind: 'SHARED', directHost: e.PG_HOST_DIRECT ?? 'localhost', directPort: Number(e.PG_PORT_DIRECT ?? 61432) };
+  const has = psql('mc_control', `SELECT to_regclass('tenant.db_servers') IS NOT NULL`).trim() === 't';
+  const servers = has ? psql('mc_control', 'SELECT id, kind, direct_host, direct_port FROM tenant.db_servers ORDER BY created_at, id').split('\n').filter(Boolean)
+    .map((l) => { const [id, kind, directHost, directPort] = l.split('|'); return { id, kind, directHost, directPort: Number(directPort) }; }) : [];
+  if (!servers.length) servers.push(def);
+  const cols = has ? `coalesce(t.ring, 2), coalesce(t.db_server, ${lit(servers[0].id)}), coalesce(s.kind, 'SHARED')` : `2, ${lit(def.id)}, 'SHARED'`;
+  const tenants = psql('mc_control', `SELECT t.id, t.slug, t.db_name, ${cols} FROM tenant.tenants t ${has ? 'LEFT JOIN tenant.db_servers s ON s.id = t.db_server' : ''}
+    WHERE (t.status IN ('ACTIVE','READ_ONLY') OR (t.status = 'PROVISIONING' AND EXISTS (SELECT 1 FROM tenant.provisioning_steps p WHERE p.tenant_id = t.id AND p.step = 'create_database' AND p.status = 'DONE')))
+      AND t.purged_at IS NULL ORDER BY t.created_at`).split('\n').filter(Boolean)
+    .map((l) => { const [id, slug, db, ring, server, kind] = l.split('|'); return { id, slug, db, ring: kind === 'DEDICATED' ? 3 : Number(ring), server }; });
+  return { servers, tenants };
 }
 
-function migrate() {
-  const svcs = services().filter((s) => s.schema && existsSync(join(s.dir, 'migrations')));
+/**
+ * Migration orchestrator (docs/MULTI-TENANCY.md §3.4): control plane → every server's template → hospitals ring by
+ * ring (0 internal/test, 1 pilots, 2 everyone else, 3 dedicated servers), in batches of 10 per server. The first
+ * failure stops the run: hospitals not reached stay on the previous version, which the code still supports
+ * (expand/contract), and the command exits non-zero. --max-ring 1 stops after the pilots.
+ */
+function migrate(args = []) {
+  const f = flags(args);
+  if (f._[0] === 'status') return migrateStatus();
+  const maxRing = Number(f['max-ring'] ?? 3);
+  const svcs = migratable();
   for (const s of svcs) if (!existsSync(join(s.dir, 'dist/migrate.js'))) fail(`${s.name}: build first (pnpm --dir backend build)`);
-  // Ring 0: control plane + template (new tenants are always cloned at the latest version)
-  for (const s of svcs) {
-    if (s.control) log(`${s.name}: control → ${runNode(s.dir, ['control']).trim()}`);
-    if (s.tenant) log(`${s.name}: template → ${runNode(s.dir, ['template']).trim()}`);
+  for (const s of svcs) if (s.control) log(`${s.name}: control → ${runNode(s.dir, ['control']).trim()}`);
+  const { servers, tenants } = migrationPlan();
+  const byId = new Map(servers.map((x) => [x.id, x]));
+  for (const server of servers) {
+    for (const s of svcs.filter((x) => x.tenant)) runNode(s.dir, ['template'], server);
+    log(`template on ${server.id}: ${svcs.filter((x) => x.tenant).length} services at their latest version`);
   }
-  // Ring 1..n: tenant databases in batches of 10 (internal/test tenants first)
-  const rows = psql('mc_control', `SELECT id, db_name FROM tenant.tenants WHERE status IN ('ACTIVE','READ_ONLY','PROVISIONING') ORDER BY (slug LIKE 'internal%') DESC, created_at`)
-    .split('\n').filter(Boolean).map((l) => { const [id, db] = l.split('|'); return { id, db }; });
-  for (let i = 0; i < rows.length; i += 10) {
-    const batch = rows.slice(i, i + 10);
-    for (const s of svcs.filter((x) => x.tenant)) {
-      const out = JSON.parse(runNode(s.dir, ['tenants', batch.map((r) => r.db).join(',')]));
-      let rec = '';
-      for (const r of batch) {
-        const v = out[r.db];
-        rec += `INSERT INTO tenant.tenant_schema_versions (tenant_id, service, version) VALUES (${lit(r.id)}, ${lit(s.schema)}, ${lit(v)})
-                ON CONFLICT (tenant_id, service) DO UPDATE SET version = EXCLUDED.version, applied_at = now();\n`;
+  for (let ring = 0; ring <= Math.min(3, maxRing); ring++) {
+    const inRing = tenants.filter((t) => t.ring === ring);
+    if (!inRing.length) continue;
+    for (const [serverId, list] of Object.entries(Object.groupBy(inRing, (t) => t.server))) {
+      const server = byId.get(serverId) ?? fail(`unknown server ${serverId}`);
+      for (let i = 0; i < list.length; i += 10) {
+        const batch = list.slice(i, i + 10);
+        for (const s of svcs.filter((x) => x.tenant)) {
+          let out;
+          try {
+            out = JSON.parse(runNode(s.dir, ['tenants', batch.map((r) => r.db).join(',')], server));
+          } catch (e) {
+            fail(`ring ${ring}, ${serverId}, ${s.name}: ${String(e.message).split('\n')[0]}\nstopped: hospitals not yet migrated stay on the previous version (still supported). Fix the migration and run mc migrate again.`);
+          }
+          psql('mc_control', batch.map((r) => `INSERT INTO tenant.tenant_schema_versions (tenant_id, service, version) VALUES (${lit(r.id)}, ${lit(s.schema)}, ${lit(out[r.db])})
+            ON CONFLICT (tenant_id, service) DO UPDATE SET version = EXCLUDED.version, applied_at = now();`).join('\n'));
+        }
       }
-      psql('mc_control', rec);
-      log(`${s.name}: ${batch.length} tenant DB(s) → ${[...new Set(Object.values(out))].join(', ')}`);
+      log(`ring ${ring} on ${serverId}: ${list.length} hospital(s) migrated`);
     }
   }
-  if (!rows.length) log('no tenant databases yet');
+  const held = tenants.filter((t) => t.ring > maxRing).length;
+  if (held) log(`${held} hospital(s) in rings above ${maxRing} not migrated yet`);
+  if (!tenants.length) log('no tenant databases yet');
+}
+
+/** Which hospitals are behind the latest migration of each service. */
+function migrateStatus() {
+  const latest = Object.fromEntries(migratable().filter((s) => s.tenant).map((s) => [s.schema, readdirSync(join(s.dir, 'migrations/tenant')).filter((x) => /^\d{4}_.+\.sql$/.test(x)).sort().at(-1)?.replace(/\.sql$/, '')]));
+  const { tenants } = migrationPlan();
+  const have = psql('mc_control', 'SELECT tenant_id, service, version FROM tenant.tenant_schema_versions').split('\n').filter(Boolean).map((l) => l.split('|'));
+  const v = new Map(have.map(([t, svc, ver]) => [`${t}/${svc}`, ver]));
+  const behind = tenants.map((t) => ({ slug: t.slug, ring: t.ring, server: t.server, behind: Object.entries(latest).filter(([svc, ver]) => ver && v.get(`${t.id}/${svc}`) !== ver).map(([svc]) => svc) }));
+  console.table(behind.map((b) => ({ ...b, behind: b.behind.length ? b.behind.join(' ') : '—' })));
+  const n = behind.filter((b) => b.behind.length).length;
+  log(n ? `${n} of ${tenants.length} hospital(s) behind` : `all ${tenants.length} hospital(s) at the latest version`);
 }
 
 function gatewaySync() {
@@ -350,12 +426,23 @@ async function tenant(action, args) {
   const f = flags(args);
   if (action === 'create') {
     const slug = f._[0] ?? fail('usage: tenant create <slug> --name <name> --admin <email>');
-    const t = await api(svcUrl('tenant'), '/internal/tenants', { method: 'POST', body: { slug, name: f.name ?? slug, adminEmail: f.admin ?? `admin@${slug}.test`, plan: f.plan } });
-    log(`tenant ${t.slug} (${t.id}) → database ${t.dbName}, host ${t.hosts.join(', ')}`);
+    const t = await api(svcUrl('tenant'), '/internal/tenants', { method: 'POST', body: { slug, name: f.name ?? slug, adminEmail: f.admin ?? `admin@${slug}.test`, plan: f.plan, ...(f.server ? { server: f.server } : {}) } });
+    log(`tenant ${t.slug} (${t.id}) → database ${t.dbName} on ${t.dbServer ?? 'pg-1'}, host ${t.hosts.join(', ')}`);
     log(`admin login: ${f.admin ?? `admin@${slug}.test`} / DEV_STAFF_PASSWORD from platform/.env (dev mode)`);
   } else if (action === 'list') {
     const ts = await api(svcUrl('tenant'), '/internal/tenants');
-    console.table(ts.map((t) => ({ slug: t.slug, name: t.name, status: t.status, db: t.dbName, hosts: t.hosts.join(' ') })));
+    console.table(ts.map((t) => ({ slug: t.slug, name: t.name, status: t.status, db: t.dbName, server: t.dbServer, ring: t.ring, hosts: t.hosts.join(' ') })));
+  } else if (action === 'move') {
+    // Phase 30: to another database server with logical replication; read-only for a few seconds
+    const [slug, to] = f._;
+    if (!slug || !to) fail('usage: tenant move <slug> <server>');
+    await ops().move(slug, to, { migrateTemplate });
+  } else if (action === 'ring') {
+    const [slug, ring] = f._;
+    if (!slug || !/^[0-3]$/.test(ring ?? '')) fail('usage: tenant ring <slug> <0|1|2|3>   (0 internal/test, 1 pilot, 2 everyone, 3 dedicated)');
+    const t = await tenantBySlug(slug);
+    await api(svcUrl('tenant'), `/internal/tenants/${t.id}/ring`, { method: 'PUT', body: { ring: Number(ring) } });
+    log(`${slug}: release ring ${ring}`);
   } else if (action === 'export') {
     // offboarding (review H-1): the hospital's database (custom-format dump, restorable with pg_restore) and every
     // document, with a manifest. Run before purge.
@@ -363,7 +450,7 @@ async function tenant(action, args) {
     const t = (await api(svcUrl('tenant'), '/internal/tenants?includeDeleted=true')).find((x) => x.slug === slug) ?? fail(`no tenant ${slug}`);
     const dir = join(f.out ?? join(PLATFORM, 'exports'), `${t.slug}-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}`);
     mkdirSync(join(dir, 'documents'), { recursive: true });
-    const dump = execFileSync('docker', ['compose', '--env-file', ENV_FILE, '-f', join(INFRA, 'docker-compose.yml'), 'exec', '-T', 'postgres', 'pg_dump', '-U', 'postgres', '-Fc', t.dbName], { maxBuffer: 1 << 30 });
+    const dump = ops().run(await ops().serverById(t.dbServer ?? 'pg-1'), 'pg_dump', ['-Fc', t.dbName], { binary: true });
     writeFileSync(join(dir, `${t.dbName}.dump`), dump);
     const docs = await api(svcUrl('records'), `/internal/tenants/${t.id}/export/documents`);
     for (const d of docs) {
@@ -383,7 +470,56 @@ async function tenant(action, args) {
     const t = ts.find((x) => x.slug === slug) ?? fail(`no tenant ${slug}`);
     const r = await api(svcUrl('tenant'), `/internal/tenants/${t.id}/purge`, { method: 'POST', body: { force: !!f.force } });
     log(`purged ${slug}: ${JSON.stringify(r)}`);
-  } else fail('tenant create|list|export|purge');
+  } else fail('tenant create|list|move|ring|export|purge');
+}
+
+/** Database servers (Phase 30). */
+async function serverCmd(action, args) {
+  const f = flags(args);
+  if (action === 'list') {
+    console.table((await ops().servers()).map((x) => ({ id: x.id, kind: x.kind, status: x.status, region: x.region, hospitals: x.tenants, capacity: x.capacity, pooled: `${x.pooledHost}:${x.pooledPort}`, direct: `${x.directHost}:${x.directPort}`, window: x.maintenanceWindow ?? '' })));
+  } else if (action === 'add') {
+    const id = f._[0] ?? fail('usage: server add <id> --pooled host:port --direct host:port --peer host:port [--kind SHARED|DEDICATED] [--capacity n] [--window "Sun 02:00-04:00 IST"]');
+    await ops().serverAdd(id, f, { svcs: services().filter((s) => s.schema), passwords: dbPasswords(), migrateTemplate });
+  } else fail('server list|add');
+}
+
+/** Per-hospital backups and restore drills (Phase 30). */
+async function backupCmd(action, args) {
+  const f = flags(args);
+  const o = ops();
+  if (action === 'run') {
+    const list = f.all ? (await api(svcUrl('tenant'), '/internal/tenants')).filter((t) => t.status === 'ACTIVE' || t.status === 'READ_ONLY') : [await o.tenantBySlug(f._[0] ?? fail('usage: backup run <slug> | --all [--kind NIGHTLY]'))];
+    let failed = 0;
+    for (const t of list) {
+      try { await o.backupOne(t, f.kind ?? (f.all ? 'NIGHTLY' : 'MANUAL')); } catch (e) { failed++; console.error(`[mc] ${t.slug}: backup failed: ${e.message}`); }
+    }
+    if (failed) fail(`${failed} of ${list.length} backup(s) failed`);
+  } else if (action === 'list') {
+    const t = await o.tenantBySlug(f._[0] ?? fail('usage: backup list <slug>'));
+    console.table((await api(svcUrl('tenant'), `/internal/tenants/${t.id}/backups`)).map((b) => ({ id: b.id.slice(0, 8), kind: b.kind, at: b.started_at, mb: (Number(b.bytes) / 1e6).toFixed(2), server: b.server_id, drill: b.drill_at ? `${b.drill_ok ? 'passed' : 'FAILED'} ${b.drill_seconds}s` : '' })));
+  } else if (action === 'drill') {
+    // --sample n: n hospitals at random plus every hospital on a dedicated server (the weekly drill Job)
+    if (f.sample) {
+      const all = (await api(svcUrl('tenant'), '/internal/tenants')).filter((t) => t.status === 'ACTIVE');
+      const dedicated = new Set((await o.servers()).filter((x) => x.kind === 'DEDICATED').map((x) => x.id));
+      const pick = [...all.filter((t) => dedicated.has(t.dbServer)), ...all.filter((t) => !dedicated.has(t.dbServer)).sort(() => Math.random() - 0.5).slice(0, Number(f.sample))];
+      let bad = 0;
+      for (const t of pick) if (!(await o.drill(t)).ok) bad++;
+      log(`restore drills: ${pick.length - bad} of ${pick.length} passed`);
+      if (bad) process.exitCode = 1;
+      return;
+    }
+    const t = await o.tenantBySlug(f._[0] ?? fail('usage: backup drill <slug> [--id <backup>] [--keep] | backup drill --sample <n>'));
+    const r = await o.drill(t, f.id, { keep: !!f.keep });
+    if (!r.ok) process.exitCode = 1;
+  } else if (action === 'status') {
+    const rows = await api(svcUrl('tenant'), '/internal/backups/summary');
+    const age = (at) => (at ? `${Math.round((Date.now() - Date.parse(at)) / 3_600_000)} h` : 'never');
+    console.table(rows.map((r) => ({ hospital: r.slug, server: r.db_server, lastBackup: age(r.started_at), lastDrill: r.drill_at ? `${r.drill_ok ? 'passed' : 'FAILED'} (${age(r.drill_at)} ago, ${r.drill_seconds}s)` : 'never' })));
+    const stale = rows.filter((r) => !r.started_at || Date.now() - Date.parse(r.started_at) > 26 * 3_600_000);
+    if (stale.length) log(`${stale.length} hospital(s) without a backup in the last 26 hours: ${stale.map((r) => r.slug).join(', ')}`);
+  } else fail('backup run|list|drill|status');
 }
 
 /** rpk inside the Redpanda container. */
@@ -630,9 +766,11 @@ const main = async () => {
     case 'configure': return configure();
     case 'infra': return infra(sub, rest);
     case 'db': if (sub === 'bootstrap') return dbBootstrap(); return fail('db bootstrap');
-    case 'migrate': return migrate();
+    case 'migrate': return migrate([sub, ...rest].filter(Boolean));
     case 'gateway': if (sub === 'sync') return gatewaySync(); return fail('gateway sync');
     case 'tenant': return tenant(sub, rest);
+    case 'server': return serverCmd(sub, rest);
+    case 'backup': return backupCmd(sub, rest);
     case 'keys': return keysCmd(sub, rest);
     case 'whatsapp': return whatsappCmd(sub, rest);
     case 'module': return moduleCmd(sub, rest);
@@ -675,6 +813,8 @@ const main = async () => {
       if (sub === 'analytics') return run(`node ${join(PLATFORM, 'tests/analytics.mjs')}`, PLATFORM);
       if (sub === 'ops') return run(`node ${join(PLATFORM, 'tests/ops.mjs')}`, PLATFORM);
       if (sub === 'integrations') return run(`node ${join(PLATFORM, 'tests/integrations.mjs')}`, PLATFORM);
+      if (sub === 'servers') return run(`node ${join(PLATFORM, 'tests/servers.mjs')}`, PLATFORM);
+      if (sub === 'backups') return run(`node ${join(PLATFORM, 'tests/backups.mjs')}`, PLATFORM);
       return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2|wave3|wave4|wave5|concierge|copilot|scribe|whatsapp');
     case 'seed':
       if (sub === 'showcase') return run(`node ${join(PLATFORM, 'scripts/seed-showcase.mjs')}`, PLATFORM);

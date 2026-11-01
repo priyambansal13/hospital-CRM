@@ -5,6 +5,12 @@ import { TenantContext } from './context.js';
 import { serviceDbConfig, survive, withTx } from './db.js';
 import type { PlacementSource } from './placement.js';
 
+/** Connection refused because the database is fenced or gone (directly, or as PgBouncer reports it). */
+export const isMovedError = (e: unknown) => {
+  const err = e as { code?: string; message?: string };
+  return err?.code === '3D000' || /permission denied for database|database "[^"]+" does not exist|server login has been failing/.test(err?.message ?? '');
+};
+
 export class TenantRoutingError extends Error {
   constructor(tenantId: string, dbName: string, found: string | undefined) {
     super(`database ${dbName} belongs to ${found ?? 'nobody'}, not tenant ${tenantId}: refusing to use it`);
@@ -42,7 +48,10 @@ export class TenantDbRouter {
     if (cached) return cached;
     const created = this.open(tenantId);
     this.pools.set(tenantId, created);
-    created.catch(() => this.pools.delete(tenantId));
+    created.catch((e) => {
+      this.pools.delete(tenantId);
+      if (isMovedError(e)) this.placements.invalidate?.(tenantId); // moved: the next open reads the new placement
+    });
     return created;
   }
 
@@ -53,11 +62,31 @@ export class TenantDbRouter {
 
   /** Transaction on the current tenant's database. */
   async tx<T>(fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
-    return withTx(await this.current(), fn);
+    return this.retryMoved(async () => withTx(await this.current(), fn));
   }
 
   async query<R extends pg.QueryResultRow = any>(sql: string, params: unknown[] = []) {
-    return (await this.current()).query<R>(sql, params);
+    return this.retryMoved(async () => (await this.current()).query<R>(sql, params));
+  }
+
+  /**
+   * The database refused this pool because the hospital moved to another server (the old copy is fenced, then
+   * renamed) and the "moved" event has not reached this instance yet: drop the pool and the cached placement, and try
+   * once more on the new server. Nothing ran on the old copy (the connection itself was refused).
+   */
+  private async retryMoved<T>(fn: () => Promise<T>): Promise<T> {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await fn();
+      } catch (e) {
+        if (!isMovedError(e) || attempt >= 3) throw e;
+        const id = TenantContext.require().id;
+        this.evict(id);
+        this.placements.invalidate?.(id);
+        // PgBouncer remembers a failed login for server_login_retry: give it a moment
+        await new Promise((r) => setTimeout(r, attempt * 700));
+      }
+    }
   }
 
   /** Drop a tenant's pool (placement changed, tenant moved or suspended). */

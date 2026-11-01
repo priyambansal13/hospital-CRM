@@ -7,6 +7,8 @@ import { BrandingController, InternalCatalogController } from './catalog/catalog
 import { CatalogRepo } from './catalog/catalog.repo.js';
 import { DomainsController, SetupController } from './catalog/domains.controller.js';
 import { ProvisioningService } from './catalog/provisioning.service.js';
+import { InternalServersController } from './servers/servers.controller.js';
+import { ServersService } from './servers/servers.service.js';
 import { SignupController } from './signup/signup.controller.js';
 import { SignupSweepJob } from './signup/signup-sweep.job.js';
 import { SignupService } from './signup/signup.service.js';
@@ -23,7 +25,7 @@ import { SignupService } from './signup/signup.service.js';
     }),
     EntitlementsModule,
   ],
-  controllers: [InternalCatalogController, BrandingController, BranchesController, InternalBranchCountController, SignupController, DomainsController, SetupController],
-  providers: [CatalogRepo, ProvisioningService, SignupService, SignupSweepJob],
+  controllers: [InternalCatalogController, BrandingController, BranchesController, InternalBranchCountController, SignupController, DomainsController, SetupController, InternalServersController],
+  providers: [CatalogRepo, ServersService, ProvisioningService, SignupService, SignupSweepJob],
 })
 export class AppModule {}

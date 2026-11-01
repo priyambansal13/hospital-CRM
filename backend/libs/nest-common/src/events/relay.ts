@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { createProducer, type Producer } from '@mc/kafka';
-import { type PlacementSource, type TenantDbRouter, withTx } from '@mc/tenancy';
+import { isMovedError, type PlacementSource, type TenantDbRouter, withTx } from '@mc/tenancy';
 import { createHash } from 'node:crypto';
 import type pg from 'pg';
 import { outboxPending, outboxPublished, retentionDeleted } from '../metrics.js';
@@ -68,6 +68,8 @@ export class OutboxRelay {
           try {
             await pass(await this.opts.router.forTenant(t.id));
           } catch (e) {
+            // moved to another server and this instance has not heard yet: reopen from a fresh placement next tick
+            if (isMovedError(e)) { this.opts.router.evict(t.id); this.opts.placements.invalidate?.(t.id); }
             this.log.warn(`outbox ${t.slug}: ${(e as Error).message}`);
           }
         }

@@ -1,7 +1,7 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { EventTypes, type PatientNudge, type TenantPlacement, Topics } from '@mc/contracts';
 import { conflict, DomainError, ModuleHooks, PLACEMENTS } from '@mc/nest-common';
-import { addToOutbox, type Actor, envelope, type PlacementSource, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
+import { addToOutbox, type Actor, envelope, type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { LLM, type LlmClient } from '../llm/llm.js';
 import { BriefService } from './brief.js';

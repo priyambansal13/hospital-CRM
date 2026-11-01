@@ -1,0 +1,55 @@
+{{- if .Values.backups.enabled }}
+{{- $tenant := dict "port" 4401 }}{{- range .Values.services }}{{- if eq .schema "tenant" }}{{- $tenant = . }}{{- end }}{{- end }}
+# Per-hospital backups (Phase 30; docs/MULTI-TENANCY.md §8): every night each hospital's database is dumped on its own
+# server (one snapshot, row counts and schema versions recorded), encrypted with that hospital's backup key and
+# written to the backups bucket (Cloud Storage FUSE). Every week a sample is restored into a scratch database and
+# checked. Server-level PITR (Cloud SQL) covers the whole server between nightly dumps.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: medicare-ops
+  annotations: { iam.gke.io/gcp-service-account: {{ .Values.backups.serviceAccount | quote }} }
+{{- range $job := list (dict "name" "backup-nightly" "schedule" $.Values.backups.schedule "args" (list "backup" "run" "--all")) (dict "name" "restore-drill" "schedule" $.Values.backups.drillSchedule "args" (list "backup" "drill" "--sample" (toString $.Values.backups.drillSample))) }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $job.name }}
+spec:
+  schedule: {{ $job.schedule | quote }}
+  timeZone: {{ $.Values.backups.timeZone | quote }}
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      ttlSecondsAfterFinished: 172800
+      template:
+        metadata:
+          annotations: { gke-gcsfuse/volumes: "true" }
+        spec:
+          serviceAccountName: medicare-ops
+          restartPolicy: Never
+          securityContext: { runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+          containers:
+            - name: ops
+              image: {{ $.Values.backups.image | quote }}
+              args: {{ toJson $job.args }}
+              env:
+                - { name: SVC_URL_TENANT, value: "http://tenant-service:{{ $tenant.port }}" }
+                - { name: MC_BACKUP_DIR, value: /backups }
+                - name: INTERNAL_API_TOKEN
+                  valueFrom: { secretKeyRef: { name: medicare-secrets, key: INTERNAL_API_TOKEN } }
+                - name: POSTGRES_PASSWORD
+                  valueFrom: { secretKeyRef: { name: medicare-secrets, key: PG_ADMIN_PASSWORD } }
+                - name: BACKUP_MASTER_KEY
+                  valueFrom: { secretKeyRef: { name: medicare-secrets, key: BACKUP_MASTER_KEY } }
+              volumeMounts: [{ name: backups, mountPath: /backups }, { name: tmp, mountPath: /tmp }]
+              resources: { requests: { cpu: 200m, memory: 512Mi }, limits: { memory: 2Gi } }
+              securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumes:
+            - name: backups
+              csi: { driver: gcsfuse.csi.storage.gke.io, volumeAttributes: { bucketName: {{ $.Values.backups.bucket | quote }}, mountOptions: "implicit-dirs,uid=1000,gid=1000" } }
+            - name: tmp
+              emptyDir: { sizeLimit: 20Gi }
+{{- end }}
+{{- end }}

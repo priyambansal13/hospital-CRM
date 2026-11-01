@@ -9,3 +9,6 @@ deploy/.rendered/
 
 # offboarding exports (patient data): never committed
 exports/
+
+# per-hospital backups (encrypted, still patient data): never committed
+backups/

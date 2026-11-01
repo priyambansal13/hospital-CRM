@@ -1,5 +1,8 @@
 import { type DynamicModule, Global, Inject, Injectable, Logger, Module, type OnApplicationBootstrap, type OnApplicationShutdown, Optional, type Provider } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD, DiscoveryModule } from '@nestjs/core';
+import { EventTypes, Topics } from '@mc/contracts';
+import { createConsumer } from '@mc/kafka';
+import { randomUUID } from 'node:crypto';
 import { controlPool, HttpPlacementSource, type PlacementSource, TenantDbRouter } from '@mc/tenancy';
 import type pg from 'pg';
 import { AuthGuard, PLACEMENTS } from './auth/auth.js';
@@ -73,6 +76,39 @@ class Lifecycle implements OnApplicationBootstrap, OnApplicationShutdown {
 }
 
 /**
+ * Drops a hospital's cached placement and database pool as soon as tenant-service changes it (status, or the database
+ * moved to another server), instead of waiting for the cache to expire. One consumer group per instance.
+ */
+class PlacementListener implements OnApplicationBootstrap, OnApplicationShutdown {
+  private readonly log = new Logger('Placements');
+  private consumer?: { disconnect(): Promise<void> };
+  constructor(
+    @Inject(PLACEMENTS) private readonly placements: PlacementSource,
+    @Optional() @Inject(TenantDbRouter) private readonly router?: TenantDbRouter,
+  ) {}
+
+  async onApplicationBootstrap() {
+    if (process.env.MC_DISABLE_EVENTS === 'true') return;
+    const name = process.env.SERVICE_NAME ?? 'service';
+    this.consumer = await createConsumer(`${name}-placement`, `${name}-placement-${randomUUID()}`, [Topics.tenant], async (m) => {
+      const evt = JSON.parse(m.value ?? '{}');
+      if (evt.type !== EventTypes.tenantUpdated || !evt.tenantId) return;
+      this.placements.invalidate?.(evt.tenantId);
+      if (evt.data?.server) {
+        this.router?.evict(evt.tenantId);
+        this.log.log(`${evt.data.slug}: database now on ${evt.data.server}`);
+      }
+    }, { fromBeginning: false }).catch((e) => {
+      this.log.warn(`placement listener not started: ${(e as Error).message}`);
+      return undefined;
+    });
+  }
+  async onApplicationShutdown() {
+    await this.consumer?.disconnect().catch(() => undefined);
+  }
+}
+
+/**
  * Everything a MediCare service needs: placements, tenant DB router, control DB, Redis, global auth guard,
  * RFC 7807 errors, idempotency, health, route registry, outbox relay and consumers.
  */
@@ -91,6 +127,7 @@ export class CoreModule {
       ConsumerRegistry,
       ModuleHooks,
       Lifecycle,
+      PlacementListener,
     ];
     if (opts.control) providers.push({ provide: CONTROL_DB, useFactory: () => controlPool(opts.schema) });
     if (opts.tenant) providers.push({ provide: TenantDbRouter, useFactory: (p: PlacementSource) => new TenantDbRouter(p, opts.schema), inject: [PLACEMENTS] });

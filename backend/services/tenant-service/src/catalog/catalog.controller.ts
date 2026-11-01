@@ -11,6 +11,7 @@ const CreateTenant = z.object({
   name: z.string().min(2).max(120),
   adminEmail: z.email(),
   plan: z.string().optional(),
+  server: z.string().optional(),
 });
 const Status = z.object({ status: z.enum(['ACTIVE', 'READ_ONLY', 'SUSPENDED', 'DELETED']) });
 const Branding = z.object({

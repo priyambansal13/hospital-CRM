@@ -5,7 +5,7 @@ import { normalizeHost, type PlacementSource, TenantNotFoundError } from '@mc/te
 import type pg from 'pg';
 
 // only verified (ACTIVE) domains serve a hospital; a custom domain waiting for its DNS check does not
-const SELECT = `SELECT t.id, t.slug, t.name, t.status, t.db_name, t.db_host, t.db_port, t.branding, t.plan, t.admin_email, t.source, t.setup_completed_at,
+const SELECT = `SELECT t.id, t.slug, t.name, t.status, t.db_name, t.db_host, t.db_port, t.db_server, t.ring, t.branding, t.plan, t.admin_email, t.source, t.setup_completed_at,
   coalesce(array_agg(d.host ORDER BY d.is_primary DESC, d.host) FILTER (WHERE d.host IS NOT NULL), '{}') AS hosts
   FROM tenants t LEFT JOIN tenant_domains d ON d.tenant_id = t.id AND d.status = 'ACTIVE'`;
 
@@ -15,10 +15,11 @@ export interface TenantRow extends TenantPlacement {
   adminEmail: string;
   source: 'SALES' | 'SIGNUP';
   setupCompletedAt: Date | null;
+  ring: number;
 }
 
 const toRow = (r: any): TenantRow => ({
-  id: r.id, slug: r.slug, name: r.name, status: r.status, dbName: r.db_name, dbHost: r.db_host, dbPort: r.db_port,
+  id: r.id, slug: r.slug, name: r.name, status: r.status, dbName: r.db_name, dbHost: r.db_host, dbPort: r.db_port, dbServer: r.db_server ?? undefined, ring: r.ring,
   hosts: r.hosts, branding: r.branding, plan: r.plan, adminEmail: r.admin_email, source: r.source, setupCompletedAt: r.setup_completed_at,
 });
 

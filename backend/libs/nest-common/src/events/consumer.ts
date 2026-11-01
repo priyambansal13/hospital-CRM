@@ -3,7 +3,7 @@ import { dlqMessages } from '../metrics.js';
 import { EventEnvelope } from '@mc/contracts';
 import { context, propagation, SpanKind, SpanStatusCode, trace } from '@opentelemetry/api';
 import { createConsumer, createProducer, type KafkaMessageIn, type Producer } from '@mc/kafka';
-import { type PlacementSource, TenantContext, type TenantDbRouter, TenantUnavailableError, withTx } from '@mc/tenancy';
+import { isMovedError, type PlacementSource, TenantContext, type TenantDbRouter, TenantUnavailableError, withTx } from '@mc/tenancy';
 import type pg from 'pg';
 
 const tracer = trace.getTracer('@mc/nest-common/events');
@@ -79,6 +79,19 @@ export class EventConsumer {
     });
   }
 
+  /**
+   * A READ_ONLY hospital changes nothing (e.g. the seconds a move to another server takes): its events wait, for up to
+   * two minutes, then are processed anyway (a failure then retries and goes to the DLQ as usual).
+   */
+  private async whileReadOnly(tenantId: string) {
+    const end = Date.now() + Number(process.env.READ_ONLY_EVENT_WAIT_MS ?? 120_000);
+    for (;;) {
+      const t = await this.deps.placements.get(tenantId).catch(() => undefined);
+      if (t?.status !== 'READ_ONLY' || Date.now() > end) return;
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+  }
+
   private async onMessage(m: KafkaMessageIn) {
     let event: EventEnvelope<any>;
     try {
@@ -88,11 +101,13 @@ export class EventConsumer {
       await this.toDlq(m, e as Error);
       return;
     }
+    if (event.tenantId) await this.whileReadOnly(event.tenantId);
     for (let attempt = 1; ; attempt++) {
       try {
         await this.handle(event);
         return;
       } catch (e) {
+        if (event.tenantId && isMovedError(e)) { this.deps.router?.evict(event.tenantId); this.deps.placements.invalidate?.(event.tenantId); }
         if (attempt >= 3) {
           this.log.error(`${event.type} ${event.id} failed ${attempt}x → DLQ: ${(e as Error).message}`);
           await this.toDlq(m, e as Error);

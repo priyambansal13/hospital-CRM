@@ -14,7 +14,11 @@ pool_mode = transaction
 default_pool_size = 10
 max_client_conn = 2000
 max_db_connections = 40
-server_idle_timeout = 60
+; idle server connections close quickly: every hospital × service role has its own small pool, and many hospitals
+; share one Postgres server (max_connections is the real limit)
+server_idle_timeout = 20
+; a failed login (a hospital's old copy fenced during a move) is retried after 1 s, not the default 15 s
+server_login_retry = 1
 ignore_startup_parameters = extra_float_digits
 application_name_add_host = 1
 admin_users = pgbouncer_admin

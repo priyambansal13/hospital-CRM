@@ -32,6 +32,17 @@ externalSecrets:
   store: gcp-secret-manager           # ClusterSecretStore name
   prefix: medicare-staging            # GCP secret "<prefix>-<key in kebab-case>"
 infraNamespace: medicare-infra      # where Kong and Keycloak run (their config maps go there)
+# Per-hospital backups and restore drills (Phase 30): the ops image (platform/Dockerfile.ops), the bucket and service
+# account from Terraform (outputs backups_bucket, ops_service_account)
+backups:
+  enabled: false
+  image: ""                           # <registry>/ops:<tag>
+  bucket: ""
+  serviceAccount: ""
+  timeZone: Asia/Kolkata
+  schedule: "0 2 * * *"               # nightly, every hospital
+  drillSchedule: "0 4 * * 0"          # weekly restore drill
+  drillSample: 3                      # hospitals drilled each week (plus every dedicated-server hospital)
 seedDemo: false                       # create citycare + sunrise with synthetic data after install
 # Filled by `mc k8s render <env>` from service metadata (generated.yaml):
 services: []                          # [{ name, port, schema, route, control, tenant }]

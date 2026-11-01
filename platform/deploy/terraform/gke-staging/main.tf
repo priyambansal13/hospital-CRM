@@ -15,6 +15,8 @@ locals {
     "mc-master-key",
     # HMAC key pair for the documents bucket (GCS XML API, S3-compatible)
     "s3-access-key", "s3-secret-key",
+    # Phase 30: wraps each hospital's backup key (to be a Cloud KMS key), and the role servers copy a hospital with
+    "backup-master-key", "replication-password",
   ]
 }
 
@@ -111,6 +113,11 @@ resource "google_sql_database_instance" "pg" {
       name  = "max_connections"
       value = "400"
     }
+    # moving a hospital to another server uses logical replication (mc tenant move)
+    database_flags {
+      name  = "cloudsql.logical_decoding"
+      value = "on"
+    }
     insights_config { query_insights_enabled = true }
   }
 }
@@ -203,4 +210,42 @@ resource "google_service_account_iam_member" "ai_wi" {
   service_account_id = google_service_account.ai.name
   role               = "roles/iam.workloadIdentityUser"
   member             = "serviceAccount:${var.project_id}.svc.id.goog[medicare-${var.env}/ai-assistant-service]"
+}
+
+# Per-hospital backups (Phase 30): the nightly CronJob writes encrypted dumps here through a Cloud Storage FUSE volume.
+# Server-level PITR (above) covers the whole instance; these restore one hospital on its own.
+resource "google_storage_bucket" "backups" {
+  name                        = "${var.project_id}-${local.name}-backups"
+  location                    = var.region
+  uniform_bucket_level_access = true
+  public_access_prevention    = "enforced"
+  versioning { enabled = true } # a deleted or overwritten backup can be recovered for the retention period
+  lifecycle_rule {
+    condition { age = 35 }
+    action { type = "Delete" }
+  }
+  lifecycle_rule {
+    condition { age = 7 }
+    action {
+      type          = "SetStorageClass"
+      storage_class = "NEARLINE"
+    }
+  }
+}
+
+resource "google_service_account" "ops" {
+  account_id   = "medicare-ops"
+  display_name = "MediCare ${var.env} operations jobs (backups, restore drills)"
+}
+
+resource "google_storage_bucket_iam_member" "ops_backups" {
+  bucket = google_storage_bucket.backups.name
+  role   = "roles/storage.objectAdmin"
+  member = "serviceAccount:${google_service_account.ops.email}"
+}
+
+resource "google_service_account_iam_member" "ops_wi" {
+  service_account_id = google_service_account.ops.name
+  role               = "roles/iam.workloadIdentityUser"
+  member             = "serviceAccount:${var.project_id}.svc.id.goog[medicare-${var.env}/medicare-ops]"
 }
