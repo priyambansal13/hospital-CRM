@@ -135,7 +135,11 @@ export class ConfigService {
   async setPermissions(code: string, permissions: string[], by: string, actorId: string, opts: { name?: string; description?: string | null } = {}) {
     if (LOCKED.has(code)) throw new DomainError(422, 'ROLE_LOCKED', `${code} cannot be edited`);
     await this.assertCustomRoles();
-    await this.validPermissions(permissions);
+    // only what is being added must be offered here: a role keeps template grants of modules the hospital lacks
+    // (templates span every module; they apply only when the module is on)
+    const { rows: held } = await this.db.query('SELECT rp.permission_code FROM role_permissions rp JOIN roles r ON r.id = rp.role_id WHERE r.code = $1', [code]);
+    const had = new Set(held.map((h) => h.permission_code as string));
+    await this.validPermissions(permissions.filter((p) => !had.has(p)));
     const change = await this.db.tx(async (c) => {
       const { rows: [locked] } = await c.query('SELECT id FROM roles WHERE code = $1 FOR UPDATE', [code]);
       if (!locked) throw new DomainError(404, 'NOT_FOUND', 'role not found');

@@ -2,8 +2,10 @@ import { createHash } from 'node:crypto';
 import { NO_ANSWER, parseUserTurn } from '../chat/prompts.js';
 import { devAgentStep } from './dev-agent.js';
 import { devSummary } from './dev-copilot.js';
+import { devBrief, devCareGap, devOpsStep } from './dev-ops.js';
 import { devSoap } from './dev-scribe.js';
-import { EMBED_DIM, type GenerateRequest, type GenerateResult, type LlmClient, normalise } from './llm.js';
+import { randomUUID } from 'node:crypto';
+import { type BatchStatus, EMBED_DIM, type GenerateRequest, type GenerateResult, type LlmClient, normalise } from './llm.js';
 
 const STOP = new Set('a an the is are was were be to of in on at for and or what when where how which who whom can could do does did i my me we our you your it its this that there with from by as please tell about any have has get need want hospital see know go come make like also just will would should much many some'.split(' '));
 
@@ -28,9 +30,32 @@ export class DevLlm implements LlmClient {
   readonly chatModel = 'dev-extractive';
   readonly copilotModel = 'dev-copilot';
   readonly embedModel = 'dev-hash-768-v2';
+  readonly opsModel = 'dev-ops';
+  readonly batchModel = 'dev-batch';
+  /** finished "batch jobs" (in memory: a restart loses them, and the caller falls back to its template) */
+  private readonly batches = new Map<string, GenerateResult[]>();
+
+  async submitBatch(reqs: GenerateRequest[]): Promise<string> {
+    const id = `dev-batch/${randomUUID()}`;
+    this.batches.set(id, await Promise.all(reqs.map((r) => this.generate({ ...r, purpose: 'batch' }))));
+    return id;
+  }
+
+  async batchStatus(job: string): Promise<BatchStatus> {
+    const r = this.batches.get(job);
+    return r ? { state: 'SUCCEEDED', results: r } : { state: 'FAILED', results: [], error: 'unknown dev batch (the service restarted)' };
+  }
 
   async generate(req: GenerateRequest): Promise<GenerateResult> {
     const usage = (out: number) => ({ input: Math.ceil(JSON.stringify(req.turns).length / 4), output: out, cached: 0 });
+    if (req.purpose === 'ops' || req.purpose === 'batch') {
+      const turn = req.turns.at(-1)?.text ?? '';
+      if (turn.includes('<brief_facts>')) { const text = JSON.stringify(devBrief(turn)); return { text, calls: [], finishReason: 'STOP', model: this.opsModel, usage: usage(Math.ceil(text.length / 4)) }; }
+      if (turn.includes('<care_gap_rule>')) { const text = JSON.stringify(devCareGap(turn)); return { text, calls: [], finishReason: 'STOP', model: this.batchModel, usage: usage(Math.ceil(text.length / 4)) }; }
+      const step = devOpsStep(req.system, req.turns);
+      if ('calls' in step) return { text: '', calls: step.calls, finishReason: 'STOP', model: this.opsModel, usage: usage(20) };
+      return { text: step.text, calls: [], finishReason: 'STOP', model: this.opsModel, usage: usage(Math.ceil(step.text.length / 4)) };
+    }
     if (req.purpose === 'copilot') {
       const turn = req.turns.at(-1)?.text ?? '';
       const text = JSON.stringify(turn.includes('<transcript>') ? devSoap(turn) : devSummary(turn));

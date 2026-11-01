@@ -47,7 +47,8 @@ try {
   // ---- 1. module on → backfill
   const admin = await staffToken('admin@citycare.test');
   const desk = await staffToken('desk@citycare.test');
-  check((await call('GET', '/api/analytics/v1/analytics/catalog', admin)).http === 403, 'module off: analytics is refused');
+  // off (or read-only after an earlier run switched it off: reads stay open, nothing new)
+  check((await call('POST', '/api/analytics/v1/analytics/query', admin, { metric: 'appointments', from, to: today })).http === 403, 'module off: analytics queries are refused');
   mc('module', 'enable', 'citycare', 'analytics');
   const loaded = await waitFor(async () => { const s = await call('GET', '/api/analytics/v1/analytics/status', admin); return s.http === 200 && s.loads?.length === 4 && s.loads.every((l) => l.status === 'DONE') ? s : null; }, 120000, 2000);
   check(!!loaded, `module on: warehouse loaded (${loaded?.loads.map((l) => `${l.source} ${l.rows}`).join(', ')})`);

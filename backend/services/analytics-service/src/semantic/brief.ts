@@ -21,19 +21,19 @@ export class BriefFacts {
     return TenantContext.run(t, async () => {
       const { rows: [b] } = await this.db.query(`SELECT id, name, timezone, (now() AT TIME ZONE timezone)::date::text today, ((now() AT TIME ZONE timezone)::date - 1)::text yesterday FROM dim_branches WHERE id = $1`, [branchId]);
       if (!b) throw notFound('branch');
-      const args = [branchId, b.today, b.yesterday];
+      const args = [branchId, b.today];
       const [today, cap, doctors, yday, money, lab, issues] = await Promise.all([
-        this.db.query(`SELECT count(*) FILTER (WHERE ${BOOKED})::int booked, count(*) FILTER (WHERE ${BOOKED} AND source = 'WALK_IN')::int walk_ins FROM fact_appointments WHERE branch_id = $1 AND local_date = $2::date`, args.slice(0, 2)),
-        this.db.query(`SELECT coalesce(sum(slots), 0)::int slots, coalesce(sum(booked), 0)::int booked, count(*) FILTER (WHERE slots > 0)::int doctors FROM fact_capacity WHERE branch_id = $1 AND local_date = $2::date`, args.slice(0, 2)),
-        this.db.query(`SELECT d.name, c.slots, c.booked FROM fact_capacity c JOIN dim_doctors d ON d.id = c.doctor_id WHERE c.branch_id = $1 AND c.local_date = $2::date AND c.slots > 0 ORDER BY c.booked::float / c.slots DESC, d.name LIMIT 20`, args.slice(0, 2)),
+        this.db.query(`SELECT count(*) FILTER (WHERE ${BOOKED})::int booked, count(*) FILTER (WHERE ${BOOKED} AND source = 'WALK_IN')::int walk_ins FROM fact_appointments WHERE branch_id = $1 AND local_date = $2::date`, args),
+        this.db.query(`SELECT coalesce(sum(slots), 0)::int slots, coalesce(sum(booked), 0)::int booked, count(*) FILTER (WHERE slots > 0)::int doctors FROM fact_capacity WHERE branch_id = $1 AND local_date = $2::date`, args),
+        this.db.query(`SELECT d.name, c.slots, c.booked FROM fact_capacity c JOIN dim_doctors d ON d.id = c.doctor_id WHERE c.branch_id = $1 AND c.local_date = $2::date AND c.slots > 0 ORDER BY c.booked::float / c.slots DESC, d.name LIMIT 20`, args),
         this.db.query(`SELECT count(*) FILTER (WHERE status = 'COMPLETED')::int completed, count(*) FILTER (WHERE status = 'NO_SHOW')::int no_shows,
                               count(*) FILTER (WHERE status = 'CANCELLED')::int cancelled, count(*) FILTER (WHERE status IN ('COMPLETED','NO_SHOW','CHECKED_IN','IN_PROGRESS'))::int due
-                       FROM fact_appointments WHERE branch_id = $1 AND local_date = $3::date`, args),
-        this.db.query(`SELECT coalesce(sum(amount) FILTER (WHERE kind = 'PAYMENT'), 0) collected, coalesce(-sum(amount) FILTER (WHERE kind = 'REFUND'), 0) refunded FROM fact_payments WHERE branch_id = $1 AND local_date = $3::date`, args),
+                       FROM fact_appointments WHERE branch_id = $1 AND local_date = $2::date`, [branchId, b.yesterday]),
+        this.db.query(`SELECT coalesce(sum(amount) FILTER (WHERE kind = 'PAYMENT'), 0) collected, coalesce(-sum(amount) FILTER (WHERE kind = 'REFUND'), 0) refunded FROM fact_payments WHERE branch_id = $1 AND local_date = $2::date`, [branchId, b.yesterday]),
         this.db.query(`SELECT count(*) FILTER (WHERE tat_breached AND published_at IS NULL AND status NOT IN ('CANCELLED','EXPIRED'))::int late,
                               count(*) FILTER (WHERE in_lab_at IS NOT NULL AND published_at IS NULL AND status NOT IN ('CANCELLED','EXPIRED'))::int in_lab
                        FROM fact_lab_orders WHERE branch_id = $1`, args.slice(0, 1)),
-        this.db.query(`SELECT count(*)::int n FROM fact_payment_issues WHERE branch_id = $1 AND (at AT TIME ZONE 'Asia/Kolkata')::date >= $3::date`, args),
+        this.db.query(`SELECT count(*)::int n FROM fact_payment_issues WHERE branch_id = $1 AND (at AT TIME ZONE 'Asia/Kolkata')::date >= $2::date`, [branchId, b.yesterday]),
       ]);
       const y = yday.rows[0];
       return {

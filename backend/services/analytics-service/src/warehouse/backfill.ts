@@ -41,7 +41,14 @@ export class Backfill implements OnModuleInit, OnApplicationBootstrap, OnApplica
 
   onModuleInit() {
     // the hook runs inside entitlement-service's retry loop: start the load after it, never block it
-    this.hooks.register('analytics', { enable: async () => { const t = TenantContext.require(); setImmediate(() => void this.start(t)); } });
+    // (switched on again after a while off: the earlier load no longer counts until this one is done)
+    this.hooks.register('analytics', {
+      enable: async (c) => {
+        const t = TenantContext.require();
+        await c.query(`UPDATE loads SET status = 'PENDING', finished_at = NULL`);
+        setImmediate(() => void this.start(t));
+      },
+    });
   }
 
   onApplicationBootstrap() {

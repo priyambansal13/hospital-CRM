@@ -46,6 +46,12 @@ const en: DefaultTemplate[] = [
   { key: 'workflow_staff', channel: 'EMAIL', language: 'en', subject: '{{subject}}', body: 'Hello,\n\n{{message}}\n\n(Sent automatically by one of the hospital\'s workflow rules.)\n\n{{hospital}}' },
   { key: 'workflow_patient', channel: 'EMAIL', language: 'en', subject: '{{subject}}', body: 'Hello,\n\n{{message}}\n\n{{hospital}}' },
   { key: 'workflow_patient', channel: 'SMS', language: 'en', body: '{{hospital}}: {{message}}' },
+  // Phase 29: the branch's morning brief (staff), care-gap reminders and "please confirm you are coming" (patients)
+  { key: 'ops_brief', channel: 'EMAIL', language: 'en', subject: 'Morning brief: {{branchName}}, {{date}}', body: 'Good morning,\n\n{{headline}}\n\n{{points}}\n\nThe numbers behind it: {{link}}\n\n(Written automatically from the hospital\'s reports; no patient details are included.)\n\n{{hospital}}' },
+  { key: 'patient_nudge', channel: 'EMAIL', language: 'en', subject: '{{subject}}', body: '{{message}}' },
+  { key: 'patient_nudge', channel: 'SMS', language: 'en', body: '{{message}}' },
+  { key: 'attendance_check', channel: 'SMS', language: 'en', body: '{{hospital}}: {{patientName}}, your visit with {{doctorName}} is tomorrow, {{when}} at {{where}}. Please confirm you are coming, or move it: {{link}}' },
+  { key: 'attendance_check', channel: 'EMAIL', language: 'en', subject: 'Please confirm your visit tomorrow with {{doctorName}}', body: 'Hello,\n\n{{patientName}} has a visit with {{doctorName}} tomorrow, {{when}}, at {{where}} (appointment {{appointmentNo}}).\n\nPlease confirm you are coming, or move or cancel the visit so someone else can have the time: {{link}}\n\n{{hospital}}' },
   { key: 'payout_account_changed', channel: 'EMAIL', language: 'en', subject: 'Payout account {{changeWord}}: bank account ending {{bankLast4}}', body: 'Hello,\n\nThe bank account that patients\' online payments are paid out to was {{changeWord}} by {{by}}: now account ending {{bankLast4}} ({{ifsc}}){{prevLine}}.\n{{holdLine}}\n\nIf you did not expect this, change it back at once and tell MediCare support: {{link}}\n\n{{hospital}} via MediCare' },
   { key: 'lab_tat_breached', channel: 'EMAIL', language: 'en', subject: 'Overdue: lab order {{orderNo}}', body: 'The report for lab order {{orderNo}} ({{tests}}) is past its promised time.\n\nPending results: {{link}}\n\n{{hospital}} lab' },
   { key: 'lab_critical_escalated', channel: 'EMAIL', language: 'en', subject: 'ESCALATED critical lab value: {{patientName}} ({{patientMrn}})', body: 'URGENT: not acknowledged for {{minutesOpen}} minutes\n\nA critical value for {{patientName}} ({{patientMrn}}, order {{orderNo}}): {{testName}}, {{parameter}}. {{orderedByLine}}\n\n{{action}}\nOpen MediCare: {{link}}\n\n{{hospital}} lab' },
@@ -88,7 +94,7 @@ const hi: DefaultTemplate[] = [
 export const DEFAULT_TEMPLATES = [...en, ...hi];
 
 /** Messages to hospital staff: email only (no SMS template on purpose). */
-export const STAFF_ONLY_KEYS = new Set(['staff_notice', 'payout_account_changed', 'lab_report_ready_doctor', 'lab_critical_value', 'lab_critical_escalated', 'doctor_agenda', 'doctor_day_change', 'lab_tat_breached', 'home_visit_assigned_staff', 'billing_notice_staff', 'workflow_staff']);
+export const STAFF_ONLY_KEYS = new Set(['staff_notice', 'payout_account_changed', 'lab_report_ready_doctor', 'lab_critical_value', 'lab_critical_escalated', 'doctor_agenda', 'doctor_day_change', 'lab_tat_breached', 'home_visit_assigned_staff', 'billing_notice_staff', 'workflow_staff', 'ops_brief']);
 
 /** {{var}} replacement; missing values render as empty strings. */
 export function render(text: string, vars: Record<string, unknown>): string {

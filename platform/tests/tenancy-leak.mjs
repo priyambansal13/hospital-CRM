@@ -170,7 +170,10 @@ const main = async () => {
   const [soapDraft, soapEnc, soapStatus] = psql(`SELECT id || '|' || encounter_id || '|' || status FROM assistant.clinical_drafts WHERE kind = 'SOAP' ORDER BY created_at LIMIT 1`).split('|');
   const [aiDraft, aiDraftAppt, aiDraftRating] = psql(`SELECT id || '|' || appointment_id || '|' || coalesce(rating::text, '') FROM assistant.clinical_drafts WHERE status = 'DRAFT' ORDER BY created_at LIMIT 1`).split('|');
   const [aiArticle, aiArticleTitle] = psql(`SELECT id || '|' || title FROM assistant.kb_articles WHERE source = 'FAQ' AND source_ref = 'parking'`).split('|');
-  const secrets = [aiConv, aiMsg, aiHandoff, aiArticle, me.id, me.tenant.id, branch.id, branch.name, 'CityCare', doctor.id, doctor.name, spec.id, hours.id, leave.id, selfP.id, selfP.mrn, child.id, 'Leak Patient', appt.id, appt.appointmentNo, wait.id, invoice.id, invoice.invoiceNo, encounter.id, rxId, docId, consentId, allergyId, labOrderId, reportOrderId, verifyCode, visitId];
+  // Phase 29: a question to the Ops agent (run `mc test ops` once)
+  const opsQ = psql(`SELECT id FROM assistant.ops_questions ORDER BY created_at LIMIT 1`);
+  if (!opsQ) throw new Error('fixture setup failed: no Ops agent question in citycare yet — run `mc test ops` once');
+  const secrets = [opsQ, aiConv, aiMsg, aiHandoff, aiArticle, me.id, me.tenant.id, branch.id, branch.name, 'CityCare', doctor.id, doctor.name, spec.id, hours.id, leave.id, selfP.id, selfP.mrn, child.id, 'Leak Patient', appt.id, appt.appointmentNo, wait.id, invoice.id, invoice.invoiceNo, encounter.id, rxId, docId, consentId, allergyId, labOrderId, reportOrderId, verifyCode, visitId];
   // Path params → citycare's ids. key: "<route prefix>:<METHOD> <path>"
   const fixtures = {
     'tenant:GET /v1/branches/:id': { id: branch.id },
@@ -207,6 +210,11 @@ const main = async () => {
     'integration:POST /v1/integrations/deliveries/:id/retry': { id: deliveryId, body: {} },
     'integration:POST /v1/integrations/api-keys/:id/revoke': { id: apiKeyId, body: {} },
     'scheduling:POST /v1/appointments/:id/cancel': { id: appt.id, body: {} },
+    'scheduling:POST /v1/appointments/:id/attendance': { id: appt.id },
+    'assistant:POST /v1/assistant/ops/questions/:id/rating': { id: opsQ, body: { rating: -1 } },
+    'assistant:POST /v1/assistant/ops/briefs/:branchId': { branchId: branch.id },
+    'assistant:PUT /v1/assistant/ops/care-gaps/:rule': { rule: 'DIABETES_HBA1C', body: { status: 'OFF', version: 1 } },
+    'assistant:POST /v1/assistant/ops/care-gaps/:rule/run': { rule: 'DIABETES_HBA1C' },
     'scheduling:POST /v1/appointments/:id/reschedule': { id: appt.id, body: { newSlotId: slot.slotId } },
     'scheduling:DELETE /v1/waitlist/:id': { id: wait.id },
     'scheduling:GET /v1/doctors/:doctorId/appointments': { doctorId: doctor.id },

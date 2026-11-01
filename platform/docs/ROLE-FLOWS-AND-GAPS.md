@@ -588,6 +588,15 @@ Still open: membership cancellation with refund, auto-renewal, enforcing `family
 
 Still open: HL7 v2 for older LIS, FHIR write/OAuth clients, ABDM and insurance connectors.
 
+### New flows after the review: Phase 29 analytics and the Ops agent (2026-11-01)
+
+- **Admin / branch admin:** Analytics (`/admin/analytics`: tiles with the period before, charts, an explorer, CSV) and the Ops assistant (`/admin/ops`: questions in plain words, answered only from the reports for their own branches; the morning brief of each of their branches, also by e-mail from 7 a.m.). Permissions `analytics:read:branch`, `ops_agent:use:branch`, `ops_brief:receive:branch`. Hospital-wide figures (new patients) are for hospital admins only.
+- **Hospital admin:** care-gap reminders: approve (or edit) the drafted wording per rule, send now or weekly (`care_gap:manage:tenant`).
+- **Patient:** a care-gap reminder (SMS/e-mail, no condition named) with a link to book the test; the evening before a high-risk booking, "please confirm you are coming" and an **I'm coming** button on My appointments.
+- **Front desk:** sees a booking's no-show risk score and can record the patient's confirmation.
+
+Still open: Ops agent actions with approval, the brief on Slack, editable care-gap rules, real Gemini runs.
+
 ---
 
 ## 7. What works well (keep it)

@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { EntitlementsClient } from '@mc/entitlements-sdk';
-import { type AppointmentChanged, type BillingNotice, type StaffNotice, type DoctorAgenda, type PayoutAccountChanged, type HomeVisitChanged, type LabCriticalEscalated, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable, type WorkflowNotify } from '@mc/contracts';
+import { type AppointmentChanged, type BillingNotice, type StaffNotice, type DoctorAgenda, type PayoutAccountChanged, type HomeVisitChanged, type LabCriticalEscalated, type LabCriticalValue, type LabOrderChanged, type LabReportPublished, type PaymentSucceeded, type PrescriptionIssued, type RefundProcessed, EventTypes, type PatientRegistered, type TenantPlacement, type WaitlistSlotAvailable, type WorkflowNotify, type OpsBrief, type PatientNudge } from '@mc/contracts';
 import { type Queryable, TenantContext } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
 import { DEFAULT_TEMPLATES } from './templates.js';
@@ -161,6 +161,31 @@ export class PlannerService {
     if (!res.ok) throw new Error(`entitlement-service ${res.status}`);
     const { userIds } = (await res.json()) as { userIds: string[] };
     for (const userId of userIds) await this.plan(c, 'workflow_staff', userId, vars, n.runId, new Date(), `${n.runId}:${userId}`, 'staff');
+  }
+
+  /** Phase 29: a branch's morning brief to everyone who receives it there (e-mail). */
+  async onOpsBrief(c: Queryable, b: OpsBrief) {
+    const t = TenantContext.require();
+    const res = await fetch(`${process.env.SVC_URL_ENTITLEMENT ?? 'http://localhost:4403'}/internal/tenants/${t.id}/users-with-permission/ops_brief:receive:branch?branchId=${b.branchId}`, { headers: { 'x-internal-token': process.env.INTERNAL_API_TOKEN ?? '' } });
+    if (!res.ok) throw new Error(`entitlement-service ${res.status}`);
+    const { userIds } = (await res.json()) as { userIds: string[] };
+    const vars = { hospital: t.name, branchName: b.branchName, date: fmt(b.date).day, headline: b.headline, points: b.points.map((p) => `• ${p}`).join('\n'), link: webLink(t, '/admin/ops') };
+    for (const userId of userIds) await this.plan(c, 'ops_brief', userId, vars, b.briefId, new Date(), `${b.briefId}:${userId}`, 'staff');
+  }
+
+  /** Phase 29: a care-gap reminder whose wording the hospital approved ({{link}} → where to book a lab test). */
+  async onPatientNudge(c: Queryable, n: PatientNudge) {
+    const t = TenantContext.require();
+    const link = webLink(t, '/care/lab-tests');
+    await this.plan(c, 'patient_nudge', n.accountPersonId, { subject: n.subject.replaceAll('{{link}}', link), message: n.message.replaceAll('{{link}}', link) }, n.nudgeId, new Date());
+  }
+
+  /** Phase 29: "please confirm you are coming" for a booking at high risk of a no-show (the evening before). */
+  async onAttendanceCheck(c: Queryable, a: AppointmentChanged) {
+    const t = TenantContext.require();
+    const f = fmt(a.localDate ?? a.startsAt.slice(0, 10), a.localTime);
+    const vars = { hospital: t.name, appointmentNo: a.appointmentNo, patientName: a.patientName ?? '', doctorName: a.doctorName ?? 'your doctor', when: f.when, where: a.mode === 'VIDEO' ? 'video call' : a.branchName ?? '', link: webLink(t, `/care/appointments?confirm=${a.appointmentId}`) };
+    await this.plan(c, 'attendance_check', a.accountPersonId, vars, a.appointmentId, new Date(), `${a.appointmentId}:attendance`);
   }
 
   async onBillingNotice(c: Queryable, n: BillingNotice) {

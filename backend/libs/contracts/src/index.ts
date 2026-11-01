@@ -35,6 +35,7 @@ export const Topics = {
   diagnostics: 'diagnostics.events',
   subscription: 'subscription.events',
   integration: 'integration.events',
+  assistant: 'assistant.events',
 } as const;
 
 // ---------- event payloads ----------
@@ -398,6 +399,11 @@ export const EventTypes = {
   patientRegistered: 'patient.registered',
   patientUpdated: 'patient.updated',
   workflowNotify: 'integration.workflow_notify',
+  /** Phase 29: a branch's morning brief (e-mail to its brief readers), a care-gap reminder to a patient, and a
+   *  "please confirm you are coming" message for a booking at high risk of a no-show */
+  opsBrief: 'assistant.ops_brief',
+  patientNudge: 'assistant.patient_nudge',
+  attendanceCheck: 'scheduling.attendance_check',
 } as const;
 
 // ---------- shared value types ----------
@@ -499,3 +505,16 @@ export const WorkflowNotify = z.object({
 export type WorkflowNotify = z.infer<typeof WorkflowNotify>;
 
 export * from './custom-fields.js';
+
+/** assistant.ops_brief: the morning brief for one branch (numbers only, no patient details). */
+export const OpsBrief = z.object({
+  briefId: z.uuid(), branchId: z.uuid(), branchName: z.string(), date: z.iso.date(),
+  headline: z.string().max(300), points: z.array(z.string().max(400)).max(10),
+});
+export type OpsBrief = z.infer<typeof OpsBrief>;
+
+/** assistant.patient_nudge: a reminder the hospital approved the wording of (care gaps); never names a condition. */
+export const PatientNudge = z.object({
+  nudgeId: z.uuid(), kind: z.enum(['CARE_GAP']), accountPersonId: z.uuid(), subject: z.string().max(150), message: z.string().max(1000),
+});
+export type PatientNudge = z.infer<typeof PatientNudge>;

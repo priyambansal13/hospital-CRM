@@ -14,6 +14,10 @@ import { ScribeService } from './scribe/scribe.service.js';
 import { InternalWhatsAppController, WhatsAppWebhookController } from './whatsapp/whatsapp.controller.js';
 import { WhatsAppService } from './whatsapp/whatsapp.service.js';
 import { LLM } from './llm/llm.js';
+import { OpsAgentService } from './ops/agent.js';
+import { BriefService } from './ops/brief.js';
+import { CareGapService } from './ops/care-gaps.js';
+import { CareGapsController, InternalOpsController, OpsController } from './ops/ops.controller.js';
 import { createLlm } from './llm/provider.js';
 
 /**
@@ -62,8 +66,8 @@ class KnowledgeJobs implements OnModuleInit, OnApplicationBootstrap, OnApplicati
 }
 
 @Module({
-  imports: [CoreModule.forRoot({ schema: 'assistant', control: true, tenant: true, relay: false }), EntitlementsModule],
-  controllers: [InternalKeysController, InternalPurgeController, ChatController, HandoffsController, KnowledgeController, CopilotController, ScribeController, WhatsAppWebhookController, InternalWhatsAppController],
-  providers: [{ provide: LLM, useFactory: createLlm }, FieldCrypto, KbService, ChatService, CopilotService, ScribeService, WhatsAppService, KnowledgeJobs],
+  imports: [CoreModule.forRoot({ schema: 'assistant', control: true, tenant: true, relay: true }), EntitlementsModule],
+  controllers: [InternalKeysController, InternalPurgeController, ChatController, HandoffsController, KnowledgeController, CopilotController, ScribeController, WhatsAppWebhookController, InternalWhatsAppController, OpsController, CareGapsController, InternalOpsController],
+  providers: [{ provide: LLM, useFactory: createLlm }, FieldCrypto, KbService, ChatService, CopilotService, ScribeService, WhatsAppService, KnowledgeJobs, OpsAgentService, BriefService, CareGapService],
 })
 export class AppModule {}

@@ -2,7 +2,7 @@ import { Body, Controller, Get, Header, HttpCode, Inject, Injectable, Param, Pos
 import { Topics } from '@mc/contracts';
 import { EntitlementsClient, RequireFeature, RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { ConsumerRegistry, CurrentActor, Internal, notFound, parse, PLACEMENTS } from '@mc/nest-common';
-import { type Actor, type PlacementSource, TenantContext } from '@mc/tenancy';
+import { type Actor, type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { z } from 'zod';
 import { AnalyticsService, PERMISSION } from './semantic/analytics.service.js';
 import { BriefFacts } from './semantic/brief.js';
@@ -53,7 +53,7 @@ export class AnalyticsController {
 /** Operations: (re)load a hospital's warehouse; the facts for a branch's daily brief (ai-assistant-service). */
 @Controller('internal/tenants/:tenantId/analytics')
 export class InternalAnalyticsController {
-  constructor(private readonly backfill: Backfill, private readonly brief: BriefFacts, @Inject(PLACEMENTS) private readonly placements: PlacementSource) {}
+  constructor(private readonly backfill: Backfill, private readonly brief: BriefFacts, private readonly db: TenantDbRouter, @Inject(PLACEMENTS) private readonly placements: PlacementSource) {}
 
   @Post('backfill')
   @Internal()
@@ -64,6 +64,15 @@ export class InternalAnalyticsController {
   @Internal()
   @HttpCode(200)
   async refresh(@Param('tenantId') t: string) { await this.backfill.refresh(await this.placements.get(uuid(t, 'tenant'))); return { ok: true }; }
+
+  /** Active branches with their local hour and day (the brief job sends each branch's brief from 7 a.m. its time). */
+  @Get('branches')
+  @Internal()
+  async branches(@Param('tenantId') t: string) {
+    return TenantContext.run(await this.placements.get(uuid(t, 'tenant')), async () => (await this.db.query(
+      `SELECT id, name, extract(hour FROM now() AT TIME ZONE timezone)::int local_hour, (now() AT TIME ZONE timezone)::date::text today FROM dim_branches WHERE active ORDER BY name`)).rows
+      .map((r) => ({ id: r.id, name: r.name, localHour: r.local_hour, today: r.today })));
+  }
 
   @Get('brief/:branchId')
   @Internal()

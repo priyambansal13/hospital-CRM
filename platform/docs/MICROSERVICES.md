@@ -34,7 +34,7 @@
 | 12 | **notification-service** | templates, preferences, delivery log, schedules | preferences | `notification.sent/failed` | most business events |
 | 13 | **search-service** | OpenSearch indexes | doctor and test search | — | `doctor.*`, `slot.*`, catalog events *(as built, Phase 21: port 4414; `provider.doctor_*`, `scheduling.availability_changed` and appointment events, `tenant.provisioned`; the lab catalog is re-read every 30 minutes instead of from events)* |
 | 14 | **audit-service** | append-only audit store | audit query | — | all services (plus direct gRPC for PHI reads) |
-| 15 | **analytics-service** | warehouse loaders, metric definitions | dashboards, semantic-layer metrics | — | all business events (de-identified) |
+| 15 | **analytics-service** | warehouse loaders, metric definitions | dashboards, semantic-layer metrics | — | all business events (de-identified) *(as built, Phase 29: port 4417; warehouse in each hospital's own database, schema `analytics`, plus a backfill from the services; 18 metrics × 15 dimensions)* |
 | 16 | **ai-assistant-service** | conversations, pending actions, clinical drafts, knowledge index | chat, copilot, ops agent | `assistant.action_confirmed` | `entitlements.changed`, knowledge updates *(as built, Phase 22: port 4415; knowledge-only concierge, no events yet; knowledge set up by the `ai` module's enable hook; test preparation re-read from the lab catalog every 30 minutes)* |
 | 17 | **file-scan worker** | — | — | `document.scanned` | object storage events |
 

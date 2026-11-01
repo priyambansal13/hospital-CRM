@@ -11,7 +11,9 @@
     "tenant": true,
     "route": "assistant",
     "owner": "team-ai",
-    "publishes": [],
+    "publishes": [
+      "assistant.events"
+    ],
     "consumes": []
   },
   "scripts": {

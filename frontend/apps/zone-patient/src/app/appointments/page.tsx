@@ -4,6 +4,7 @@ import { api } from '@mc/bff';
 import { ZoneFrame, zoneCapabilities } from '@mc/features';
 import { Alert, Badge, Button, Card, PageHeader } from '@mc/ui';
 import { type Appointment, fmtDay, fmtTime, myAppointments } from '@/lib/booking';
+import { confirmAttendance } from '@/lib/attendance-actions';
 import { cancelAppointment } from '@/lib/booking-actions';
 import { Flash } from '@/lib/flash';
 import { ZONES } from '@/lib/zones';
@@ -26,7 +27,7 @@ const feeLine = (a: Appointment) => {
 };
 const CANCEL_REASON: Record<string, string> = { DOCTOR_UNAVAILABLE: 'The doctor is unavailable that day.', PATIENT_CANCELLED: 'You cancelled.', CANCELLED_BY_HOSPITAL: 'Cancelled by the hospital.' };
 
-function AppointmentCard({ a, actions, windowHours, forms = false }: { a: Appointment; actions: boolean; windowHours: number; forms?: boolean }) {
+function AppointmentCard({ a, actions, windowHours, forms = false, asked = false }: { a: Appointment; actions: boolean; windowHours: number; forms?: boolean; asked?: boolean }) {
   const s = STATUS[a.status] ?? { label: a.status, tone: 'neutral' as const };
   const changeable = actions && a.status === 'CONFIRMED' && new Date(a.startsAt).getTime() - Date.now() > windowHours * 3600_000;
   return (
@@ -35,10 +36,14 @@ function AppointmentCard({ a, actions, windowHours, forms = false }: { a: Appoin
         <h3>{fmtDay(a.localDate, { weekday: 'long', day: 'numeric', month: 'long' })}, {fmtTime(a.localTime)}</h3>
         <p className="mc-meta" style={{ margin: '4px 0 0' }}>{a.doctor.name} · {a.mode === 'VIDEO' ? 'Video' : a.branch.name}</p>
         <p className="mc-meta" style={{ margin: '2px 0 0' }}>For {a.patient.name} · {a.appointmentNo}{a.fee ? ` · ${feeLine(a)}` : ''}</p>
+        {a.status === 'CONFIRMED' && a.attendanceConfirmedAt ? <p className="mc-meta" style={{ margin: '2px 0 0' }}>You confirmed you are coming.</p> : null}
         {a.status === 'CANCELLED' && a.cancelReason ? <p className="mc-meta" style={{ margin: '2px 0 0' }}>{CANCEL_REASON[a.cancelReason] ?? a.cancelReason}</p> : null}
       </div>
       <div className="mc-appt-actions">
         <Badge tone={s.tone}>{s.label}</Badge>
+        {actions && a.status === 'CONFIRMED' && !a.attendanceConfirmedAt && (asked || a.attendanceCheckSentAt) ? (
+          <form action={confirmAttendance}><input type="hidden" name="id" value={a.id} /><Button>I&apos;m coming</Button></form>
+        ) : null}
         {forms && ['CONFIRMED', 'PENDING_PAYMENT', 'CHECKED_IN'].includes(a.status) ? <a className="mc-btn mc-btn-ghost" href={`/care/appointments/${a.id}/form`}>{a.formAnswers ? 'Your answers' : 'Before your visit'}</a> : null}
         {a.status === 'PENDING_PAYMENT' && a.invoiceId ? <a className="mc-btn mc-btn-primary" href={`/care/pay/${a.invoiceId}`}>Pay now</a> : null}
         {changeable ? (
@@ -55,7 +60,7 @@ function AppointmentCard({ a, actions, windowHours, forms = false }: { a: Appoin
   );
 }
 
-export default async function MyAppointmentsPage({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string }> }) {
+export default async function MyAppointmentsPage({ searchParams }: { searchParams: Promise<{ ok?: string; error?: string; confirm?: string }> }) {
   const caps = await zoneCapabilities('patient', '/care/appointments');
   if (caps.actor.kind !== 'patient') {
     return <ZoneFrame zone="patient" path="/care/appointments" zones={ZONES}><Alert tone="error">This page is for patients.</Alert></ZoneFrame>;
@@ -63,6 +68,7 @@ export default async function MyAppointmentsPage({ searchParams }: { searchParam
   // pre-visit forms (Phase 27)
   const forms = caps.modules.includes('workflows') && caps.permissions.includes('form:submit:own');
   const { accessToken: token } = (await getSession())!;
+  const sp = await searchParams;
   const [data, waitlist] = await Promise.all([
     myAppointments(token),
     api<{ id: string; doctor: { name: string }; patient: { name: string }; date: string; notifiedAt: string | null }[]>('/api/scheduling/v1/me/waitlist', { token }),
@@ -70,10 +76,10 @@ export default async function MyAppointmentsPage({ searchParams }: { searchParam
   return (
     <ZoneFrame zone="patient" path="/care/appointments" zones={ZONES}>
       <PageHeader title="My appointments" subtitle={`You can cancel or reschedule online up to ${data.policy.cancelWindowHours} hours before.`} actions={<a className="mc-btn mc-btn-primary" href="/care/doctors">Book another</a>} />
-      <Flash {...await searchParams} />
+      <Flash ok={sp.ok} error={sp.error} />
       <section className="mc-list" aria-label="Upcoming">
         <h2>Upcoming</h2>
-        {data.upcoming.length ? data.upcoming.map((a) => <AppointmentCard key={a.id} a={a} actions windowHours={data.policy.cancelWindowHours} forms={forms} />) : <p className="mc-muted">No upcoming appointments.</p>}
+        {data.upcoming.length ? data.upcoming.map((a) => <AppointmentCard key={a.id} a={a} actions windowHours={data.policy.cancelWindowHours} forms={forms} asked={a.id === sp.confirm} />) : <p className="mc-muted">No upcoming appointments.</p>}
       </section>
       {waitlist.length ? (
         <Card title="Waitlist">

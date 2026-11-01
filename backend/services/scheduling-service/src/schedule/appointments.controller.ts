@@ -100,6 +100,12 @@ export class AppointmentsController {
     return as === 'patient' ? toAppointment(row) : toStaffAppointment(row);
   }
 
+  @Post('appointments/:id/attendance')
+  @HttpCode(200)
+  confirmAttendance(@Param('id') apptId: string, @CurrentActor() actor: Actor) {
+    return this.svc.confirmAttendance(actor, id(apptId, 'appointment'));
+  }
+
   @Post('appointments/:id/cancel')
   @HttpCode(200)
   cancel(@Param('id') apptId: string, @Body() body: unknown, @CurrentActor() actor: Actor) {

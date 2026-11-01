@@ -18,8 +18,9 @@ export interface GenerateRequest {
   system: string;
   turns: Turn[];
   tools?: ToolDecl[];
-  /** 'copilot' = the stronger model for clinical summaries (GEMINI_COPILOT_MODEL) */
-  purpose?: 'chat' | 'copilot';
+  /** 'copilot' = the stronger model for clinical summaries (GEMINI_COPILOT_MODEL); 'ops' = the Ops agent and the
+   *  daily brief (GEMINI_OPS_MODEL); 'batch' = background wording through Batch Mode (GEMINI_BATCH_MODEL) */
+  purpose?: 'chat' | 'copilot' | 'ops' | 'batch';
   /** structured output: the reply is JSON matching this schema */
   responseSchema?: Record<string, unknown>;
   /** low for chat, high for clinical drafting */
@@ -40,14 +41,22 @@ export interface GenerateResult {
   raw?: unknown;
 }
 
+/** A Batch Mode job (docs/AI-AGENTS.md §7): asynchronous, discounted; results come back in request order. */
+export interface BatchStatus { state: 'PENDING' | 'SUCCEEDED' | 'FAILED'; results: (GenerateResult | null)[]; error?: string }
+
 export interface LlmClient {
   readonly name: string;
   readonly chatModel: string;
   readonly copilotModel: string;
+  readonly opsModel: string;
+  readonly batchModel: string;
   readonly embedModel: string;
   generate(req: GenerateRequest): Promise<GenerateResult>;
   /** Speech to text with speaker labels ("Doctor:" / "Patient:" lines) for the scribe. */
   transcribe(audio: Buffer, mimeType: string): Promise<{ text: string; model: string }>;
+  /** Send requests to Batch Mode (no tools); returns the provider's job name. */
+  submitBatch(reqs: GenerateRequest[]): Promise<string>;
+  batchStatus(job: string): Promise<BatchStatus>;
   /** Unit-length vectors of EMBED_DIM numbers; `kind` lets providers optimise for queries vs documents. */
   embed(texts: string[], kind: 'query' | 'document'): Promise<number[][]>;
 }

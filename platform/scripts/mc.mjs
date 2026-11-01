@@ -40,6 +40,7 @@
 //   test memberships                  memberships: tiers, booking window, members-only times, paid join, lab discount (Phase 26)
 //   test workflows                    custom fields, pre-visit forms, workflow rules (Phase 27)
 //   test analytics                    analytics warehouse, semantic layer, branch scoping (Phase 29)
+//   test ops                          Ops agent, morning brief, care-gap reminders, no-show outreach (Phase 29)
 //   test integrations                 webhooks, API keys, FHIR read API, LIS connector (Phase 27)
 //   test console                      platform console: plan builder, two-person approval, impact, move hospitals, audit
 //   k8s render <env>                  write deploy/environments/<env>/{generated.yaml,apps.json} from service/zone metadata
@@ -672,6 +673,7 @@ const main = async () => {
       if (sub === 'memberships') return run(`node ${join(PLATFORM, 'tests/memberships.mjs')}`, PLATFORM);
       if (sub === 'workflows') return run(`node ${join(PLATFORM, 'tests/workflows.mjs')}`, PLATFORM);
       if (sub === 'analytics') return run(`node ${join(PLATFORM, 'tests/analytics.mjs')}`, PLATFORM);
+      if (sub === 'ops') return run(`node ${join(PLATFORM, 'tests/ops.mjs')}`, PLATFORM);
       if (sub === 'integrations') return run(`node ${join(PLATFORM, 'tests/integrations.mjs')}`, PLATFORM);
       return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2|wave3|wave4|wave5|concierge|copilot|scribe|whatsapp');
     case 'seed':

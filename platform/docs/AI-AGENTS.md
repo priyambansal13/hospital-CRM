@@ -237,6 +237,8 @@ Medication names are matched against the hospital formulary and lab test codes a
 - **Daily brief (scheduled):** at 7 AM per branch: today's load vs capacity, doctors on leave with affected bookings, yesterday's no-shows, pending lab reports past turnaround time, payment mismatches.
 - **Actions with approval:** "Open extra slots for Dr. X on Saturday" or "notify waitlisted patients for freed slots" are proposed as action cards; the admin approves.
 
+*As built (Phase 29, 2026-11-01): the agent's only tool is `query_metric` on the analytics semantic layer with the admin's own token; every number in an answer is checked against the tool results (else the plain figures are shown); the brief is number-checked the same way and e-mailed per branch. Actions with approval are not built yet. See IMPLEMENTATION-PLAN.md Phase 29.*
+
 ---
 
 ## 7. Background agents
@@ -250,6 +252,8 @@ Medication names are matched against the hospital formulary and lab test codes a
 | Uploaded document triage | Patient uploads a document | Classifies type (lab report, prescription, discharge summary), extracts date, lab name and values into a **pending** record the patient confirms | Never overwrites hospital data; marked "patient-provided" |
 
 Batch-style jobs use **Gemini Batch Mode** (discounted, asynchronous); check the current discount on the pricing page.
+
+*As built (Phase 29): no-show prevention is a transparent points score (no model, fixed template, the patient taps "I'm coming"); care gaps use three fixed rules, and Batch Mode drafts one reminder per rule with placeholders (the model never sees a patient or a condition) that a person approves before anything is sent. Waitlist fill and follow-up reminders existed already (Phases 8–9, wave 3); uploaded-document triage is not built.*
 
 ---
 

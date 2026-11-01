@@ -1,5 +1,5 @@
-import { type Content, GoogleGenAI, type Part, ThinkingLevel } from '@google/genai';
-import { EMBED_DIM, type GenerateRequest, type GenerateResult, type LlmClient, normalise, type Turn } from './llm.js';
+import { type Content, type GenerateContentResponse, GoogleGenAI, type Part, ThinkingLevel } from '@google/genai';
+import { type BatchStatus, EMBED_DIM, type GenerateRequest, type GenerateResult, type LlmClient, normalise, type Turn } from './llm.js';
 
 const LEVEL = { minimal: ThinkingLevel.MINIMAL, low: ThinkingLevel.LOW, medium: ThinkingLevel.MEDIUM, high: ThinkingLevel.HIGH };
 
@@ -13,6 +13,8 @@ export class GeminiLlm implements LlmClient {
   readonly chatModel = process.env.GEMINI_CHAT_MODEL ?? 'gemini-3.8-flash';
   readonly copilotModel = process.env.GEMINI_COPILOT_MODEL ?? 'gemini-3.1-pro-preview';
   readonly embedModel = process.env.GEMINI_EMBED_MODEL ?? 'gemini-embedding-2';
+  readonly opsModel = process.env.GEMINI_OPS_MODEL ?? 'gemini-3.1-pro-preview';
+  readonly batchModel = process.env.GEMINI_BATCH_MODEL ?? 'gemini-3.5-flash-lite';
   private readonly ai: GoogleGenAI;
 
   constructor() {
@@ -21,19 +23,48 @@ export class GeminiLlm implements LlmClient {
       : new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
   }
 
+  private modelFor(req: GenerateRequest) {
+    return req.purpose === 'copilot' ? this.copilotModel : req.purpose === 'ops' ? this.opsModel : req.purpose === 'batch' ? this.batchModel : this.chatModel;
+  }
+
+  private config(req: GenerateRequest, withTimeout: boolean) {
+    return {
+      systemInstruction: req.system,
+      ...(req.responseSchema ? { responseMimeType: 'application/json', responseJsonSchema: req.responseSchema } : {}),
+      ...(req.tools?.length ? { tools: [{ functionDeclarations: req.tools.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: t.parameters })) }] } : {}),
+      thinkingConfig: { thinkingLevel: LEVEL[req.thinking ?? 'low'] },
+      maxOutputTokens: req.maxOutputTokens ?? 800,
+      ...(withTimeout ? { abortSignal: AbortSignal.timeout(req.timeoutMs ?? 20_000) } : {}),
+    };
+  }
+
   async generate(req: GenerateRequest): Promise<GenerateResult> {
-    const res = await this.ai.models.generateContent({
-      model: req.purpose === 'copilot' ? this.copilotModel : this.chatModel,
-      contents: req.turns.map(toContent),
-      config: {
-        systemInstruction: req.system,
-        ...(req.responseSchema ? { responseMimeType: 'application/json', responseJsonSchema: req.responseSchema } : {}),
-        ...(req.tools?.length ? { tools: [{ functionDeclarations: req.tools.map((t) => ({ name: t.name, description: t.description, parametersJsonSchema: t.parameters })) }] } : {}),
-        thinkingConfig: { thinkingLevel: LEVEL[req.thinking ?? 'low'] },
-        maxOutputTokens: req.maxOutputTokens ?? 800,
-        abortSignal: AbortSignal.timeout(req.timeoutMs ?? 20_000),
-      },
+    const res = await this.ai.models.generateContent({ model: this.modelFor(req), contents: req.turns.map(toContent), config: this.config(req, true) });
+    return this.result(res, this.modelFor(req));
+  }
+
+  /** Inlined requests (small jobs: one per care-gap rule); the job name is kept by the caller and polled. */
+  async submitBatch(reqs: GenerateRequest[]): Promise<string> {
+    const job = await this.ai.batches.create({
+      model: this.batchModel,
+      src: reqs.map((r) => ({ contents: r.turns.map(toContent), config: this.config(r, false) })),
+      config: { displayName: `medicare-${Date.now()}` },
     });
+    if (!job.name) throw new Error('Batch Mode returned no job name');
+    return job.name;
+  }
+
+  async batchStatus(name: string): Promise<BatchStatus> {
+    const job = await this.ai.batches.get({ name });
+    const state = String(job.state ?? '');
+    if (state === 'JOB_STATE_SUCCEEDED') {
+      return { state: 'SUCCEEDED', results: (job.dest?.inlinedResponses ?? []).map((r) => (r.response ? this.result(r.response, this.batchModel) : null)) };
+    }
+    if (['JOB_STATE_FAILED', 'JOB_STATE_CANCELLED', 'JOB_STATE_EXPIRED'].includes(state)) return { state: 'FAILED', results: [], error: job.error?.message ?? state };
+    return { state: 'PENDING', results: [] };
+  }
+
+  private result(res: GenerateContentResponse, model: string): GenerateResult {
     const c = res.candidates?.[0];
     const u = res.usageMetadata;
     const calls = (res.functionCalls ?? []).map((f) => ({ id: f.id, name: f.name ?? '', args: f.args ?? {} }));
@@ -42,7 +73,7 @@ export class GeminiLlm implements LlmClient {
       raw: c?.content,
       text: res.promptFeedback?.blockReason ? '' : (calls.length ? '' : (res.text ?? '')),
       finishReason: res.promptFeedback?.blockReason ? 'BLOCKED' : String(c?.finishReason ?? 'STOP'),
-      model: res.modelVersion ?? (req.purpose === 'copilot' ? this.copilotModel : this.chatModel),
+      model: res.modelVersion ?? model,
       usage: { input: u?.promptTokenCount ?? 0, output: (u?.candidatesTokenCount ?? 0) + (u?.thoughtsTokenCount ?? 0), cached: u?.cachedContentTokenCount ?? 0 },
     };
   }

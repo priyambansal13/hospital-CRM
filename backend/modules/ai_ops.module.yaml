@@ -1,0 +1,24 @@
+# AI operations (IMPLEMENTATION-PLAN.md Phase 29, docs/AI-AGENTS.md §6–§7): the Ops agent (administrators ask about
+# the hospital's numbers in plain language; it answers from the analytics semantic layer with the person's own
+# branches, every figure checked against the reports), the morning brief per branch (e-mail from 7 a.m.), no-show
+# outreach (the evening before, high-risk bookings are asked to confirm) and care-gap reminders (fixed rules pick who;
+# the wording is drafted through Batch Mode and approved by a person before anything is sent). Off by default.
+key: ai_ops
+name: AI operations assistant
+version: 1
+dependsOn: [analytics, ai, appointments]
+services: [ai-assistant-service, scheduling-service, analytics-service]
+lifecycle: [assistant]
+permissions:
+  - { code: ops_agent:use:branch, description: Ask the operations assistant about the hospital's numbers (for the branches one manages) }
+  - { code: ops_brief:receive:branch, description: Receive the branch's morning brief }
+  - { code: care_gap:manage:tenant, description: Approve care-gap reminder wording and send reminders }
+features:
+  - { key: ai_ops.agent, name: Operations assistant (questions), type: BOOLEAN }
+  - { key: ai_ops.brief, name: Morning brief per branch, type: BOOLEAN }
+  - { key: ai_ops.noshow_outreach, name: No-show outreach (confirm the evening before), type: BOOLEAN }
+  - { key: ai_ops.care_gaps, name: Care-gap reminders, type: BOOLEAN }
+nav:
+  - { key: ops-admin, label: Ops assistant, zone: admin, href: /admin/ops, permissions: [ops_agent:use:branch, admin:access:tenant] }
+defaultRoleGrants:
+  BRANCH_ADMIN: [ops_agent:use:branch, ops_brief:receive:branch]

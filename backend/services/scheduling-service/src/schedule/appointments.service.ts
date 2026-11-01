@@ -46,10 +46,12 @@ export const toAppointment = (r: any) => ({
   source: r.source, bookedVia: r.booked_via ?? null, memberBenefit: r.member_benefit ?? null, tokenNo: r.token_no, checkedInAt: r.checked_in_at, startedAt: r.started_at, completedAt: r.completed_at, noShowAt: r.no_show_at,
   paymentStatus: r.payment_status, invoiceId: r.invoice_id, paidAt: r.paid_at, holdExpiresAt: r.hold_expires_at,
   formAnswers: r.form_answers ?? null,
+  // Phase 29: the "please confirm you are coming" message and the patient's answer
+  attendanceCheckSentAt: r.outreach_sent_at ?? null, attendanceConfirmedAt: r.attendance_confirmed_at ?? null,
   version: r.version, createdAt: r.created_at,
 });
 /** staff also see the hospital's custom fields (Phase 27; not shown to patients) */
-export const toStaffAppointment = (r: any) => ({ ...toAppointment(r), customFields: (r.custom_fields ?? {}) as Record<string, unknown> });
+export const toStaffAppointment = (r: any) => ({ ...toAppointment(r), customFields: (r.custom_fields ?? {}) as Record<string, unknown>, noShowRisk: r.noshow_risk ?? null });
 
 /** Who the appointment is for, and how it is being booked. */
 export interface Booking {
@@ -238,6 +240,17 @@ export class AppointmentsService {
   /** The hospital's own cancel/reschedule cutoff (setting appointments.cancel_cutoff_hours, within its plan). */
   cutoffHours() {
     return this.entitlements.setting(TenantContext.require().id, 'appointments.cancel_cutoff_hours', POLICY.cancelWindowHours);
+  }
+
+  /** The patient (or the desk, on the phone) confirms they are coming: idempotent; only an upcoming confirmed visit. */
+  async confirmAttendance(actor: Actor, id: string) {
+    return this.db.tx(async (c) => {
+      const { row: a, as } = await this.assertAccess(c, actor, id, 'appointment:checkin:branch');
+      if (a.status !== 'CONFIRMED') throw conflict('INVALID_STATE_TRANSITION', `a ${a.status.toLowerCase()} appointment cannot be confirmed`);
+      await c.query('UPDATE appointments SET attendance_confirmed_at = coalesce(attendance_confirmed_at, now()), updated_at = now() WHERE id = $1', [id]);
+      const r = await this.find(c, id);
+      return as === 'patient' ? toAppointment(r) : toStaffAppointment(r);
+    });
   }
 
   async cancel(actor: Actor, id: string, reason: string | null) {

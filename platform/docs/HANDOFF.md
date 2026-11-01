@@ -1,7 +1,7 @@
-# Handoff: where work stopped (2026-10-31, after Phase 27: customization and integrations)
+# Handoff: where work stopped (2026-11-01, after Phase 29: analytics and the Ops agent)
 
 ## State
-- Phases 0–27 are built; M5 (AI) is complete; M6: Phase 26 (patient memberships) and Phase 27 (custom fields, forms, workflow rules, webhooks, API keys, FHIR read API, LIS connector; new integration-service on 4416) done 2026-10-31. UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
+- Phases 0–27 and 29 are built; M5 (AI) is complete; M6: Phase 26 (patient memberships) and Phase 27 (custom fields, forms, workflow rules, webhooks, API keys, FHIR read API, LIS connector; new integration-service on 4416) done 2026-10-31; Phase 29 (analytics warehouse and dashboards, new analytics-service on 4417; Ops agent, morning brief, care-gap reminders, no-show outreach) done 2026-11-01. Phase 28 (video) is the only M6 phase left. UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
 - The flow review is in [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md). See §8 "Fix log" for details.
   - Wave 1 (15 gaps): fixed 2026-10-25.
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
@@ -18,7 +18,8 @@
   - `mc test scribe` (prescription safety + scribe, 26 checks) and `mc test whatsapp` (20 checks) cover Phase 25; the scribe suite also leaves a draft the leak test uses.
   - `mc test memberships` (22 checks) covers Phase 26; it switches the module on for citycare and resets it afterwards.
   - `mc test workflows` (31 checks) and `mc test integrations` (32 checks) cover Phase 27; both switch their module on for citycare and reset it.
-  - The tenancy leak test has 1315 checks and found 0 leaks.
+  - `mc test analytics` (24 checks) and `mc test ops` (38 checks) cover Phase 29; both switch `analytics` (and `ai_ops`) on for citycare and reset them. Run `mc test ops` once before the leak test (it needs an Ops question).
+  - The tenancy leak test has 1397 checks and found 0 leaks.
   - Admin Staff and Roles pages read everyone's roles in one call (`GET entitlement v1/user-roles`); one call per person used up Kong's 1200/min per-IP limit once citycare had hundreds of test staff (2026-10-31).
 - Git: one repo for all three folders, at https://github.com/priyambansal13/hospital-CRM (`main`).
   - Everything up to Phase 27 is pushed.
@@ -26,15 +27,19 @@
   - Image builds wait for the `GCP_WIF_PROVIDER` repo variable.
   - The integration job is manual (workflow_dispatch).
 
-## Phase 29 in progress (2026-11-01)
-- **Part 1 done:** analytics-service (4417), warehouse, semantic layer, `/admin/analytics`, `mc test analytics` (IMPLEMENTATION-PLAN.md Phase 29 "As built, part 1"). Module `analytics` is on for aarogya (showcase), off on citycare (the suite switches it on and resets it).
-- **Part 2 next:** Ops agent (ai-assistant-service, tools over `/api/analytics/v1/analytics/query` with the admin's token), daily brief per branch (facts from `internal/.../analytics/brief/:branchId`), no-show outreach, care-gap nudges via Batch Mode.
+## Phase 29 notes worth knowing (2026-11-01)
+- analytics-service is the 17th service (port 4417, schema `analytics`, tenant only, consumer group `analytics.warehouse`). Same new-service steps as Phase 27 (configure, build, db bootstrap, migrate, gateway sync, PgBouncer restart, `mc dev` restart). ai-assistant-service now publishes `assistant.events` (relay on): `mc db bootstrap` creates the topic.
+- Both modules are off by default; aarogya (showcase) has `analytics` and `ai_ops` on. Switching `analytics` on backfills the warehouse from the services (progress: `GET /api/analytics/v1/analytics/status`); `POST /internal/tenants/:t/analytics/backfill` re-runs it. Switching `ai_ops` on drafts the care-gap wording (Batch Mode); nothing is sent until an admin approves it on `/admin/ops`.
+- The warehouse consumer writes even when entitlement-service cannot be reached (it lives in the hospital's own database); events that failed at a cold start can be replayed with `mc events replay <topic>`.
+- Jobs: morning brief every 10 min from 7 a.m. branch time (`OPS_BRIEF_HOUR`), no-show outreach every 15 min from 5 p.m. (`NOSHOW_OUTREACH_HOUR`, threshold `NOSHOW_RISK_THRESHOLD`=3), care gaps hourly check / weekly per rule, Batch Mode poll every minute (`BATCH_POLL_MS`). Internal triggers: `POST /internal/tenants/:t/ops/briefs {hour}` (4415), `POST /internal/tenants/:t/noshow-outreach {hour}` (4405), `POST /internal/tenants/:t/ops/batches` (4415).
+- Approved care-gap wording and sent reminders survive switching the module off and on (on purpose); `mc test ops` clears them at its start.
+- With a real Gemini key, also try `GEMINI_OPS_MODEL` / `GEMINI_BATCH_MODEL` and a real Batch Mode job (the adapter has not called the API).
 
 ## Resume here (ask first)
 Choose one:
-1. **M6, Phases 28–29** (video consultations; analytics and the Ops agent; IMPLEMENTATION-PLAN.md): ask which first. Phase 28 (video) would also exercise the members' free video allowance.
+1. **M6, Phase 28** (video consultations; IMPLEMENTATION-PLAN.md): the last M6 phase; it would also exercise the members' free video allowance. Then M7 (production readiness).
 2. **Real-provider runs**, once the user provides keys or accounts:
-   - Gemini: a valid key, then `LLM_PROVIDER=gemini` and `mc test assistant`, `mc test concierge` `mc test copilot` and `mc test scribe` against the real model (prompt tuning; set `GEMINI_COPILOT_MODEL` / `GEMINI_TRANSCRIBE_MODEL` if the defaults are not available), and a real recorded consultation;
+   - Gemini: a valid key, then `LLM_PROVIDER=gemini` and `mc test assistant`, `mc test concierge` `mc test copilot` and `mc test scribe` against the real model, plus the Ops agent, the morning brief and a Batch Mode job (prompt tuning; set `GEMINI_COPILOT_MODEL` / `GEMINI_TRANSCRIBE_MODEL` if the defaults are not available), and a real recorded consultation;
    - WhatsApp: a WhatsApp Business account (Meta Cloud API): `WHATSAPP_PROVIDER=meta`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, the webhook URL registered with Meta, `mc whatsapp link <slug> <phoneNumberId> <number>`;
    - a licensed drug database behind the prescription-safety rules (the starter formulary is for development);
    - Razorpay: test keys, the recurring adapter for `SAAS_PAYMENTS=razorpay`, and Route;

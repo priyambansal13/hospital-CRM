@@ -15,6 +15,7 @@
       "notification.events"
     ],
     "consumes": [
+      "assistant.events",
       "billing.events",
       "diagnostics.events",
       "integration.events",
