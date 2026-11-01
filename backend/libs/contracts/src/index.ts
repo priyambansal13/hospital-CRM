@@ -178,6 +178,8 @@ export const AppointmentChanged = z.object({
   /** queue token (set at check-in) and how it was booked: ONLINE, DESK (front desk into a slot), WALK_IN (no slot) */
   tokenNo: z.number().int().nullable().optional(),
   source: z.enum(['ONLINE', 'DESK', 'WALK_IN']).optional(),
+  /** who made an ONLINE booking: the patient's own screens, or the AI assistant (ASSISTANT) */
+  bookedVia: z.string().nullable().optional(),
   // payments (Phase 11)
   paymentMode: z.enum(['ONLINE', 'AT_CLINIC']).optional(),
   paymentStatus: z.string().optional(),
@@ -205,6 +207,8 @@ export const PaymentSucceeded = z.object({
   sourceType: z.enum(['APPOINTMENT', 'LAB_ORDER', 'MEMBERSHIP']), sourceId: z.uuid(),
   accountPersonId: z.uuid(), patientName: z.string(),
   amount: z.number(), method: z.string().nullable(), channel: z.enum(['ONLINE', 'COUNTER']),
+  /** the invoice's branch (memberships have none; older events lack it) */
+  branchId: z.uuid().nullable().optional(),
 });
 export type PaymentSucceeded = z.infer<typeof PaymentSucceeded>;
 
@@ -232,6 +236,7 @@ export const RefundProcessed = z.object({
   sourceType: z.enum(['APPOINTMENT', 'LAB_ORDER', 'MEMBERSHIP']), sourceId: z.uuid(),
   accountPersonId: z.uuid(), patientName: z.string(),
   amount: z.number(), invoiceStatus: z.string(), reason: z.string().nullable(),
+  branchId: z.uuid().nullable().optional(),
 });
 export type RefundProcessed = z.infer<typeof RefundProcessed>;
 

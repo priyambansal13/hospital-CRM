@@ -27,6 +27,19 @@
     "valuesJson": "{\"name\":\"ai-assistant-service\",\"port\":4415,\"schema\":\"assistant\",\"migrations\":true,\"extraSecretKeys\":[\"MC_MASTER_KEY\"],\"serviceAccount\":{\"annotations\":{\"iam.gke.io/gcp-service-account\":\"medicare-ai@<gcp-project>.iam.gserviceaccount.com\"}}}"
   },
   {
+    "name": "analytics-service",
+    "chart": "medicare-service",
+    "wave": "2",
+    "values": {
+      "name": "analytics-service",
+      "port": 4417,
+      "schema": "analytics",
+      "migrations": true,
+      "extraSecretKeys": []
+    },
+    "valuesJson": "{\"name\":\"analytics-service\",\"port\":4417,\"schema\":\"analytics\",\"migrations\":true,\"extraSecretKeys\":[]}"
+  },
+  {
     "name": "audit-service",
     "chart": "medicare-service",
     "wave": "2",

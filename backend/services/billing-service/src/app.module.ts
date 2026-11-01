@@ -14,6 +14,7 @@ import { WebhookController } from './billing/webhook.controller.js';
 import { gatewayConfig, PAYMENT_GATEWAY, type PaymentGateway } from './gateway/gateway.js';
 import { RazorpayGateway } from './gateway/razorpay.js';
 import { SimulatedRazorpay } from './gateway/simulator.js';
+import { InternalAnalyticsController } from './billing/analytics.controller.js';
 
 /** PAYMENT_GATEWAY=razorpay uses Razorpay (test or live keys); "simulated" (local default) is refused outside dev. */
 function gatewayFactory(redis: Redis): PaymentGateway {
@@ -61,7 +62,7 @@ class BillingConsumers implements OnModuleInit {
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'billing', control: true, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [BillingController, WebhookController, InternalInvoicesController, PaymentAccountController, MembershipPlansController, MembersController, MyMembershipController, InternalMembersController],
+  controllers: [InternalAnalyticsController, BillingController, WebhookController, InternalInvoicesController, PaymentAccountController, MembershipPlansController, MembersController, MyMembershipController, InternalMembersController],
   providers: [
     { provide: PAYMENT_GATEWAY, useFactory: gatewayFactory, inject: [REDIS] },
     BillingService, PaymentAccountService, RefundJob, BillingConsumers, MembershipsService, MembershipJobs,

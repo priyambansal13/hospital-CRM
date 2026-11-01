@@ -480,7 +480,7 @@ export class AppointmentsService {
       doctorId: a.doctor_id, branchId: a.branch_id, startsAt: new Date(a.starts_at).toISOString(), status: a.status, reason: a.cancel_reason,
       patientName: a.patient_name, patientMrn: a.patient_mrn, doctorName: a.doctor_name, branchName: a.branch_name, localDate: a.local_date, localTime: a.local_time,
       mode: a.mode, fee: a.fee == null ? null : Number(a.fee), rescheduledFrom: a.rescheduled_from,
-      tokenNo: a.token_no ?? null, source: a.source,
+      tokenNo: a.token_no ?? null, source: a.source, bookedVia: a.booked_via ?? undefined,
       paymentMode: a.payment_mode, paymentStatus: a.payment_status, invoiceId: a.invoice_id ?? null, doctorUserId: a.doctor_user_id ?? null,
       ...extra,
     };

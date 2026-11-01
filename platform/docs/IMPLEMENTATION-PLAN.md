@@ -714,8 +714,17 @@ flowchart LR
 - [ ] Video provider adapter, consult rooms, telemedicine consent, e-prescription delivery, patient/doctor zone UI
 
 ### Phase 29: Analytics and Ops agent
-- [ ] Event-fed warehouse (dataset per tenant), semantic layer metrics, admin dashboards
+- [x] Event-fed warehouse (dataset per tenant), semantic layer metrics, admin dashboards *(part 1, 2026-11-01)*
 - [ ] Ops agent on the semantic layer; daily brief; background agents (no-show outreach, care-gap nudges) via Gemini Batch Mode
+
+**As built, part 1 (2026-11-01):**
+- New **analytics-service** (port 4417, schema `analytics` in each hospital's own database, tenant only) and module `analytics` (**off by default**; permission `analytics:read:branch` for branch admins; feature `analytics.export` for CSV).
+- **Warehouse** (`migrations/tenant/0001_warehouse.sql`): `fact_appointments`, `fact_lab_orders`, `fact_payments` (refunds negative, by the day money moved), `fact_patients` (age band, gender), `fact_capacity` (slots offered/booked per doctor and day, pulled from scheduling every 30 min: slots are not events), `fact_payment_issues`; dimensions `dim_branches`, `dim_doctors`, `dim_specialties`. **De-identified:** no names, MRNs, contact details or dates of birth; a patient is an HMAC with a random per-hospital key (`settings`).
+- **Loading:** consumer group `analytics.warehouse` (branch, doctor, appointment, lab, payment, refund, registration, unapplied-payment events; idempotent upserts, newest `event_at` wins). Switching the module on (lifecycle hook) **backfills** from new internal endpoints (`/internal/tenants/:t/analytics/...` in scheduling, diagnostics, billing, patient; specialties in provider), page by page, progress in `loads`; `POST /internal/tenants/:t/analytics/backfill` re-runs it. Payment and refund events now carry `branchId`; appointment events carry `bookedVia`.
+- **Semantic layer** (`src/semantic/metrics.ts`): 18 named metrics (appointments, completed visits, no-shows and rate, cancellations and rate, booked online, booked by the AI assistant, first visits, days booked ahead, utilisation, bookable slots, net revenue, refunds, lab orders, lab turnaround median, reports late, new patients) × 15 dimensions (day, week, month, weekday, hour, branch, doctor, department, visit type, booking channel, payment channel, paid for, collection, age group, gender). Requests pick names; SQL fragments are constants and values are parameters. The person's branches always apply; hospital-wide facts (new patients) are refused to branch-limited people (`HOSPITAL_WIDE_ONLY`). Time series are filled and never cut short.
+- **API** (`/api/analytics/v1/analytics`): `catalog`, `query`, `summary` (tiles with the same-length period before), `status` (load progress, last event), `export.csv` (formula-safe). Internal: `brief/:branchId` (facts for the morning brief, part 2).
+- **Admin page** `/admin/analytics`: period chips, branch filter, KPI tiles with change, appointments by day/week, no-show rate by weekday, busiest departments, booking channels, revenue by branch, doctors' utilisation, lab turnaround, an explorer (any metric × split, table, CSV).
+- **Tests:** `mc test analytics` (24 checks: backfill equals the services' own tables, de-identification, live events, branch scoping, validation, CSV), unit spec for the compiler.
 
 ---
 

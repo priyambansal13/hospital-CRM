@@ -218,7 +218,7 @@ export class BillingService {
     await c.query(`UPDATE invoices SET status = 'PAID', amount_paid = $2, paid_at = now(), voided_at = NULL, void_reason = NULL, version = version + 1, updated_at = now() WHERE id = $1`, [inv.id, amount]);
     const data: PaymentSucceeded = {
       invoiceId: inv.id, invoiceNo: inv.invoice_no, paymentId, sourceType: inv.source_type, sourceId: inv.source_id,
-      accountPersonId: inv.account_person_id, patientName: inv.patient_name, amount, method, channel,
+      accountPersonId: inv.account_person_id, patientName: inv.patient_name, amount, method, channel, branchId: inv.branch_id ?? null,
     };
     await addToOutbox(c, Topics.billing, inv.id, envelope(EventTypes.paymentSucceeded, data, { tenantId: TenantContext.require().id, subject: inv.id }));
     if (channel === 'ONLINE') await this.accounts.transfer(c, inv.id, paymentId, amount);
@@ -279,7 +279,7 @@ export class BillingService {
        WHERE id = $1 RETURNING *`, [r.invoice_id, r.amount]);
     const data: RefundProcessed = {
       invoiceId: inv.id, invoiceNo: inv.invoice_no, refundId: r.id, sourceType: inv.source_type, sourceId: inv.source_id,
-      accountPersonId: inv.account_person_id, patientName: inv.patient_name, amount: money(r.amount), invoiceStatus: inv.status, reason: r.reason,
+      accountPersonId: inv.account_person_id, patientName: inv.patient_name, amount: money(r.amount), invoiceStatus: inv.status, reason: r.reason, branchId: inv.branch_id ?? null,
     };
     await addToOutbox(c, Topics.billing, inv.id, envelope(EventTypes.refundProcessed, data, { tenantId: TenantContext.require().id, subject: inv.id }));
   }

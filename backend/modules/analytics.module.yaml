@@ -1,0 +1,18 @@
+# Analytics (IMPLEMENTATION-PLAN.md Phase 29, docs/AI-AGENTS.md §6): a de-identified warehouse per hospital, fed by
+# domain events (plus a one-time backfill from the owning services), and a semantic layer of named metrics
+# (appointments, no-show rate, utilisation, revenue, lab turnaround…) by branch, doctor, department and date. Admin
+# dashboards, an explorer and CSV exports read it; the Ops agent (module ai_ops) asks it questions. Off by default.
+key: analytics
+name: Analytics
+version: 1
+dependsOn: [core]
+services: [analytics-service]
+lifecycle: [analytics]
+permissions:
+  - { code: analytics:read:branch, description: See the hospital's reports and dashboards (for the branches one manages) }
+features:
+  - { key: analytics.export, name: Download reports as CSV, type: BOOLEAN }
+nav:
+  - { key: analytics-admin, label: Analytics, zone: admin, href: /admin/analytics, permissions: [analytics:read:branch, admin:access:tenant] }
+defaultRoleGrants:
+  BRANCH_ADMIN: [analytics:read:branch]

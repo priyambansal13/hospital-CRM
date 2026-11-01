@@ -18,6 +18,7 @@ import { DeskController, InternalQueueController, QueueController } from './sche
 import { QueueService } from './schedule/queue.service.js';
 import { ScheduleController, UpcomingAppointmentsController } from './schedule/schedule.controller.js';
 import { ScheduleService } from './schedule/schedule.service.js';
+import { InternalAnalyticsController } from './schedule/analytics.controller.js';
 
 async function upsertBranch(c: Queryable, data: unknown, appts: AppointmentsService) {
   const b = BranchChanged.parse(data);
@@ -81,7 +82,7 @@ class SchedulingConsumers implements OnModuleInit {
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'scheduling', control: false, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [InternalAgendaController, UpcomingAppointmentsController, ScheduleController, AppointmentsController, InternalAppointmentsController, InternalNextSlotsController, DeskController, QueueController, InternalQueueController, StatsController, AppointmentCustomController, InternalPrepaymentController, InternalAppointmentReadController],
+  controllers: [InternalAnalyticsController, InternalAgendaController, UpcomingAppointmentsController, ScheduleController, AppointmentsController, InternalAppointmentsController, InternalNextSlotsController, DeskController, QueueController, InternalQueueController, StatsController, AppointmentCustomController, InternalPrepaymentController, InternalAppointmentReadController],
   providers: [ScheduleService, AppointmentsService, QueueService, PatientsClient, BillingClient, MembershipRules, CustomFieldsClient, HorizonJob, NoShowJob, HoldExpiryJob, AgendaJob, SchedulingConsumers],
 })
 export class AppModule {}

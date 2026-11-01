@@ -26,6 +26,10 @@
   - Image builds wait for the `GCP_WIF_PROVIDER` repo variable.
   - The integration job is manual (workflow_dispatch).
 
+## Phase 29 in progress (2026-11-01)
+- **Part 1 done:** analytics-service (4417), warehouse, semantic layer, `/admin/analytics`, `mc test analytics` (IMPLEMENTATION-PLAN.md Phase 29 "As built, part 1"). Module `analytics` is on for aarogya (showcase), off on citycare (the suite switches it on and resets it).
+- **Part 2 next:** Ops agent (ai-assistant-service, tools over `/api/analytics/v1/analytics/query` with the admin's token), daily brief per branch (facts from `internal/.../analytics/brief/:branchId`), no-show outreach, care-gap nudges via Batch Mode.
+
 ## Resume here (ask first)
 Choose one:
 1. **M6, Phases 28–29** (video consultations; analytics and the Ops agent; IMPLEMENTATION-PLAN.md): ask which first. Phase 28 (video) would also exercise the members' free video allowance.

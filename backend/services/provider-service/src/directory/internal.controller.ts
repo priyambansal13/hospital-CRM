@@ -16,6 +16,14 @@ export class InternalProviderController {
     return TenantContext.run(await this.placements.get(tenantId), () => this.doctors.republishAll(tenantId));
   }
 
+  /** Specialty names (analytics-service, Phase 29: report labels). */
+  @Get('specialties')
+  @Internal()
+  async specialties(@Param('tenantId') tenantId: string) {
+    if (!z.uuid().safeParse(tenantId).success) throw notFound('tenant');
+    return TenantContext.run(await this.placements.get(tenantId), async () => (await this.db.query('SELECT code, name FROM specialties ORDER BY code')).rows.map((r) => ({ code: r.code, name: r.name })));
+  }
+
   /** Active doctors (not INACTIVE): per-seat pricing on MediCare's invoice (subscription-service). */
   @Get('doctor-count')
   @Internal()
