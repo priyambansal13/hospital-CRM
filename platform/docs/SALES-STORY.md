@@ -2,6 +2,8 @@
 
 How to sell MediCare: who buys it, the story to tell, what to show in a demo, how to price it, and how to answer the usual objections.
 
+How prospects find us (SEO and paid ads) is in [SEO-AND-ADS.md](SEO-AND-ADS.md).
+
 Everything claimed here is built and tested (see [APP-FLOWS-AND-LOGINS.md](APP-FLOWS-AND-LOGINS.md)). The people, hospitals and numbers in the stories are **illustrative**: there are no customers yet. Replace them with real pilot results as soon as there are some. Items that still need a provider account are listed in §9; don't promise them as live.
 
 ---
