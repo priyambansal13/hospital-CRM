@@ -5,10 +5,30 @@ import { Alert, Card, Icon, iconFor, PageHeader } from '@mc/ui';
 import { HospitalHome } from './hospital-home';
 import { PlatformHome } from './platform-home';
 import { redirect } from 'next/navigation';
+import type { Metadata } from 'next';
+import { describe, pageMeta } from '@mc/features/seo';
+import { publicBranches } from '@/lib/public-site';
 import { PLATFORM_SLUG } from '@/lib/site';
 import { ZONE_BASES, ZONES } from '@/lib/zones';
 
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata(): Promise<Metadata> {
+  const b = await getBranding();
+  if (b.slug === PLATFORM_SLUG) {
+    return pageMeta({
+      title: 'MediCare · Hospital and clinic software for India: booking, records, lab and billing',
+      description: describe('Online booking under your own name, front desk and queue, medical records with prescription safety checks, lab reports with QR proof, billing and a safe AI assistant. Free trial.'),
+      path: '/',
+    });
+  }
+  const cities = [...new Set((await publicBranches().catch(() => [])).map((x) => x.city))].join(', ');
+  return pageMeta({
+    title: `${b.name}${cities ? `, ${cities}` : ''} · Book doctors and lab tests online`,
+    description: describe(`Book a doctor or a lab test at ${b.name}${cities ? ` in ${cities}` : ''}. See each doctor's next free time, pay online and get your reports on your phone.`),
+    path: '/',
+  });
+}
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ denied?: string; reason?: string }> }) {
   const { denied } = await searchParams;

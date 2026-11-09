@@ -1,10 +1,19 @@
 import { ZoneFrame } from '@mc/features';
+import { getBranding } from '@mc/bff';
+import { pageMeta } from '@mc/features/seo';
+import type { Metadata } from 'next';
 import { Alert, Button, Card, Field, PageHeader } from '@mc/ui';
 import { signup } from '@/lib/signup-actions';
-import { inr, publicPlans } from '@/lib/site';
+import { inr, PLATFORM_SLUG, publicPlans } from '@/lib/site';
 import { ZONES } from '@/lib/zones';
 
 export const dynamic = 'force-dynamic';
+
+/** Indexed on MediCare's own host only (a hospital's host is about the hospital). */
+export async function generateMetadata(): Promise<Metadata> {
+  const b = await getBranding();
+  return pageMeta({ title: 'Start a free trial · MediCare', description: "Your own MediCare in a few minutes: online booking under your hospital's name, records, lab and billing. No card needed to start.", path: '/signup', index: b.slug === PLATFORM_SLUG });
+}
 
 type Q = { plan?: string; error?: string; hospitalName?: string; slug?: string; adminName?: string; adminEmail?: string; phone?: string };
 

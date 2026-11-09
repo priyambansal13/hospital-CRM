@@ -43,6 +43,7 @@
 //   tenant export|purge <slug>        offboarding: export a hospital; destroy a deleted one's data (--confirm <slug>)
 //   keys rotate <slug> | keys rewrap  data key rotation; re-wrap data keys with the current master key / KMS
 //   whatsapp link <slug> <phoneNumberId> <number> | whatsapp list <slug>   a hospital's WhatsApp Business number (Phase 25)
+//   search reindex <slug>|--all       rebuild a hospital's doctor and test search indexes from the directory and lab catalogue
 //   test memberships                  memberships: tiers, booking window, members-only times, paid join, lab discount (Phase 26)
 //   test workflows                    custom fields, pre-visit forms, workflow rules (Phase 27)
 //   test analytics                    analytics warehouse, semantic layer, branch scoping (Phase 29)
@@ -50,6 +51,7 @@
 //   test integrations                 webhooks, API keys, FHIR read API, LIS connector (Phase 27)
 //   test servers                      database servers, moving a hospital between them, release rings (Phase 30)
 //   test backups                      encrypted per-hospital backups, restore drills, tampering detected (Phase 30)
+//   test seo                          hospital sites for search engines: titles, canonical, sitemap, robots, structured data, doctor addresses
 //   test console                      platform console: plan builder, two-person approval, impact, move hospitals, audit
 //   k8s render <env>                  write deploy/environments/<env>/{generated.yaml,apps.json} from service/zone metadata
 //   k8s check <env>                   helm lint + render every app + kubeconform schema check (needs helm, docker)
@@ -598,6 +600,18 @@ async function whatsappCmd(action, args) {
   } else fail('whatsapp link <slug> <phoneNumberId> <displayNumber> | whatsapp list <slug>');
 }
 
+/** Search indexes are rebuilt from provider and diagnostics (after a change to what doctor or test pages carry, e.g. slugs). */
+async function searchCmd(action, args) {
+  if (action !== 'reindex') fail('search reindex <slug>|--all');
+  const f = flags(args);
+  const all = await api(svcUrl('tenant'), '/internal/tenants');
+  const ts = f.all ? all.filter((t) => t.status === 'ACTIVE' || t.status === 'READ_ONLY') : [await tenantBySlug(f._[0] ?? fail('usage: search reindex <slug>|--all'))];
+  for (const t of ts) {
+    const r = await api(svcUrl('search'), `/internal/tenants/${t.id}/search/reindex`, { method: 'POST', body: {} });
+    log(`${t.slug}: ${JSON.stringify(r)}`);
+  }
+}
+
 async function tenantBySlug(slug) {
   const ts = await api(svcUrl('tenant'), '/internal/tenants');
   return ts.find((x) => x.slug === slug) ?? fail(`no tenant ${slug}`);
@@ -773,6 +787,7 @@ const main = async () => {
     case 'backup': return backupCmd(sub, rest);
     case 'keys': return keysCmd(sub, rest);
     case 'whatsapp': return whatsappCmd(sub, rest);
+    case 'search': return searchCmd(sub, rest);
     case 'module': return moduleCmd(sub, rest);
     case 'plan': return planCmd(sub, rest);
     case 'billing': return billingCmd(sub, rest);
@@ -815,6 +830,7 @@ const main = async () => {
       if (sub === 'integrations') return run(`node ${join(PLATFORM, 'tests/integrations.mjs')}`, PLATFORM);
       if (sub === 'servers') return run(`node ${join(PLATFORM, 'tests/servers.mjs')}`, PLATFORM);
       if (sub === 'backups') return run(`node ${join(PLATFORM, 'tests/backups.mjs')}`, PLATFORM);
+      if (sub === 'seo') return run(`node ${join(PLATFORM, 'tests/seo.mjs')}`, PLATFORM);
       return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2|wave3|wave4|wave5|concierge|copilot|scribe|whatsapp');
     case 'seed':
       if (sub === 'showcase') return run(`node ${join(PLATFORM, 'scripts/seed-showcase.mjs')}`, PLATFORM);

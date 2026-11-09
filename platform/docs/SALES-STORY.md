@@ -203,6 +203,7 @@ Always say which numbers are the hospital's, which are assumptions, and that the
 - **Two-person rule** for plans and prices at MediCare: nobody approves their own change.
 - **Backups proven by restore**: each backup is encrypted with that hospital's key and test-restored, and a damaged file is detected.
 - **Moving a hospital to its own server** costs about **5 seconds** of read-only time, and nothing written is lost (checked row by row before switching).
+- **Found on Google under the hospital's own name**: every doctor, specialty, branch and lab test has its own page with a readable address, a sitemap and structured data, while patients' and staff pages are kept out of search.
 - **Clinical safety rules**: allergy and interaction checks, critical-value escalation, and a visit can't be closed with an unsigned note unless the doctor deliberately chooses "sign later". Each has automated tests.
 
 ---

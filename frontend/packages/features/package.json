@@ -12,6 +12,10 @@
     "./plan": {
       "types": "./dist/plan.d.ts",
       "default": "./dist/plan.js"
+    },
+    "./seo": {
+      "types": "./dist/seo.d.ts",
+      "default": "./dist/seo.js"
     }
   },
   "files": [

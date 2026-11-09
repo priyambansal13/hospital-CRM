@@ -4,7 +4,7 @@ import { api, ApiError } from '@mc/bff';
 /** Public directory API (no sign-in needed; the hospital comes from the host). */
 export interface PublicSpecialty { code: string; name: string; description: string | null; doctorCount: number }
 export interface PublicDoctor {
-  id: string; name: string; gender: string | null; qualifications: string[]; experienceYears: number | null; languages: string[];
+  id: string; slug?: string | null; name: string; gender: string | null; qualifications: string[]; experienceYears: number | null; languages: string[];
   bio: string | null; photoUrl: string | null; consultModes: string[];
   specialties: { code: string; name: string; primary: boolean }[];
   branches: { id: string; name: string | null; fee: number }[];
@@ -15,6 +15,9 @@ export interface DoctorResults { items: PublicDoctor[]; nextCursor: string | nul
 
 export const getSpecialties = () => api<PublicSpecialty[]>('/api/provider/v1/public/specialties');
 export const getBranches = () => api<{ id: string; name: string }[]>('/api/provider/v1/public/branches');
+/** Active branches with their web address, city and address (tenant-service; for branch pages and structured data). */
+export interface PublicBranch { id: string; slug: string; name: string; city: string; address: { line1: string | null; pincode: string | null }; timezone: string }
+export const getPublicBranches = () => api<PublicBranch[]>('/api/tenant/v1/public/branches');
 
 const SEARCH_TIMEOUT_MS = Number(process.env.SEARCH_TIMEOUT_MS ?? 1500);
 

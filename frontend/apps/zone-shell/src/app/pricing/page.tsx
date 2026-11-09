@@ -1,9 +1,18 @@
 import { ZoneFrame } from '@mc/features';
+import { getBranding } from '@mc/bff';
+import { pageMeta } from '@mc/features/seo';
+import type { Metadata } from 'next';
 import { Badge, Card, PageHeader } from '@mc/ui';
-import { inr, publicPlans } from '@/lib/site';
+import { inr, PLATFORM_SLUG, publicPlans } from '@/lib/site';
 import { ZONES } from '@/lib/zones';
 
 export const dynamic = 'force-dynamic';
+
+/** Indexed on MediCare's own host only (a hospital's host is about the hospital). */
+export async function generateMetadata(): Promise<Metadata> {
+  const b = await getBranding();
+  return pageMeta({ title: 'MediCare plans and prices · Clinic, diagnostic centre and hospital software', description: 'Monthly plans for clinics, diagnostic centres and hospitals, from the live price list. Every self-serve plan starts with a free trial.', path: '/pricing', index: b.slug === PLATFORM_SLUG });
+}
 
 const limit = (n: number | null | undefined, unit: string) => (n == null ? `Unlimited ${unit}` : `${n.toLocaleString('en-IN')} ${unit}`);
 

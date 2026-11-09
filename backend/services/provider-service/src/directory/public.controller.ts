@@ -54,8 +54,12 @@ export class PublicDirectoryController {
   @Get('doctors/:id')
   @TenantPublic()
   async doctor(@Param('id') id: string) {
-    if (!z.uuid().safeParse(id).success) throw notFound('doctor');
-    const d = await this.repo.findDoctor(id);
+    // by id (older links, other services) or by web address; the response carries the current slug, so a page reached
+    // by an old address can redirect to it
+    let d;
+    if (z.uuid().safeParse(id).success) d = await this.repo.findDoctor(id);
+    else if (/^[a-z0-9]+(-[a-z0-9]+)*$/.test(id) && id.length <= 90) d = await this.repo.findBySlug(id);
+    else throw notFound('doctor');
     if (!d || d.status !== 'ACTIVE') throw notFound('doctor');
     return toPublicDoctor(d);
   }

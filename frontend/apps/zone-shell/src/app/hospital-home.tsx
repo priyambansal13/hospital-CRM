@@ -1,4 +1,6 @@
 import { api } from '@mc/bff';
+import { doctorPath, JsonLd, organizationLd, site, specialtySlug, testSlug } from '@mc/features/seo';
+import { publicBranches, publicModules } from '@/lib/public-site';
 import { Icon, iconForSpecialty } from '@mc/ui';
 
 /**
@@ -7,7 +9,7 @@ import { Icon, iconForSpecialty } from '@mc/ui';
  * is slow, just leaves its section out.
  */
 interface Specialty { code: string; name: string; description: string | null; doctorCount: number }
-interface Doctor { id: string; name: string; specialties: { code: string; name: string; primary: boolean }[]; branches: { id: string; name: string; fee: number }[]; languages: string[]; experienceYears: number | null; qualifications: string[]; nextAvailableAt?: string | null }
+interface Doctor { id: string; slug?: string | null; name: string; specialties: { code: string; name: string; primary: boolean }[]; branches: { id: string; name: string; fee: number }[]; languages: string[]; experienceYears: number | null; qualifications: string[]; nextAvailableAt?: string | null }
 interface Pkg { id: string; code: string; name: string; description: string | null; price: number; tests: { name: string }[]; worth?: number }
 interface Catalog { packages: Pkg[]; tests: { code: string }[] }
 
@@ -26,11 +28,13 @@ function when(iso: string) {
 }
 
 export async function HospitalHome({ name }: { name: string }) {
-  const [specialties, branches, found, catalog] = await Promise.all([
+  const [specialties, branches, found, catalog, seo, offered] = await Promise.all([
     soft(api<Specialty[]>('/api/provider/v1/public/specialties'), []),
-    soft(api<{ id: string; name: string }[]>('/api/provider/v1/public/branches'), []),
+    soft(publicBranches(), []),
     soft(api<{ items: Doctor[] }>('/api/search/v1/public/search/doctors?limit=24').catch(() => api<{ items: Doctor[] }>('/api/provider/v1/public/doctors?limit=24')), { items: [] }),
     soft(api<Catalog>('/api/diagnostics/v1/public/lab-catalog'), { packages: [], tests: [] }),
+    site(),
+    soft(publicModules(), { modules: [] as string[], readOnly: [] }),
   ]);
   const active = specialties.filter((s) => s.doctorCount > 0).sort((a, b) => b.doctorCount - a.doctorCount);
   const doctors = found.items;
@@ -40,8 +44,10 @@ export async function HospitalHome({ name }: { name: string }) {
   const today = soonest.filter((d) => new Date(d.nextAvailableAt!).toDateString() === new Date().toDateString()).length;
   const packages = catalog.packages.map((p) => ({ ...p, worth: p.worth ?? p.tests.reduce((s, t) => s + ((t as { price?: number }).price ?? 0), 0) })).slice(0, 3);
 
+  const labOnly = !offered.modules.includes('directory') && offered.modules.includes('diagnostics');
   return (
     <>
+      <JsonLd data={organizationLd(seo, branches, labOnly)} />
       <div className="mc-emergency" role="note"><Icon name="phone" size={16} /> Emergency? Call <a href="tel:112">112</a> · Ambulance <a href="tel:108">108</a> · Our emergency department is open 24 hours</div>
 
       <section className="mc-hero" aria-label="Welcome">
@@ -64,7 +70,7 @@ export async function HospitalHome({ name }: { name: string }) {
             <div className="mc-hero-card" aria-label="Next available doctors">
               <h3>Next available</h3>
               {soonest.slice(0, 4).map((d) => (
-                <a key={d.id} className="mc-next" href={`/care/doctors/${d.id}`}>
+                <a key={d.id} className="mc-next" href={doctorPath(d)}>
                   <span className="mc-avatar" aria-hidden>{initials(d.name)}</span>
                   <span><strong>{d.name}</strong><span>{(d.specialties.find((s) => s.primary) ?? d.specialties[0])?.name ?? 'Doctor'} · {d.branches[0]?.name}</span></span>
                   <em>{when(d.nextAvailableAt!)}</em>
@@ -108,7 +114,7 @@ export async function HospitalHome({ name }: { name: string }) {
           </div>
           <div className="mc-tiles">
             {active.slice(0, 8).map((s) => (
-              <a key={s.code} className="mc-tile" href={`/care/doctors?specialty=${s.code}`}>
+              <a key={s.code} className="mc-tile" href={`/care/specialties/${specialtySlug(s.code)}`}>
                 <span className="mc-tile-icon"><Icon name={iconForSpecialty(s.code)} /></span>
                 <strong>{s.name}</strong>
                 <span>{s.doctorCount} doctor{s.doctorCount === 1 ? '' : 's'}{s.description ? ` · ${s.description.split(/[,:]/)[0]}` : ''}</span>
@@ -129,7 +135,7 @@ export async function HospitalHome({ name }: { name: string }) {
               const sp = (d.specialties.find((s) => s.primary) ?? d.specialties[0])?.name ?? 'Doctor';
               const fee = Math.min(...d.branches.map((b) => b.fee));
               return (
-                <a key={d.id} className="mc-doccard" href={`/care/doctors/${d.id}`}>
+                <a key={d.id} className="mc-doccard" href={doctorPath(d)}>
                   <div className="mc-doccard-top">
                     <span className="mc-avatar" aria-hidden>{initials(d.name)}</span>
                     <div><h3>{d.name}</h3><p>{sp}{d.experienceYears ? ` · ${d.experienceYears} yrs` : ''}</p></div>
@@ -160,7 +166,7 @@ export async function HospitalHome({ name }: { name: string }) {
                 <div className="mc-price">{inr(p.price)}{p.worth && p.worth > p.price ? <s>{inr(p.worth)}</s> : null}</div>
                 {p.worth && p.worth > p.price ? <span className="mc-save">You save {inr(p.worth - p.price)}</span> : null}
                 <p className="mc-meta" style={{ margin: 0 }}>{p.tests.length} tests included</p>
-                <a className="mc-btn mc-btn-primary" href={`/care/tests?q=${encodeURIComponent(p.name)}`}>Book this package</a>
+                <a className="mc-btn mc-btn-primary" href={`/care/packages/${testSlug(p.code)}`}>Book this package</a>
               </div>
             ))}
           </div>
@@ -172,9 +178,9 @@ export async function HospitalHome({ name }: { name: string }) {
           <div className="mc-section-head"><div><span className="mc-kicker">Visit us</span><h2>Our branches</h2></div></div>
           <div className="mc-branches">
             {branches.slice(0, 8).map((b) => (
-              <a key={b.id} className="mc-branch" href={`/care/doctors?branch=${b.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+              <a key={b.id} className="mc-branch" href={`/care/branches/${b.slug}`} style={{ textDecoration: 'none', color: 'inherit' }}>
                 <span className="mc-tile-icon"><Icon name="building" /></span>
-                <span><strong>{b.name}</strong><br /><span className="mc-meta">Doctors at this branch</span></span>
+                <span><strong>{b.name}</strong><br /><span className="mc-meta">{b.city} · doctors, tests, address</span></span>
               </a>
             ))}
           </div>

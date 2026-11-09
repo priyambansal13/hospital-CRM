@@ -1,4 +1,6 @@
 import { ZoneFrame } from '@mc/features';
+import { describe, pageMeta, site } from '@mc/features/seo';
+import type { Metadata } from 'next';
 import { Button, Card, Chip, PageHeader, Select } from '@mc/ui';
 import { DoctorCard } from '@/lib/doctor-card';
 import { getBranches, getSpecialties, LANGUAGE_OPTIONS, searchDoctors } from '@/lib/directory';
@@ -9,6 +11,18 @@ import { ZONES } from '@/lib/zones';
 export const dynamic = 'force-dynamic';
 
 const KEYS = ['q', 'specialty', 'branch', 'language', 'gender', 'mode', 'cursor'] as const;
+
+/** The plain list is indexed; filtered and paged views are not (endless combinations), but their links are followed. */
+export async function generateMetadata({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }): Promise<Metadata> {
+  const sp = await searchParams;
+  const s = await site();
+  return pageMeta({
+    title: `Doctors at ${s.name} · Book an appointment online`,
+    description: describe(`Find a doctor at ${s.name} by specialty, symptom or name. See fees, languages and the next free time, then book online.`),
+    path: '/care/doctors',
+    index: !KEYS.some((k) => sp[k]),
+  });
+}
 
 export default async function DoctorSearch({ searchParams }: { searchParams: Promise<Record<string, string | undefined>> }) {
   const sp = await searchParams;

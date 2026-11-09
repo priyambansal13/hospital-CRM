@@ -1,4 +1,4 @@
-# Handoff: where work stopped (2026-11-01, after Phase 30 part 1: database servers, moves, rings, backups)
+# Handoff: where work stopped (2026-11-09, after hospital-site SEO; Phase 30 part 2 still next)
 
 ## State
 - Phases 0–27 and 29 are built; M5 (AI) is complete; M6: Phase 26 (patient memberships) and Phase 27 (custom fields, forms, workflow rules, webhooks, API keys, FHIR read API, LIS connector; new integration-service on 4416) done 2026-10-31; Phase 29 (analytics warehouse and dashboards, new analytics-service on 4417; Ops agent, morning brief, care-gap reminders, no-show outreach) done 2026-11-01. Phase 28 (video) is the only M6 phase left and is skipped for now (user decision 2026-11-01). UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
@@ -11,6 +11,11 @@
   - the ops image, and CronJobs and Terraform for backups (written, not yet run in a cluster).
   - Tests: `mc test servers` (27), `mc test backups` (15).
   - Local infra changes: Postgres `wal_level=logical`, `max_connections=600`; PgBouncer idle timeout 20 s and `server_login_retry` 1 s; new secrets `REPLICATION_PASSWORD` and `BACKUP_MASTER_KEY` (`mc configure`).
+- **2026-11-09, docs and SEO** (user requests):
+  - [APP-FLOWS-AND-LOGINS.md](APP-FLOWS-AND-LOGINS.md): every login and role, screen by screen;
+  - [SALES-STORY.md](SALES-STORY.md): the sales story;
+  - [SEO-AND-ADS.md](SEO-AND-ADS.md): the SEO and ads plan;
+  - and **hospital-site SEO is built** (SEO-AND-ADS §2.1, `mc test seo`, 36 checks). See "SEO notes" below.
 - The flow review is in [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md). See §8 "Fix log" for details.
   - Wave 1 (15 gaps): fixed 2026-10-25.
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
@@ -35,6 +40,19 @@
   - CI workflows are in `.github/workflows` (backend, frontend, platform), with path filters. They pass on GitHub, as does the security workflow (2026-10-31, UI v2 commit 486ac93).
   - Image builds wait for the `GCP_WIF_PROVIDER` repo variable.
   - The integration job is manual (workflow_dispatch).
+
+## SEO notes worth knowing (2026-11-09)
+- **Doctor addresses:**
+  - `provider.doctors.slug` comes from migration `0003_doctor_slugs` (backfill in SQL) and `DirectoryRepo.assignSlug` on create and update (nest-common `slugify`; the two must stay in step).
+  - Old addresses are kept in `retired_slugs`. `GET v1/public/doctors/:idOrSlug` accepts either, and the page redirects (308) to the current slug.
+- **Other addresses** are not stored:
+  - branches use `slugify(name)`, from tenant-service `GET v1/public/branches`;
+  - specialties, tests and packages use the lower-cased code (`specialtySlug` / `testSlug` in `@mc/features/seo`).
+- **After deploying:** `mc migrate`, then `mc search reindex --all` (new command), so search results carry `slug`. Results without one link by id and are redirected.
+- **Helpers:** `@mc/features/seo` provides `site()` (canonical origin from branding `primaryHost`; indexable when ACTIVE or READ_ONLY), `pageMeta`, `NO_INDEX`, `JsonLd` and the schema.org builders.
+- **Indexing:** every zone layout is `noindex`, and public pages opt in. A new public page must call `pageMeta()`, or it stays out of search.
+- **robots.txt and sitemap.xml** are route handlers in zone-shell (`app/robots.txt`, `app/sitemap.xml`), built per host. A new public section needs an `Allow` line and sitemap entries.
+- **Tests:** `mc test seo` creates 3 test doctors in citycare (left unpublished) and a `seoNNNNNN` hospital (marked DELETED at the end).
 
 ## Phase 29 notes worth knowing (2026-11-01)
 - analytics-service is the 17th service (port 4417, schema `analytics`, tenant only, consumer group `analytics.warehouse`). Same new-service steps as Phase 27 (configure, build, db bootstrap, migrate, gateway sync, PgBouncer restart, `mc dev` restart). ai-assistant-service now publishes `assistant.events` (relay on): `mc db bootstrap` creates the topic.

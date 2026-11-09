@@ -1,4 +1,6 @@
 import { ZoneFrame } from '@mc/features';
+import { describe, pageMeta, site, testSlug } from '@mc/features/seo';
+import type { Metadata } from 'next';
 import { Button, Card, Field, PageHeader } from '@mc/ui';
 import { catalog } from '@/lib/lab';
 import { Flash } from '@/lib/flash';
@@ -6,6 +8,17 @@ import { publicModules } from '@/lib/modules';
 import { ZONES } from '@/lib/zones';
 
 export const dynamic = 'force-dynamic';
+
+export async function generateMetadata({ searchParams }: { searchParams: Promise<{ q?: string }> }): Promise<Metadata> {
+  const { q } = await searchParams;
+  const s = await site();
+  return pageMeta({
+    title: `Lab tests and health packages at ${s.name} · Prices and online booking`,
+    description: describe(`Blood tests, health check-up packages and more at ${s.name}, with prices, fasting and report times. Book at the lab or a sample from home.`),
+    path: '/care/tests',
+    index: !q,
+  });
+}
 
 /** Lab tests and health packages: pick what you need, then a time at the lab. Browsable before sign-in. */
 export default async function Tests({ searchParams }: { searchParams: Promise<{ q?: string; error?: string }> }) {
@@ -41,7 +54,7 @@ export default async function Tests({ searchParams }: { searchParams: Promise<{ 
             <div className="mc-grid">
               {cat.packages.map((p) => (
                 <label key={p.id} className="mc-card" style={{ cursor: 'pointer' }} aria-label={`Package ${p.name}`}>
-                  <strong><input type="checkbox" name="pkg" value={p.id} /> {p.name}</strong>
+                  <strong><input type="checkbox" name="pkg" value={p.id} /> <a href={`/care/packages/${testSlug(p.code)}`}>{p.name}</a></strong>
                   <p className="mc-stat" style={{ fontSize: '1.4rem' }}>₹{p.price} <span className="mc-meta" style={{ textDecoration: 'line-through' }}>₹{p.worth}</span></p>
                   <p className="mc-meta" style={{ margin: 0 }}>{p.description}</p>
                   <p className="mc-meta">{p.tests.length} tests: {p.tests.map((t) => t.name).join(', ')}</p>
@@ -58,7 +71,7 @@ export default async function Tests({ searchParams }: { searchParams: Promise<{ 
               {tests.map((t) => (
                 <li key={t.id} className="mc-queue-item">
                   <input type="checkbox" name="test" value={t.id} aria-label={t.name} />
-                  <div><strong>{t.name}</strong><span className="mc-meta"> · {t.sampleType === 'NONE' ? 'at the lab' : t.sampleType.toLowerCase()} · report in ~{t.turnaroundHours} h{t.preparation ? ` · ${t.preparation}` : ''}</span></div>
+                  <div><strong><a href={`/care/tests/${testSlug(t.code)}`}>{t.name}</a></strong><span className="mc-meta"> · {t.sampleType === 'NONE' ? 'at the lab' : t.sampleType.toLowerCase()} · report in ~{t.turnaroundHours} h{t.preparation ? ` · ${t.preparation}` : ''}</span></div>
                   <span>₹{t.price}</span>
                 </li>
               ))}

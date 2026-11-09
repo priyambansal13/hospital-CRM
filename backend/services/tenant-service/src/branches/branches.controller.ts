@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Inject, Param, Patch, Post } from '@nestjs/common';
 import { EventTypes, Topics } from '@mc/contracts';
-import { AdminAudited, conflict, CurrentActor, Idempotent, Internal, notFound, parse, PLACEMENTS } from '@mc/nest-common';
+import { AdminAudited, conflict, CurrentActor, Idempotent, Internal, notFound, parse, PLACEMENTS, slugify, TenantPublic } from '@mc/nest-common';
 import { assertWithinLimit, EntitlementsClient, RequireModule, RequirePermission } from '@mc/entitlements-sdk';
 import { type Actor, addToOutbox, envelope, type PlacementSource, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { randomUUID } from 'node:crypto';
@@ -19,6 +19,34 @@ export const UpdateBranch = z.object(BranchFields).partial().extend({ active: z.
 
 const toDto = (r: any) => ({ id: r.id, name: r.name, city: r.city, address: r.address, timezone: r.timezone, active: r.active, version: r.version, createdAt: r.created_at });
 const UNIQUE_VIOLATION = '23505';
+
+/**
+ * Active branches for the hospital's public site (branch pages, structured data for search engines): no staff fields.
+ * Each gets a readable address from its name ("noida-sector-62"); names are unique per hospital, and the rare two that
+ * read the same once punctuation is dropped are told apart by the later one's id.
+ */
+export function publicBranches(rows: { id: string; name: string; city: string; address: Record<string, string>; timezone: string; created_at: Date }[]) {
+  const seen = new Set<string>();
+  return [...rows].sort((a, b) => +a.created_at - +b.created_at || a.id.localeCompare(b.id)).map((r) => {
+    let slug = slugify(r.name) || 'branch';
+    if (seen.has(slug)) slug = `${slug}-${r.id.slice(0, 6)}`;
+    seen.add(slug);
+    return { id: r.id, slug, name: r.name, city: r.city, address: { line1: r.address?.line1 ?? null, pincode: r.address?.pincode ?? null }, timezone: r.timezone };
+  }).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+@Controller('v1/public')
+@RequireModule('core')
+export class PublicBranchesController {
+  constructor(private readonly db: TenantDbRouter) {}
+
+  @Get('branches')
+  @TenantPublic()
+  async list() {
+    const { rows } = await this.db.query('SELECT id, name, city, address, timezone, created_at FROM branches WHERE active');
+    return publicBranches(rows);
+  }
+}
 
 /** Branches live in each hospital's own database (core module). */
 @Controller('v1/branches')

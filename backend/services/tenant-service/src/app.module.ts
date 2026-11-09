@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { CONTROL_DB, CoreModule, PLACEMENTS } from '@mc/nest-common';
 import { EntitlementsModule } from '@mc/entitlements-sdk';
 import type pg from 'pg';
-import { BranchesController, InternalBranchCountController } from './branches/branches.controller.js';
+import { BranchesController, InternalBranchCountController, PublicBranchesController } from './branches/branches.controller.js';
 import { BrandingController, InternalCatalogController } from './catalog/catalog.controller.js';
 import { CatalogRepo } from './catalog/catalog.repo.js';
 import { DomainsController, SetupController } from './catalog/domains.controller.js';
@@ -25,7 +25,7 @@ import { SignupService } from './signup/signup.service.js';
     }),
     EntitlementsModule,
   ],
-  controllers: [InternalCatalogController, BrandingController, BranchesController, InternalBranchCountController, SignupController, DomainsController, SetupController, InternalServersController],
+  controllers: [InternalCatalogController, BrandingController, BranchesController, PublicBranchesController, InternalBranchCountController, SignupController, DomainsController, SetupController, InternalServersController],
   providers: [CatalogRepo, ServersService, ProvisioningService, SignupService, SignupSweepJob],
 })
 export class AppModule {}

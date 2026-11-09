@@ -88,7 +88,9 @@ export class BrandingController {
   @TenantPublic()
   async branding() {
     const t = (await this.catalog.find(TenantContext.require().id))!;
-    return { tenantId: t.id, slug: t.slug, name: t.name, branding: t.branding };
+    // status: search engines are told to keep away from a hospital that isn't ACTIVE; primaryHost: the address pages
+    // name as canonical (a verified custom domain first, else the platform subdomain)
+    return { tenantId: t.id, slug: t.slug, name: t.name, branding: t.branding, status: t.status, primaryHost: t.hosts[0] ?? null };
   }
 
   @Patch('branding')

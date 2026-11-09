@@ -1,3 +1,4 @@
+import { JsonLd, site } from '@mc/features/seo';
 import { Icon } from '@mc/ui';
 import { inr, type PublicPlan, publicPlans } from '@/lib/site';
 
@@ -13,10 +14,21 @@ const FEATURES: { icon: string; title: string; text: string }[] = [
 
 export async function PlatformHome() {
   const plans = await publicPlans().catch(() => [] as PublicPlan[]);
+  const here = await site();
+  const prices = plans.map((p) => p.listPrice).filter((n) => n > 0);
+  const ld = [
+    { '@context': 'https://schema.org', '@type': 'Organization', '@id': `${here.canonicalOrigin}/#org`, name: 'MediCare', url: `${here.canonicalOrigin}/` },
+    {
+      '@context': 'https://schema.org', '@type': 'SoftwareApplication', name: 'MediCare', applicationCategory: 'BusinessApplication', operatingSystem: 'Web',
+      url: `${here.canonicalOrigin}/`, publisher: { '@id': `${here.canonicalOrigin}/#org` },
+      ...(prices.length ? { offers: { '@type': 'AggregateOffer', priceCurrency: 'INR', lowPrice: Math.min(...prices), highPrice: Math.max(...prices), offerCount: prices.length } } : {}),
+    },
+  ];
   const shown = [...plans].sort((a, b) => a.listPrice - b.listPrice).slice(0, 3);
   const featured = shown[1]?.code;
   return (
     <>
+      <JsonLd data={ld} />
       <section className="mc-hero" aria-label="MediCare">
         <div className="mc-hero-inner">
           <div>

@@ -116,8 +116,14 @@ Legend: **[module]** is the sellable module the screen belongs to; the screen is
 1. Home page in the hospital's colours and logo: search, next available doctors, specialties, packages, branches.
 2. `/care/doctors`: search by name, specialty or **symptom** ("chest pain" → Cardiology), or "next available". Doctor profile with fee, languages, experience and a slot picker.
 3. `/care/tests`: lab tests and packages with prices, fasting and turnaround time **[diagnostics]**.
-4. `/care/verify/<code>`: anyone can scan the QR code on a lab report and see that it is genuine.
-5. Picking a slot asks the visitor to sign in, then brings them back to the same slot.
+4. Pages made for search engines (and for sharing), each with its own title and description:
+   - `/care/specialties/cardiology`: the specialty's doctors;
+   - `/care/branches/noida-sector-62`: address, map link and the doctors there;
+   - `/care/tests/hba1c` and `/care/packages/full-body`: price, sample, fasting, report time and a Book button;
+   - doctor profiles at readable addresses such as `/care/doctors/ananya-sharma-cardiology`.
+   - Each hospital has its own `sitemap.xml` and `robots.txt`.
+5. `/care/verify/<code>`: anyone can scan the QR code on a lab report and see that it is genuine.
+6. Picking a slot asks the visitor to sign in, then brings them back to the same slot.
 
 ### 3.2 Patient (mobile number + OTP)
 
@@ -266,7 +272,7 @@ Try: `product@medicare.test`, `approver@medicare.test`, `support@medicare.test`,
 | `/platform/registry` | all | The module registry: every module, its features, settings and dependencies (read-only; built by developers) |
 | `/platform/audit` | all | Who changed which plan, price or contract |
 
-**Operations (CLI, MediCare engineers)**: `mc tenant create|move|ring|export`, `mc migrate --max-ring`, `mc backup run|list|drill|status`, `mc server add`, `mc keys rotate`, `mc events dlq|replay`. See [MULTI-TENANCY.md](MULTI-TENANCY.md) §3.4–3.5.
+**Operations (CLI, MediCare engineers)**: `mc search reindex <slug>|--all`, `mc tenant create|move|ring|export`, `mc migrate --max-ring`, `mc backup run|list|drill|status`, `mc server add`, `mc keys rotate`, `mc events dlq|replay`. See [MULTI-TENANCY.md](MULTI-TENANCY.md) §3.4–3.5.
 
 ---
 

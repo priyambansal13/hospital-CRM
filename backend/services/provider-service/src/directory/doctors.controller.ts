@@ -86,6 +86,7 @@ export class DoctorsController {
           [id, userId, input.email, input.name, input.gender, input.registrationNo, input.qualifications, input.experienceYears, input.languages, input.bio, input.consultModes],
         );
         await this.writeLinks(c, id, specialtyIds, input.branches);
+        await this.repo.assignSlug(c, id);
         await this.publish(c, tenantId, EventTypes.doctorCreated, (await this.repo.findDoctor(id, c))!);
       });
     } catch (e) {
@@ -121,6 +122,7 @@ export class DoctorsController {
         if (input.branches) await c.query('DELETE FROM doctor_branches WHERE doctor_id = $1', [id]);
         await this.writeLinks(c, id, specialtyIds ?? [], input.branches ?? []);
       }
+      await this.repo.assignSlug(c, id);
       await this.publish(c, tenantId, EventTypes.doctorUpdated, (await this.repo.findDoctor(id, c))!);
     });
     return this.mustFind(id);

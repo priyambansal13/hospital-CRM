@@ -1,3 +1,4 @@
+import { doctorPath } from '@mc/features/seo';
 import { feeRange, initials, languageName, nextAvailable, type PublicDoctor } from './directory';
 
 export function DoctorCard({ d }: { d: PublicDoctor }) {
@@ -6,7 +7,7 @@ export function DoctorCard({ d }: { d: PublicDoctor }) {
     <article className="mc-card mc-doctor">
       <div className="mc-avatar" aria-hidden>{initials(d.name)}</div>
       <div>
-        <h3><a href={`/care/doctors/${d.id}`}>{d.name}</a></h3>
+        <h3><a href={doctorPath(d)}>{d.name}</a></h3>
         <p className="mc-meta">
           {[primary?.name, d.experienceYears != null ? `${d.experienceYears} yrs experience` : null, d.qualifications.join(', ') || null].filter(Boolean).join(' · ')}
         </p>
@@ -18,7 +19,7 @@ export function DoctorCard({ d }: { d: PublicDoctor }) {
       <div style={{ textAlign: 'right' }}>
         <p style={{ margin: 0, fontWeight: 600 }}>{feeRange(d)}</p>
         {d.nextAvailableAt ? <p className="mc-meta" style={{ margin: '4px 0 0' }}>Next available: <time dateTime={d.nextAvailableAt}>{nextAvailable(d.nextAvailableAt)}</time></p> : null}
-        <a className="mc-btn mc-btn-ghost" href={`/care/doctors/${d.id}`} style={{ marginTop: 8 }}>View profile</a>
+        <a className="mc-btn mc-btn-ghost" href={doctorPath(d)} style={{ marginTop: 8 }}>View profile</a>
       </div>
     </article>
   );

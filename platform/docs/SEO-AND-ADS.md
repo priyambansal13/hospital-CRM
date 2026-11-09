@@ -9,7 +9,7 @@ There are **two audiences** and they need different plans:
 | **A. MediCare itself** (B2B) | Hospital owners, clinic doctors, lab owners, operations managers | "clinic management software", "hospital software India", "lab report software" | A trial signup or a demo request |
 | **B. Each hospital's own site** (a product feature we sell) | Patients | "cardiologist in Gurugram", "CBC test near me", "Dr. Ananya Sharma" | A booking on the hospital's site |
 
-Plan B is also a selling point: **"your doctors and tests show up on Google, and the click books on your own site, not a marketplace's"**. Today it isn't built (see §2.1).
+Plan B is also a selling point: **"your doctors and tests show up on Google, and the click books on your own site, not a marketplace's"**. The basics are built (see §2.1).
 
 Budgets, volumes and rates below are **planning assumptions to check**, not measured data.
 
@@ -59,6 +59,8 @@ Each article links to the matching feature page. A doctor or hospital operations
 
 ### 1.3 Technical SEO for the marketing site
 
+**Built 2026-11-09:** titles, descriptions and canonical addresses for the home, pricing and signup pages; `Organization` and `SoftwareApplication` structured data; `sitemap.xml` and `robots.txt` for MediCare's host. Still to do: the feature, segment and resource pages, `FAQPage`, and Search Console.
+
 - A unique `title` and `description` on every page, plus Open Graph and Twitter cards for sharing on WhatsApp and LinkedIn.
 - `sitemap.xml` and `robots.txt`.
 - Structured data:
@@ -83,59 +85,45 @@ Each article links to the matching feature page. A doctor or hospital operations
 
 When a patient searches "cardiologist in Noida" or "Dr. Rohan Mehta", the hospital's own page on MediCare should rank and take the booking. This is a strong selling point against marketplaces.
 
-### 2.1 What exists today
+### 2.1 What is built (2026-11-09)
+
+Built from the list below and checked by `mc test seo` (36 checks).
 
 | Item | State |
 |---|---|
-| Page titles | Fixed per zone ("Patient · MediCare"). Not the hospital's name or the doctor's. |
-| Meta description, Open Graph | None |
-| `sitemap.xml`, `robots.txt` | None |
-| Structured data (schema.org) | None |
-| Public pages render on the server | ✅ Hospital home, doctor directory, doctor profiles, tests and packages (good for crawling) |
-| Readable addresses | ⚠️ Doctor and test pages use IDs (`/care/doctors/<uuid>`), not names |
-| Custom domain per hospital | ✅ (`core.custom_domain`, Enterprise) |
-| Staff zones kept out of search | ⚠️ Not marked `noindex` (they need sign-in, so little is exposed, but they should still be marked) |
+| Titles, descriptions, canonical address, Open Graph | ✅ From live data on every public page: "Dr. Ananya Sharma, Cardiology · Aarogya Hospitals · Book appointment". The canonical address uses the hospital's primary host (a verified custom domain first). |
+| Readable addresses | ✅ Doctors `/care/doctors/ananya-sharma-cardiology` (stored per hospital, `-2` when taken). An old id link, or the address a doctor had before a rename, **redirects permanently (308)** and keeps the query. Specialties `/care/specialties/cardiology`, branches `/care/branches/noida-sector-62`, tests `/care/tests/hba1c`, packages `/care/packages/full-body`. |
+| New public pages | ✅ Specialty (its doctors), branch (address, map link, doctors there), test (price, sample, fasting, report time, Book), package (tests included, Book). The hospital home links to all of them. |
+| `sitemap.xml` per host | ✅ Home, branches, and by plan: the doctor list, specialties with doctors, every published doctor, tests and packages. MediCare's own host: home, pricing, signup. |
+| `robots.txt` per host | ✅ Only those public pages may be crawled; patients' own pages, report checks (`/care/verify`), test booking, sign-in, every staff zone and the API may not. A hospital taken offline (or no hospital at the address): `Disallow: /`. |
+| Structured data | ✅ `MedicalOrganization` with each branch as `MedicalClinic` (`DiagnosticLab` for a lab-only hospital) and its address; `Physician` with specialty, languages, credentials and a booking action; lab tests and packages as `Service` with an INR `Offer`; `BreadcrumbList`; MediCare's own home: `Organization` and `SoftwareApplication` with the plan price range. |
+| Keeping private pages out | ✅ Every zone's layout says `noindex`; public pages opt in. Filtered or searched lists say `noindex, follow` with the plain list as canonical. MediCare's pricing and signup pages are indexed on MediCare's host only. |
+| Isolation | ✅ One hospital's doctor (by address or id) and branch are not found on another's host; sitemaps list only the host's own pages; no phone numbers or e-mail addresses. |
 
-### 2.2 What to build (proposed as a small phase)
+**Operations.** After deploying: run `mc migrate` (provider migration `0003_doctor_slugs` gives every existing doctor an address) and `mc search reindex --all`, so search results link to the readable addresses. Until the re-index, search results without a `slug` link by id and are redirected.
 
-1. **Metadata per page, from data:**
-   - hospital home: "Aarogya Hospitals, Gurugram · Book doctors and lab tests online";
-   - doctor: "Dr. Ananya Sharma, Cardiologist, Aarogya Hospitals Gurugram · Book appointment";
-   - specialty: "Cardiologists at Aarogya Hospitals";
-   - test: "HbA1c test price ₹… · Aarogya Hospitals".
-   - Each with a description and Open Graph tags carrying the hospital's logo and colours.
-2. **Readable addresses:**
-   - `/care/doctors/ananya-sharma-cardiology`, `/care/specialties/cardiology`, `/care/tests/hba1c`;
-   - the old ID links redirect permanently (301).
-3. **Sitemap and robots per hospital host:**
-   - `sitemap.xml` lists only published doctors, active specialties, branches, tests and packages;
-   - `robots.txt` blocks `/care/*` patient pages that need sign-in, every staff zone and the API;
-   - sitemaps are rebuilt when a doctor or test is published, unpublished or renamed.
-4. **Structured data:**
-   - `Hospital` or `MedicalClinic` or `DiagnosticLab` per branch, with address, phone, opening hours and geo;
-   - `Physician` per doctor, with `medicalSpecialty`, `worksFor`, languages and an appointment link;
-   - `MedicalTest` and `Offer` for tests and packages, with prices;
-   - `BreadcrumbList`.
-5. **Branch pages:** `/care/branches/noida-sector-62` with address, timings, map, doctors and tests there. These are the pages that win "near me" searches.
-6. **Google Business Profile help:** an admin checklist that links each branch's profile to its MediCare booking page, with UTM tags so `/admin/analytics` can count bookings from Google.
-7. **Admin SEO settings** (`/admin/settings` → Search): hospital description, the city or area for each branch, and per-doctor bio checks such as "too short" or "no photo".
-8. **Plan gating:**
-   - every plan with `patient_app` gets the basics (metadata, sitemap, structured data);
-   - Enterprise adds a custom domain and branch landing pages;
-   - offering a reviewed SEO content pack could be an add-on.
-9. **Rules that must hold:**
-   - no patient data in any public page, sitemap or structured data;
-   - unpublished doctors leave the sitemap and their pages return 410 (gone);
-   - the tenancy leak test is extended to sitemaps;
-   - a suspended hospital's pages are `noindex`.
+### 2.2 Still to do
 
-**Tests:**
-- every public page has a unique title and a canonical link;
-- the sitemap contains only public, active items;
-- structured data passes validation (schema.org JSON is checked in CI);
-- one hospital's sitemap never lists another hospital's doctors.
+1. **Admin SEO settings** (`/admin/settings` → Search):
+   - a hospital description and the area for each branch;
+   - checks on each doctor's profile, such as "bio too short" or "no photo".
+2. **Google Business Profile checklist:** link each branch's profile to its branch page with UTM tags, and show bookings by source in `/admin/analytics`.
+3. **Plan gating of extras:**
+   - the basics above are on for every plan with public pages;
+   - custom-domain canonical addresses come with Enterprise;
+   - a reviewed SEO content pack could be sold as an add-on.
+4. **Branch renames:** a branch's address comes from its name, so renaming a branch changes the address and the old one stops working. Keep old branch addresses, as doctors' are kept, if renames turn out to be common.
+5. **Hindi pages**, and `hreflang` once a Hindi interface exists.
+6. **Images:** doctor photos (the `photoUrl` field exists) and a branded social-sharing image per hospital.
 
----
+**Tests (in `mc test seo`):**
+- every public page has its own title and is its own canonical;
+- the sitemap contains only public, active items, and every address answers;
+- `robots.txt` matches the sitemap and keeps private paths out;
+- structured data parses and has the right types;
+- a doctor's address follows publish, rename and unpublish;
+- one hospital's pages never answer on another's host;
+- a hospital taken offline tells crawlers to keep out.
 
 ## 3. Paid ads (B2B, to win hospitals)
 
@@ -259,7 +247,7 @@ Hospitals on MediCare will want to advertise to patients too ("cardiac check-up 
 
 | Item | Where | Size |
 |---|---|---|
-| Hospital-site SEO: metadata, readable addresses, sitemap and robots per host, structured data, branch pages, `noindex` on staff zones, tests | zone-shell, zone-patient, provider and diagnostics (slugs), search | about 1–2 weeks |
+| ~~Hospital-site SEO: metadata, readable addresses, sitemap and robots per host, structured data, branch pages, `noindex` on staff zones, tests~~ | ✅ done 2026-11-09 (§2.1); the rest is in §2.2 | — |
 | Marketing site pages: features, segments, security, compare, resources, demo form with lead capture | zone-shell, tenant-service (`leads`) | about 1–2 weeks plus content writing |
 | Funnel tracking: UTM on signups and leads, server-side conversions (hashed e-mail), consent banner, pixels only on the marketing host | zone-shell, tenant-service | about 1 week |
 | Hospital campaign links and source analytics | admin, analytics | a few days |
