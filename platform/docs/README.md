@@ -13,6 +13,8 @@ System design for a **multi-tenant SaaS** hospital CRM, sold to many hospitals a
 | Doc | What's inside |
 |---|---|
 | [docs/IMPLEMENTATION-PLAN.md](IMPLEMENTATION-PLAN.md) | **Start here to build it:** 33 small phases (0–32) in 7 milestones, each a 1–2 week demoable slice with checklists and a shared definition of done; team and timeline estimate |
+| [docs/APP-FLOWS-AND-LOGINS.md](APP-FLOWS-AND-LOGINS.md) | **Using the app:** every login (local demo accounts per hospital and role, how passwords and OTPs work), what each role can do screen by screen, end-to-end journeys across roles, and what each plan unlocks |
+| [docs/SALES-STORY.md](SALES-STORY.md) | **Selling it:** buyers, the story, value per persona, a 20-minute demo script, pricing and an ROI worked example, competition, objections, proof points |
 | [docs/ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md) | **Review of what is built (through Phase 22):** end-to-end flows for every role, the gaps found (production blockers, access control, clinical safety, dead ends) and a fix plan |
 | [docs/HLD.md](HLD.md) | Actors, requirements, capacity estimate, service boundaries, key flows (booking + payment, consultation → lab → report, login), data stores, FHIR mapping, security/compliance, reliability, deployment, tech stack, roadmap, trade-offs |
 | [docs/MULTI-TENANCY.md](MULTI-TENANCY.md) | SaaS for many hospitals: white-label product model, control plane vs regional cells, separate database per hospital (schema per service, routing, provisioning, migrations, moves), tenant context, patient identity across hospitals, onboarding saga, per-tenant config, SaaS billing vs patient payments to hospitals, security/ops/offboarding, compliance |
