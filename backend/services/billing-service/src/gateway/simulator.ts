@@ -28,7 +28,20 @@ export class SimulatedRazorpay implements PaymentGateway {
     return this.redis.set(`rzpsim:${key}`, JSON.stringify(v), 'EX', TTL);
   }
 
+  /**
+   * Chaos tests (`mc test chaos`): a simulated provider outage for `seconds`, set through the internal API. While it
+   * lasts the gateway refuses new orders and refunds the way Razorpay does when it is down (a network-level failure).
+   */
+  async setOutage(seconds: number) {
+    if (seconds > 0) await this.redis.set('rzpsim:outage', '1', 'EX', seconds);
+    else await this.redis.del('rzpsim:outage');
+  }
+  private async up() {
+    if (await this.redis.get('rzpsim:outage')) throw new Error('payment provider unavailable (simulated outage)');
+  }
+
   async createOrder(i: { amount: number; receipt: string; notes: Record<string, string> }): Promise<GatewayOrder> {
+    await this.up();
     const o = { id: id('order'), amount: i.amount, currency: 'INR', receipt: i.receipt, notes: i.notes, status: 'created' };
     await this.put(`order:${o.id}`, o);
     return o;
@@ -41,6 +54,7 @@ export class SimulatedRazorpay implements PaymentGateway {
   }
 
   async refund(paymentId: string, amount: number, notes: { refundId: string; tenantId: string }): Promise<GatewayRefund> {
+    await this.up();
     const p = await this.fetchPayment(paymentId);
     const r: GatewayRefund & { notes: typeof notes } = { id: id('rfnd'), paymentId, amount, status: 'processed', notes };
     await this.redis.rpush(`rzpsim:refunds:${paymentId}`, JSON.stringify(r));

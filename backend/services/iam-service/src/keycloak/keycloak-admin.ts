@@ -31,11 +31,14 @@ export class KeycloakAdmin {
   }
 
   private async call<T = unknown>(method: string, path: string, body?: unknown, ok404 = false): Promise<T | undefined> {
-    const res = await fetch(`${this.base}/admin/realms/${this.realm}${path}`, {
+    const send = async () => fetch(`${this.base}/admin/realms/${this.realm}${path}`, {
       method,
       headers: { authorization: `Bearer ${await this.accessToken()}`, 'content-type': 'application/json' },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
+    let res = await send();
+    // a token Keycloak no longer accepts before its expiry (Keycloak restarted, sessions cleared): get a new one, once
+    if (res.status === 401) { this.token = undefined; res = await send(); }
     if (ok404 && res.status === 404) return undefined;
     if (!res.ok) throw new DomainError(502, 'IDP_ERROR', `keycloak ${method} ${path} → ${res.status} ${await res.text()}`);
     const text = await res.text();

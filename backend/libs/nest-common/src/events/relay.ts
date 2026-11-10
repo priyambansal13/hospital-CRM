@@ -53,13 +53,20 @@ export class OutboxRelay {
     // once an hour, also apply the retention rules (event payloads can carry personal data; review H-5)
     const retention = Date.now() - this.lastRetention > 3_600_000;
     if (retention) this.lastRetention = Date.now();
+    // once a send fails in this pass (Kafka unreachable), don't wait on it again for every other hospital: count only
+    let sendFailed = false;
     const pass = async (pool: pg.Pool) => {
-      sent += await this.flush(pool);
-      pending += Number((await pool.query('SELECT count(*) AS n FROM outbox WHERE published_at IS NULL')).rows[0].n);
+      try {
+        // only Kafka being unreachable stops the pass; a hospital's own database error (e.g. it is being moved) skips that hospital only
+        if (!sendFailed) sent += await this.flush(pool).catch((e) => { if ((e as { kafkaSend?: boolean }).kafkaSend) sendFailed = true; throw e; });
+      } finally {
+        // counted even when publishing failed: a Kafka outage is exactly when the backlog has to be visible (alert)
+        pending += Number((await pool.query('SELECT count(*) AS n FROM outbox WHERE published_at IS NULL').catch(() => ({ rows: [{ n: 0 }] }))).rows[0].n);
+      }
       if (retention) await this.retain(pool);
     };
     try {
-      if (this.opts.control) await pass(this.opts.control);
+      if (this.opts.control) await pass(this.opts.control).catch((e) => this.log.warn(`outbox (control): ${(e as Error).message}`));
       if (this.opts.router) {
         const count = Number(process.env.REPLICA_COUNT ?? 1);
         const index = Number(process.env.REPLICA_INDEX ?? 0);
@@ -76,9 +83,9 @@ export class OutboxRelay {
       }
     } finally {
       this.running = false;
+      outboxPending.set(pending);
+      if (sent) outboxPublished.inc(sent);
     }
-    outboxPending.set(pending);
-    if (sent) outboxPublished.inc(sent);
     return sent;
   }
 
@@ -97,7 +104,8 @@ export class OutboxRelay {
       );
       if (!rows.length) return 0;
       for (const r of rows) {
-        await this.producer!.send(r.topic, [{ key: r.key, value: JSON.stringify(r.event), headers: { 'event-type': r.event.type, 'event-id': r.event.id, ...(r.event.tenantId ? { 'tenant-id': r.event.tenantId } : {}) } }]);
+        await this.producer!.send(r.topic, [{ key: r.key, value: JSON.stringify(r.event), headers: { 'event-type': r.event.type, 'event-id': r.event.id, ...(r.event.tenantId ? { 'tenant-id': r.event.tenantId } : {}) } }])
+          .catch((e: Error) => { throw Object.assign(e, { kafkaSend: true }); });
       }
       await c.query('UPDATE outbox SET published_at = now() WHERE id = ANY($1::bigint[])', [rows.map((r) => r.id)]);
       return rows.length;

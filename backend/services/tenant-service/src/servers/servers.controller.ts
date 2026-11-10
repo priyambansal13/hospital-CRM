@@ -145,11 +145,16 @@ export class InternalServersController {
   @Get('backups/summary')
   @Internal()
   async summary() {
-    const { rows } = await this.db.query(`SELECT t.id tenant_id, t.slug, t.db_server, b.id backup_id, b.started_at, b.bytes, d.drill_at, d.drill_ok, d.drill_seconds
-      FROM tenants t
-      LEFT JOIN LATERAL (SELECT * FROM tenant_backups x WHERE x.tenant_id = t.id ORDER BY started_at DESC LIMIT 1) b ON true
-      LEFT JOIN LATERAL (SELECT * FROM tenant_backups x WHERE x.tenant_id = t.id AND drill_at IS NOT NULL ORDER BY drill_at DESC LIMIT 1) d ON true
-      WHERE t.status IN ('ACTIVE','READ_ONLY') AND t.purged_at IS NULL ORDER BY t.slug`);
-    return rows;
+    return backupSummary(this.db);
   }
+}
+
+/** Each open hospital's latest backup and latest drill (the console, `mc backup status` and the backup alerts). */
+export async function backupSummary(db: { query: (sql: string) => Promise<{ rows: any[] }> }) {
+  const { rows } = await db.query(`SELECT t.id tenant_id, t.slug, t.db_server, b.id backup_id, b.started_at, b.bytes, d.drill_at, d.drill_ok, d.drill_seconds
+    FROM tenants t
+    LEFT JOIN LATERAL (SELECT * FROM tenant_backups x WHERE x.tenant_id = t.id ORDER BY started_at DESC LIMIT 1) b ON true
+    LEFT JOIN LATERAL (SELECT * FROM tenant_backups x WHERE x.tenant_id = t.id AND drill_at IS NOT NULL ORDER BY drill_at DESC LIMIT 1) d ON true
+    WHERE t.status IN ('ACTIVE','READ_ONLY') AND t.purged_at IS NULL ORDER BY t.slug`);
+  return rows;
 }

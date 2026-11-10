@@ -10,6 +10,9 @@ import { ProvisioningService } from './catalog/provisioning.service.js';
 import { GrowthConsoleController, InternalGrowthController, LeadsController } from './growth/growth.controller.js';
 import { GrowthJob } from './growth/growth.job.js';
 import { GrowthService } from './growth/growth.service.js';
+import { BackupMetrics } from './servers/backup-metrics.js';
+import { StatusConsoleController, StatusController } from './status/status.controller.js';
+import { StatusService } from './status/status.service.js';
 import { InternalServersController } from './servers/servers.controller.js';
 import { ServersService } from './servers/servers.service.js';
 import { SignupController } from './signup/signup.controller.js';
@@ -28,7 +31,7 @@ import { SignupService } from './signup/signup.service.js';
     }),
     EntitlementsModule,
   ],
-  controllers: [InternalCatalogController, BrandingController, BranchesController, PublicBranchesController, InternalBranchCountController, SignupController, DomainsController, SetupController, InternalServersController, LeadsController, GrowthConsoleController, InternalGrowthController],
-  providers: [CatalogRepo, ServersService, ProvisioningService, SignupService, SignupSweepJob, GrowthService, GrowthJob],
+  controllers: [InternalCatalogController, BrandingController, BranchesController, PublicBranchesController, InternalBranchCountController, SignupController, DomainsController, SetupController, InternalServersController, LeadsController, GrowthConsoleController, InternalGrowthController, StatusController, StatusConsoleController],
+  providers: [CatalogRepo, ServersService, ProvisioningService, SignupService, SignupSweepJob, GrowthService, GrowthJob, BackupMetrics, StatusService],
 })
 export class AppModule {}

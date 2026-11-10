@@ -5,3 +5,9 @@
 *.pem
 *.key
 node_modules/
+platform/load/.data/
+platform/load/results/
+.terraform/
+*.tfstate
+*.tfstate.*
+platform/status-page/

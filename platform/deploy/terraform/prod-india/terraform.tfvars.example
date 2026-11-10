@@ -1,0 +1,8 @@
+project_id   = "medicare-prod-in"
+domain       = "medicare.app"
+oncall_email = "oncall@medicare.example"
+# dns_managed_zone = "medicare-app"
+# billing_account  = "000000-000000-000000"
+# master_authorized_networks = { office-vpn = "203.0.113.0/24" }
+# shared_servers    = { "pg-2" = { tier = "db-custom-8-32768" }, "pg-3" = { tier = "db-custom-8-32768" } }
+# dedicated_servers = { "pg-apollo" = { tier = "db-custom-16-65536" } }

@@ -24,3 +24,7 @@ extraSecretKeys: []
 serviceAccount:
   annotations: {}                # e.g. iam.gke.io/gcp-service-account for Workload Identity
 podAnnotations: {}
+# Prometheus Operator scraping (Phase 30): a PodMonitor per service; `job` is the service name, which the SLO rules use
+monitoring: { enabled: false, labels: { release: kube-prometheus-stack }, interval: 30s }
+# keep at least one instance up during node upgrades and evictions (Phase 30)
+podDisruptionBudget: { enabled: true, minAvailable: 1 }

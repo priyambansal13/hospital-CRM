@@ -14,6 +14,7 @@ permissions:
   - { code: catalog:approve:tenant, description: Approve or reject plan versions submitted by someone else; retire versions }
   - { code: customer:read:tenant, description: See hospitals, their contracts and the platform audit log }
   - { code: customer:manage:tenant, description: Move hospitals to a plan, add-ons and overrides }
+  - { code: status:manage:tenant, description: Post incidents and planned maintenance on the public status page }
 nav:
   - { key: console-home, label: Hospitals, zone: platform, href: /platform, permissions: [platform_console:access:tenant, customer:read:tenant], audience: staff }
   - { key: console-plans, label: Plans, zone: platform, href: /platform/plans, permissions: [platform_console:access:tenant, catalog:read:tenant], audience: staff }
@@ -21,8 +22,9 @@ nav:
   - { key: console-editions, label: Editions, zone: platform, href: /platform/editions, permissions: [platform_console:access:tenant, catalog:read:tenant], audience: staff }
   - { key: console-registry, label: Modules, zone: platform, href: /platform/registry, permissions: [platform_console:access:tenant, catalog:read:tenant], audience: staff }
   - { key: console-growth, label: Growth, zone: platform, href: /platform/growth, permissions: [platform_console:access:tenant, customer:read:tenant], audience: staff }
+  - { key: console-status, label: Status page, zone: platform, href: /platform/status, permissions: [platform_console:access:tenant, customer:read:tenant], audience: staff }
   - { key: console-audit, label: Audit, zone: platform, href: /platform/audit, permissions: [platform_console:access:tenant, customer:read:tenant], audience: staff }
 defaultRoleGrants:
   PLATFORM_PRODUCT: [platform_console:access:tenant, catalog:read:tenant, catalog:edit:tenant, customer:read:tenant]
   PLATFORM_APPROVER: [platform_console:access:tenant, catalog:read:tenant, catalog:approve:tenant, customer:read:tenant]
-  PLATFORM_SUPPORT: [platform_console:access:tenant, catalog:read:tenant, customer:read:tenant, customer:manage:tenant]
+  PLATFORM_SUPPORT: [platform_console:access:tenant, catalog:read:tenant, customer:read:tenant, customer:manage:tenant, status:manage:tenant]

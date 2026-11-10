@@ -620,6 +620,21 @@ Details in [SEO-AND-ADS.md](SEO-AND-ADS.md); tests `mc test seo` (36), `mc test 
 
 Still open: lab-test bookings don't record campaigns; photos are links, not uploads; Hindi pages; compare pages and legal guides wait for reviewed content; Search Console and ad accounts need the real domain.
 
+### New flows after the review: Phase 30 part 2, operating MediCare (2026-11-10)
+
+Details in [OPERATIONS.md](OPERATIONS.md) and [runbooks](runbooks/README.md); tests `mc test chaos` (17), `mc test status` (16), `mc load run`.
+- **Patients and staff during an outage:**
+  - Redis down: reading keeps working, and sign-in codes, booking and payment refuse fast with "try again in a minute".
+  - Kafka down: everything works, and messages are late.
+  - The payment provider down: pay at the hospital still works, and a failed online booking gives its slot back.
+  - Search down: the directory fallback.
+- **Hospital staff:** a banner on every staff page while a MediCare incident or planned maintenance is on.
+- **Everyone:** the public status page (`/status`, and a static copy that works when MediCare doesn't).
+- **MediCare support:** the console's **Status page** (incidents, updates, planned maintenance). **On call:** alerts with runbooks.
+- **Fixed because of the load test:** an admin removing a doctor's hours got an error when any of those times had ever been booked (even a cancelled booking).
+
+Still open: running it in a real project (Terraform, CronJobs, DR test, the full-size load test); backup keys in KMS; a one-command hospital restore.
+
 ---
 
 ## 7. What works well (keep it)

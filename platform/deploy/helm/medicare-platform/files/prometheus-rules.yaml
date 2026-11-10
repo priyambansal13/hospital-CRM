@@ -1,0 +1,190 @@
+# MediCare service-level objectives and alerts (docs/OPERATIONS.md). Plain Prometheus rule format, so
+# `promtool check rules` and `promtool test rules` (prometheus-rules.test.yaml) run on this file as it is; the
+# medicare-platform chart wraps it in a PrometheusRule. Every alert names a runbook in platform/docs/runbooks.
+#
+# Objectives (30-day windows):
+#   availability 99.9% of requests not 5xx, per service (booking, records, lab, billing… each counted on its own);
+#   booking      95% of POST /v1/appointments within 500 ms;
+#   search       95% of doctor searches within 300 ms.
+# Burn-rate alerts follow the multi-window method of the Google SRE workbook: page when the budget would be gone in
+# about 2 days (14.4× over 1 h and 5 min) or 5 days (6× over 6 h and 30 min); ticket at 1× over 3 days and 6 h.
+groups:
+  - name: medicare.sli
+    interval: 1m
+    rules:
+      # ---- availability: share of requests that failed (5xx), per service
+      - record: job:mc_request_errors:ratio_rate5m
+        expr: sum by (job) (rate(mc_http_request_duration_seconds_count{status=~"5.."}[5m])) / sum by (job) (rate(mc_http_request_duration_seconds_count[5m]))
+      - record: job:mc_request_errors:ratio_rate30m
+        expr: sum by (job) (rate(mc_http_request_duration_seconds_count{status=~"5.."}[30m])) / sum by (job) (rate(mc_http_request_duration_seconds_count[30m]))
+      - record: job:mc_request_errors:ratio_rate1h
+        expr: sum by (job) (rate(mc_http_request_duration_seconds_count{status=~"5.."}[1h])) / sum by (job) (rate(mc_http_request_duration_seconds_count[1h]))
+      - record: job:mc_request_errors:ratio_rate6h
+        expr: sum by (job) (rate(mc_http_request_duration_seconds_count{status=~"5.."}[6h])) / sum by (job) (rate(mc_http_request_duration_seconds_count[6h]))
+      - record: job:mc_request_errors:ratio_rate3d
+        expr: sum by (job) (rate(mc_http_request_duration_seconds_count{status=~"5.."}[3d])) / sum by (job) (rate(mc_http_request_duration_seconds_count[3d]))
+      # ---- latency: share of bookings slower than 500 ms, of searches slower than 300 ms
+      - record: slo:mc_booking_slow:ratio_rate5m
+        expr: 1 - sum(rate(mc_http_request_duration_seconds_bucket{job="scheduling-service",method="POST",route="/v1/appointments",le="0.5"}[5m])) / sum(rate(mc_http_request_duration_seconds_count{job="scheduling-service",method="POST",route="/v1/appointments"}[5m]))
+      - record: slo:mc_booking_slow:ratio_rate1h
+        expr: 1 - sum(rate(mc_http_request_duration_seconds_bucket{job="scheduling-service",method="POST",route="/v1/appointments",le="0.5"}[1h])) / sum(rate(mc_http_request_duration_seconds_count{job="scheduling-service",method="POST",route="/v1/appointments"}[1h]))
+      - record: slo:mc_booking_slow:ratio_rate6h
+        expr: 1 - sum(rate(mc_http_request_duration_seconds_bucket{job="scheduling-service",method="POST",route="/v1/appointments",le="0.5"}[6h])) / sum(rate(mc_http_request_duration_seconds_count{job="scheduling-service",method="POST",route="/v1/appointments"}[6h]))
+      - record: slo:mc_search_slow:ratio_rate5m
+        expr: 1 - sum(rate(mc_http_request_duration_seconds_bucket{job="search-service",route=~"/v1/public/search/.*",le="0.3"}[5m])) / sum(rate(mc_http_request_duration_seconds_count{job="search-service",route=~"/v1/public/search/.*"}[5m]))
+      - record: slo:mc_search_slow:ratio_rate1h
+        expr: 1 - sum(rate(mc_http_request_duration_seconds_bucket{job="search-service",route=~"/v1/public/search/.*",le="0.3"}[1h])) / sum(rate(mc_http_request_duration_seconds_count{job="search-service",route=~"/v1/public/search/.*"}[1h]))
+      - record: slo:mc_search_slow:ratio_rate6h
+        expr: 1 - sum(rate(mc_http_request_duration_seconds_bucket{job="search-service",route=~"/v1/public/search/.*",le="0.3"}[6h])) / sum(rate(mc_http_request_duration_seconds_count{job="search-service",route=~"/v1/public/search/.*"}[6h]))
+
+  - name: medicare.slo
+    rules:
+      - alert: MedicareErrorBudgetBurnFast
+        expr: job:mc_request_errors:ratio_rate1h > (14.4 * 0.001) and job:mc_request_errors:ratio_rate5m > (14.4 * 0.001)
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }}: failing {{ $value | humanizePercentage }} of requests; the month's error budget goes in about 2 days at this rate"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/high-errors-or-latency.md
+      - alert: MedicareErrorBudgetBurnSlow
+        expr: job:mc_request_errors:ratio_rate6h > (6 * 0.001) and job:mc_request_errors:ratio_rate30m > (6 * 0.001)
+        for: 15m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }}: failing {{ $value | humanizePercentage }} of requests for 6 hours; the budget goes in about 5 days"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/high-errors-or-latency.md
+      - alert: MedicareErrorBudgetBurnTicket
+        expr: job:mc_request_errors:ratio_rate3d > 0.001 and job:mc_request_errors:ratio_rate6h > 0.001
+        for: 1h
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.job }}: above the 0.1% error objective for 3 days"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/high-errors-or-latency.md
+      - alert: MedicareBookingSlow
+        expr: slo:mc_booking_slow:ratio_rate1h > (14.4 * 0.05) and slo:mc_booking_slow:ratio_rate5m > (14.4 * 0.05)
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Bookings: {{ $value | humanizePercentage }} take longer than 500 ms (objective: at most 5%)"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/high-errors-or-latency.md
+      - alert: MedicareBookingSlowTicket
+        expr: slo:mc_booking_slow:ratio_rate6h > 0.05
+        for: 30m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Bookings: more than 5% slower than 500 ms over 6 hours"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/high-errors-or-latency.md
+      - alert: MedicareSearchSlow
+        expr: slo:mc_search_slow:ratio_rate1h > (14.4 * 0.05) and slo:mc_search_slow:ratio_rate5m > (14.4 * 0.05)
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "Doctor search: {{ $value | humanizePercentage }} take longer than 300 ms (objective: at most 5%)"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/search-outage.md
+      - alert: MedicareSearchSlowTicket
+        expr: slo:mc_search_slow:ratio_rate6h > 0.05
+        for: 30m
+        labels: { severity: ticket }
+        annotations:
+          summary: "Doctor search: more than 5% slower than 300 ms over 6 hours"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/search-outage.md
+
+  - name: medicare.services
+    rules:
+      - alert: MedicareServiceNotReady
+        expr: kube_deployment_status_replicas_available{namespace=~"medicare-.*"} == 0
+        for: 5m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.deployment }}: no ready instance"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/service-down.md
+      - alert: MedicarePodsRestarting
+        expr: increase(kube_pod_container_status_restarts_total{namespace=~"medicare-.*"}[15m]) > 3
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.pod }}: restarted {{ $value }} times in 15 minutes"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/service-down.md
+      - alert: MedicareRedisUnreachable
+        expr: min by (job) (mc_dependency_up{dependency="redis"}) == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }} cannot reach Redis: sign-in codes, booking and payments refuse with 503; reading still works"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/redis-outage.md
+      - alert: MedicareControlDatabaseUnreachable
+        expr: min by (job) (mc_dependency_up{dependency="control_db"}) == 0
+        for: 2m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }} cannot reach the control database: its instances are taken out of service"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/database-server-down.md
+      - alert: MedicareOutboxBacklog
+        expr: max by (job) (mc_outbox_pending) > 1000
+        for: 10m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.job }}: {{ $value }} events not reaching Kafka (confirmations, reminders and read models are late)"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/kafka-outage.md
+      - alert: MedicareOutboxStuck
+        expr: max by (job) (mc_outbox_pending) > 0 and sum by (job) (increase(mc_outbox_published_total[15m])) == 0
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.job }}: events waiting and nothing published for 15 minutes"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/kafka-outage.md
+      - alert: MedicareEventsDeadLettered
+        expr: increase(mc_dlq_messages_total[15m]) > 0
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.consumer }} sent events to {{ $labels.topic }}.dlq"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/events-dead-lettered.md
+
+  - name: medicare.notifications
+    rules:
+      - alert: MedicareNotificationsFailing
+        expr: |
+          sum by (channel) (rate(mc_notifications_total{result=~"error|failed"}[30m]))
+            / sum by (channel) (rate(mc_notifications_total{result=~"sent|error|failed"}[30m])) > 0.1
+        for: 15m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.channel }}: {{ $value | humanizePercentage }} of sends fail (SMS or e-mail provider)"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/sms-email-outage.md
+      - alert: MedicareNotificationsLate
+        expr: max by (channel) (mc_notification_delay_seconds) > 900
+        for: 15m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.channel }}: messages go out {{ $value | humanizeDuration }} after they were due"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/sms-email-outage.md
+
+  - name: medicare.backups
+    rules:
+      # nightly at 02:00 IST: 26 h leaves room for a slow night; 48 h means two nights were missed
+      - alert: MedicareBackupMissing
+        expr: max by (tenant) (mc_backup_age_seconds) > 26 * 3600
+        for: 30m
+        labels: { severity: ticket }
+        annotations:
+          summary: "{{ $labels.tenant }}: no backup for {{ $value | humanizeDuration }}"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/backups.md
+      - alert: MedicareBackupMissingTwoNights
+        expr: max by (tenant) (mc_backup_age_seconds) > 48 * 3600
+        for: 30m
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.tenant }}: no backup for two nights"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/backups.md
+      - alert: MedicareRestoreDrillFailed
+        expr: min by (tenant) (mc_backup_drill_ok) == 0
+        labels: { severity: page }
+        annotations:
+          summary: "{{ $labels.tenant }}: the latest restore drill did not match its backup"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/backups.md
+      - alert: MedicareRestoreDrillsStale
+        expr: min(mc_backup_drill_age_seconds) > 8 * 86400
+        for: 1h
+        labels: { severity: ticket }
+        annotations:
+          summary: "No restore drill has run for over 8 days (weekly job, Sunday 04:00 IST)"
+          runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/backups.md

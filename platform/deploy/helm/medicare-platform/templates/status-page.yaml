@@ -1,0 +1,40 @@
+{{- if .Values.statusPage.enabled }}
+{{- /* runs as medicare-ops, the ServiceAccount the backups template creates (backups.enabled) */}}
+{{- $tenant := dict "port" 4401 }}
+{{- range .Values.services }}{{- if eq .schema "tenant" }}{{- $tenant = . }}{{- end }}{{- end }}
+# The public status page as static files in a Cloud Storage bucket (docs/OPERATIONS.md §5), written every minute: it
+# answers at status.<domain> even when the cluster or the gateway is down, and then says MediCare can't be reached.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: status-publish
+spec:
+  schedule: "* * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 50
+      ttlSecondsAfterFinished: 600
+      template:
+        metadata:
+          annotations: { gke-gcsfuse/volumes: "true" }
+        spec:
+          serviceAccountName: medicare-ops
+          restartPolicy: Never
+          securityContext: { runAsUser: 1000, runAsGroup: 1000, fsGroup: 1000, seccompProfile: { type: RuntimeDefault } }
+          containers:
+            - name: ops
+              image: {{ .Values.backups.image | quote }}
+              args: ["status", "publish", "--out", "/status"]
+              env:
+                - { name: SVC_URL_TENANT, value: "http://tenant-service:{{ $tenant.port }}" }
+              volumeMounts: [{ name: status, mountPath: /status }]
+              resources: { requests: { cpu: 20m, memory: 96Mi }, limits: { memory: 192Mi } }
+              securityContext: { allowPrivilegeEscalation: false, capabilities: { drop: [ALL] } }
+          volumes:
+            - name: status
+              csi: { driver: gcsfuse.csi.storage.gke.io, volumeAttributes: { bucketName: {{ .Values.statusPage.bucket | quote }}, mountOptions: "implicit-dirs,uid=1000,gid=1000" } }
+{{- end }}

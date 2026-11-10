@@ -53,6 +53,10 @@
 //   test backups                      encrypted per-hospital backups, restore drills, tampering detected (Phase 30)
 //   test seo                          hospital sites for search engines: titles, canonical, sitemap, robots, structured data, doctor addresses
 //   test growth                       marketing site, demo requests and the funnel, consent, hospitals' search settings and campaign links
+//   test status                       status page: components, incidents posted and resolved, the static copy, alert metrics (Phase 30)
+//   test chaos                        stop Kafka, Redis, the payment provider and search one at a time: degrade and recover (Phase 30)
+//   status publish [--out <dir>]     the public status page as static files (the status-publish CronJob, every minute)
+//   load prepare | load run [--profile local|rush] [--base url --host host]   k6 morning-rush load test (Phase 30)
 //   test console                      platform console: plan builder, two-person approval, impact, move hospitals, audit
 //   k8s render <env>                  write deploy/environments/<env>/{generated.yaml,apps.json} from service/zone metadata
 //   k8s check <env>                   helm lint + render every app + kubeconform schema check (needs helm, docker)
@@ -601,6 +605,30 @@ async function whatsappCmd(action, args) {
   } else fail('whatsapp link <slug> <phoneNumberId> <displayNumber> | whatsapp list <slug>');
 }
 
+/**
+ * Load tests (Phase 30): `load prepare` builds the load-test hospital and its signed-in patients; `load run` runs k6 in
+ * Docker (grafana/k6) against the local gateway, or against staging with --base and --host.
+ */
+async function loadCmd(action, args) {
+  const f = flags(args);
+  if (action === 'prepare') return run(`node ${join(PLATFORM, 'load/prepare.mjs')}`, PLATFORM);
+  if (action !== 'run') fail('load prepare | load run [--profile local|rush] [--base <gateway url>] [--host <hospital host>] [--slug loadtest]');
+  const slug = f.slug ?? 'loadtest';
+  if (!existsSync(join(PLATFORM, `load/.data/${slug}.json`))) fail(`no load data for ${slug}: run \`mc load prepare\` first`);
+  mkdirSync(join(PLATFORM, 'load/results'), { recursive: true });
+  const e = [`PROFILE=${f.profile ?? 'local'}`, `DATA=/load/.data/${slug}.json`, ...(f.base ? [`BASE=${f.base}`] : []), ...(f.host ? [`TENANT_HOST=${f.host}`] : [])];
+  return run(`docker run --rm -i --add-host=host.docker.internal:host-gateway -v ${join(PLATFORM, 'load')}:/load ${e.map((x) => `-e ${x}`).join(' ')} grafana/k6 run --quiet /load/morning-rush.js`, PLATFORM);
+}
+
+/** The static copy of the public status page (CronJob status-publish every minute; locally into platform/status-page). */
+async function statusCmd(action, args) {
+  if (action !== 'publish') fail('status publish [--out <dir>]');
+  const f = flags(args);
+  const { publishStatus } = await import('./status-page.mjs');
+  const out = f.out ?? process.env.MC_STATUS_DIR ?? join(PLATFORM, 'status-page');
+  log(`status ${await publishStatus(out, svcUrl('tenant'))} → ${out}`);
+}
+
 /** Search indexes are rebuilt from provider and diagnostics (after a change to what doctor or test pages carry, e.g. slugs). */
 async function searchCmd(action, args) {
   if (action !== 'reindex') fail('search reindex <slug>|--all');
@@ -760,6 +788,21 @@ function k8sCheck(envName) {
   const res = execFileSync('docker', ['run', '--rm', '-v', `${out}:/m:ro`, 'ghcr.io/yannh/kubeconform:latest', '-strict', '-summary',
     '-ignore-missing-schemas', '-kubernetes-version', '1.33.0', ...apps.map((a) => `/m/${a.name}.yaml`)], { encoding: 'utf8' });
   log(res.trim());
+  // the SLO and alert rules: valid, and their unit tests pass (Phase 30)
+  const rules = join(PLATFORM, 'deploy/helm/medicare-platform/files');
+  for (const a of [['check', 'rules', 'prometheus-rules.yaml'], ['test', 'rules', 'prometheus-rules.test.yaml']]) {
+    execFileSync('docker', ['run', '--rm', '--entrypoint', 'promtool', '-v', `${rules}:/r:ro`, '-w', '/r', 'prom/prometheus:v3.1.0', ...a], { stdio: 'pipe' });
+  }
+  log('promtool: alert rules valid, rule tests pass');
+  // every Terraform root formats and validates (no backend, nothing applied)
+  for (const dir of readdirSync(join(PLATFORM, 'deploy/terraform'))) {
+    const tf = join(PLATFORM, 'deploy/terraform', dir);
+    if (!existsSync(join(tf, 'versions.tf'))) continue;
+    execFileSync('terraform', ['fmt', '-check', '-recursive'], { cwd: tf, stdio: 'pipe' });
+    execFileSync('terraform', ['init', '-backend=false', '-input=false'], { cwd: tf, stdio: 'pipe' });
+    execFileSync('terraform', ['validate'], { cwd: tf, stdio: 'pipe' });
+    log(`terraform ${dir}: fmt and validate ok`);
+  }
 }
 
 async function setup() {
@@ -789,6 +832,8 @@ const main = async () => {
     case 'keys': return keysCmd(sub, rest);
     case 'whatsapp': return whatsappCmd(sub, rest);
     case 'search': return searchCmd(sub, rest);
+    case 'load': return loadCmd(sub, rest);
+    case 'status': return statusCmd(sub, rest);
     case 'module': return moduleCmd(sub, rest);
     case 'plan': return planCmd(sub, rest);
     case 'billing': return billingCmd(sub, rest);
@@ -833,6 +878,8 @@ const main = async () => {
       if (sub === 'backups') return run(`node ${join(PLATFORM, 'tests/backups.mjs')}`, PLATFORM);
       if (sub === 'seo') return run(`node ${join(PLATFORM, 'tests/seo.mjs')}`, PLATFORM);
       if (sub === 'growth') return run(`node ${join(PLATFORM, 'tests/growth.mjs')}`, PLATFORM);
+      if (sub === 'chaos') return run(`node ${join(PLATFORM, 'tests/chaos.mjs')}`, PLATFORM);
+      if (sub === 'status') return run(`node ${join(PLATFORM, 'tests/status.mjs')}`, PLATFORM);
       return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2|wave3|wave4|wave5|concierge|copilot|scribe|whatsapp');
     case 'seed':
       if (sub === 'showcase') return run(`node ${join(PLATFORM, 'scripts/seed-showcase.mjs')}`, PLATFORM);

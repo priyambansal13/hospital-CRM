@@ -16,6 +16,10 @@
     "./seo": {
       "types": "./dist/seo.d.ts",
       "default": "./dist/seo.js"
+    },
+    "./status": {
+      "types": "./dist/status.d.ts",
+      "default": "./dist/status.js"
     }
   },
   "files": [

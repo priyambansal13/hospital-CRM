@@ -6,7 +6,7 @@ import { ConsumerRegistry, CoreModule, isDev, REDIS, type Redis } from '@mc/nest
 import { EntitlementsModule } from '@mc/entitlements-sdk';
 import { BillingController } from './billing/billing.controller.js';
 import { BillingService } from './billing/billing.service.js';
-import { InternalInvoicesController } from './billing/internal.controller.js';
+import { InternalInvoicesController, InternalSimulatorController } from './billing/internal.controller.js';
 import { PaymentAccountController } from './billing/payment-account.controller.js';
 import { PaymentAccountService } from './billing/payment-account.service.js';
 import { RefundJob } from './billing/refund.job.js';
@@ -62,7 +62,7 @@ class BillingConsumers implements OnModuleInit {
 
 @Module({
   imports: [CoreModule.forRoot({ schema: 'billing', control: true, tenant: true, relay: true }), EntitlementsModule],
-  controllers: [InternalAnalyticsController, BillingController, WebhookController, InternalInvoicesController, PaymentAccountController, MembershipPlansController, MembersController, MyMembershipController, InternalMembersController],
+  controllers: [InternalAnalyticsController, BillingController, WebhookController, InternalInvoicesController, InternalSimulatorController, PaymentAccountController, MembershipPlansController, MembersController, MyMembershipController, InternalMembersController],
   providers: [
     { provide: PAYMENT_GATEWAY, useFactory: gatewayFactory, inject: [REDIS] },
     BillingService, PaymentAccountService, RefundJob, BillingConsumers, MembershipsService, MembershipJobs,

@@ -89,10 +89,15 @@ export class ScheduleService {
   async removeHours(c: Queryable, doctorId: string, templateId: string) {
     const { rowCount } = await c.query('SELECT 1 FROM availability_templates WHERE id = $1 AND doctor_id = $2', [templateId, doctorId]);
     if (!rowCount) throw notFound('hours');
-    const { rowCount: removed } = await c.query(`DELETE FROM slots WHERE template_id = $1 AND status IN ('OPEN','BLOCKED') AND starts_at > now()`, [templateId]);
+    // future free times go; a time an appointment ever pointed at (cancelled, expired, moved) can't be deleted, it
+    // keeps that history: it is closed instead (BLOCKED, and without a template, so removing a leave never reopens it)
+    const { rowCount: removed } = await c.query(
+      `DELETE FROM slots s WHERE s.template_id = $1 AND s.status IN ('OPEN','BLOCKED') AND s.starts_at > now() AND NOT EXISTS (SELECT 1 FROM appointments a WHERE a.slot_id = s.id)`, [templateId]);
+    const { rowCount: closed } = await c.query(
+      `UPDATE slots s SET status = 'BLOCKED', template_id = NULL, version = version + 1 WHERE s.template_id = $1 AND s.status IN ('OPEN','BLOCKED') AND s.starts_at > now()`, [templateId]);
     await c.query('DELETE FROM availability_templates WHERE id = $1', [templateId]);
     await this.changed(c, doctorId, 'hours removed');
-    return { slotsRemoved: removed ?? 0 };
+    return { slotsRemoved: (removed ?? 0) + (closed ?? 0) };
   }
 
   async addLeave(c: Queryable, doctorId: string, l: { fromDate: string; toDate: string; reason: string | null }, actorId: string) {

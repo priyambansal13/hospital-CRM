@@ -1,0 +1,92 @@
+# promtool test rules files/prometheus-rules.test.yaml (run by `mc k8s check`): each alert fires on the failure it is
+# about and stays quiet on a healthy service.
+rule_files: [prometheus-rules.yaml]
+evaluation_interval: 1m
+tests:
+  # 2% of bookings fail for an hour: the fast burn pages; a healthy service next to it doesn't
+  - interval: 1m
+    input_series:
+      - series: 'mc_http_request_duration_seconds_count{job="scheduling-service",method="POST",route="/v1/appointments",status="201"}'
+        values: '0+980x90'
+      - series: 'mc_http_request_duration_seconds_count{job="scheduling-service",method="POST",route="/v1/appointments",status="500"}'
+        values: '0+20x90'
+      - series: 'mc_http_request_duration_seconds_count{job="records-service",method="GET",route="/v1/patients/:id",status="200"}'
+        values: '0+1000x90'
+      - series: 'mc_http_request_duration_seconds_count{job="records-service",method="GET",route="/v1/patients/:id",status="503"}'
+        values: '0+0x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: MedicareErrorBudgetBurnFast
+        exp_alerts:
+          - exp_labels: { severity: page, job: scheduling-service }
+            exp_annotations:
+              summary: "scheduling-service: failing 2% of requests; the month's error budget goes in about 2 days at this rate"
+              runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/high-errors-or-latency.md
+
+  # 0.05% errors is inside the 0.1% objective: nothing fires
+  - interval: 1m
+    input_series:
+      - series: 'mc_http_request_duration_seconds_count{job="scheduling-service",status="201"}'
+        values: '0+19990x400'
+      - series: 'mc_http_request_duration_seconds_count{job="scheduling-service",status="500"}'
+        values: '0+10x400'
+    alert_rule_test:
+      - { eval_time: 6h, alertname: MedicareErrorBudgetBurnFast, exp_alerts: [] }
+      - { eval_time: 6h, alertname: MedicareErrorBudgetBurnSlow, exp_alerts: [] }
+
+  # bookings: 80% over 500 ms for an hour pages; search: all under 300 ms stays quiet
+  - interval: 1m
+    input_series:
+      - series: 'mc_http_request_duration_seconds_bucket{job="scheduling-service",method="POST",route="/v1/appointments",status="201",le="0.5"}'
+        values: '0+20x90'
+      - series: 'mc_http_request_duration_seconds_count{job="scheduling-service",method="POST",route="/v1/appointments",status="201"}'
+        values: '0+100x90'
+      - series: 'mc_http_request_duration_seconds_bucket{job="search-service",method="GET",route="/v1/public/search/doctors",status="200",le="0.3"}'
+        values: '0+500x90'
+      - series: 'mc_http_request_duration_seconds_count{job="search-service",method="GET",route="/v1/public/search/doctors",status="200"}'
+        values: '0+500x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: MedicareBookingSlow
+        exp_alerts:
+          - exp_labels: { severity: page }
+            exp_annotations:
+              summary: "Bookings: 80% take longer than 500 ms (objective: at most 5%)"
+              runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/high-errors-or-latency.md
+      - { eval_time: 70m, alertname: MedicareSearchSlow, exp_alerts: [] }
+
+  # one hospital two nights without a backup, another fine; a failed drill; Redis gone for one service
+  - interval: 1m
+    input_series:
+      - series: 'mc_backup_age_seconds{tenant="citycare",server="pg-1"}'
+        values: '180000+60x60'
+      - series: 'mc_backup_age_seconds{tenant="aarogya",server="pg-1"}'
+        values: '3600+60x60'
+      - series: 'mc_backup_drill_ok{tenant="citycare"}'
+        values: '0x60'
+      - series: 'mc_backup_drill_ok{tenant="aarogya"}'
+        values: '1x60'
+      - series: 'mc_dependency_up{job="scheduling-service",dependency="redis"}'
+        values: '1 1 0x10'
+    alert_rule_test:
+      - eval_time: 40m
+        alertname: MedicareBackupMissingTwoNights
+        exp_alerts:
+          - exp_labels: { severity: page, tenant: citycare }
+            exp_annotations:
+              summary: "citycare: no backup for two nights"
+              runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/backups.md
+      - eval_time: 5m
+        alertname: MedicareRestoreDrillFailed
+        exp_alerts:
+          - exp_labels: { severity: page, tenant: citycare }
+            exp_annotations:
+              summary: "citycare: the latest restore drill did not match its backup"
+              runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/backups.md
+      - eval_time: 6m
+        alertname: MedicareRedisUnreachable
+        exp_alerts:
+          - exp_labels: { severity: page, job: scheduling-service }
+            exp_annotations:
+              summary: "scheduling-service cannot reach Redis: sign-in codes, booking and payments refuse with 503; reading still works"
+              runbook_url: https://github.com/priyambansal13/hospital-CRM/blob/main/platform/docs/runbooks/redis-outage.md

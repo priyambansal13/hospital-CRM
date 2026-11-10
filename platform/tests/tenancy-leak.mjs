@@ -305,6 +305,7 @@ const main = async () => {
     'subscription:POST /v1/platform/versions/:id/reject': { id: planVersionId, body: { note: 'pwned' } },
     'subscription:POST /v1/platform/versions/:id/retire': { id: planVersionId },
     // MediCare's console only (HqOnly): any id; the request must be refused before it is looked up
+    'tenant:POST /v1/platform/status/incidents/:id/updates': { id: '00000000-0000-4000-8000-000000000000', body: { status: 'RESOLVED', message: 'pwned' } },
     'tenant:PATCH /v1/platform/growth/leads/:id': { id: '00000000-0000-4000-8000-000000000000', body: { status: 'LOST' } },
     'subscription:GET /v1/platform/hospitals/:id': { id: cityId },
     // wave 4: console support actions and card sessions (harmless bodies: the guard must refuse them anyway)

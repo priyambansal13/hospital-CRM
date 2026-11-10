@@ -3,6 +3,7 @@
  * backend still checks every request.
  */
 import 'server-only';
+import { activeIncidents } from './status.js';
 import { getSession, requireSession } from '@mc/auth';
 import { api, ApiError, getBranding, origin } from '@mc/bff';
 import { Alert, AppFrame } from '@mc/ui';
@@ -115,7 +116,7 @@ export async function ZoneFrame({ zone, path, zones, requireAuth = true, wide = 
   let staff = false;
   if (requireAuth || session) {
     const caps = await getCapabilities(path);
-    if (caps.actor.kind === 'staff') banner = billingBanner(caps, base);
+    if (caps.actor.kind === 'staff') banner = <>{await incidentBanner()}{billingBanner(caps, base)}</>;
     if (requireAuth && zone !== 'shell') await requireZone(caps, zone);
     const items = visibleNav(caps, zones.map((z) => z.name));
     // the most specific matching item is the current page (so /admin/branches doesn't also light up /admin)
@@ -135,6 +136,18 @@ export async function ZoneFrame({ zone, path, zones, requireAuth = true, wide = 
   // staff get the sidebar (their screens grouped by area); patients and visitors the top bar
   const layout = staff && nav.length > 0 ? 'sidebar' : 'top';
   return <AppFrame hospital={{ name: branding.name, ...branding.branding }} nav={nav} user={user} layout={layout} wide={wide} signInHref={`${base}/login?next=${encodeURIComponent(path)}`} homeHref={`${base}/`}>{banner}{children}</AppFrame>;
+}
+
+/** MediCare incidents and planned maintenance (the status page), for staff: they hear it before patients ask. */
+async function incidentBanner(): Promise<ReactNode> {
+  const list = await activeIncidents();
+  if (!list.length) return null;
+  const fmt = (d: string) => new Date(d).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Kolkata' });
+  return list.map((i) => (
+    <Alert key={i.id} tone={i.impact === 'MAINTENANCE' || i.impact === 'MINOR' ? 'info' : 'error'}>
+      <strong>{i.impact === 'MAINTENANCE' ? `Planned maintenance ${fmt(i.startsAt)}${i.endsAt ? `–${fmt(i.endsAt)}` : ''}` : 'MediCare incident'}:</strong> {i.title}. {i.updates[0]?.message ?? ''}
+    </Alert>
+  ));
 }
 
 const day = (d: string | null) => (d ? new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', timeZone: 'Asia/Kolkata' }) : '');

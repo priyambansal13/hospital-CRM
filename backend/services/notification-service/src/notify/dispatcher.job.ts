@@ -1,11 +1,15 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
-import { SmsNotRegistered } from '@mc/nest-common';
+import { Counter, Gauge, metrics, SmsNotRegistered } from '@mc/nest-common';
 import { PLACEMENTS } from '@mc/nest-common';
 import { UsageMeter } from '@mc/entitlements-sdk';
 import { type PlacementSource, type Queryable, TenantContext, TenantDbRouter } from '@mc/tenancy';
 import { createHash } from 'node:crypto';
 import { EmailChannel, type NotificationChannel, SmsChannel } from '../channels/channels.js';
 import { render } from './templates.js';
+
+/** Delivery health for the alerts (docs/OPERATIONS.md): outcomes by channel, and how late the last messages went out. */
+const delivered = new Counter({ name: 'mc_notifications_total', help: 'Notification send attempts by channel and result (sent, error, failed = gave up, skipped)', labelNames: ['channel', 'result'], registers: [metrics] });
+const lateness = new Gauge({ name: 'mc_notification_delay_seconds', help: 'How long after it was due the most recently sent notification went out', labelNames: ['channel'], registers: [metrics] });
 
 const shardOf = (id: string, n: number) => createHash('md5').update(id).digest().readUInt32BE(0) % n;
 const MAX_ATTEMPTS = 5;
@@ -57,7 +61,7 @@ export class DispatcherJob implements OnApplicationBootstrap, OnApplicationShutd
     const { rows } = await c.query(`SELECT * FROM notifications WHERE status = 'SCHEDULED' AND send_at <= now() ORDER BY send_at LIMIT 50 FOR UPDATE SKIP LOCKED`);
     let sent = 0;
     for (const n of rows) {
-      const skip = (why: string) => c.query(`UPDATE notifications SET status = 'SKIPPED', last_error = $2 WHERE id = $1`, [n.id, why]);
+      const skip = (why: string) => { delivered.inc({ channel: n.channel, result: 'skipped' }); return c.query(`UPDATE notifications SET status = 'SKIPPED', last_error = $2 WHERE id = $1`, [n.id, why]); };
       try {
         if (n.template_key.startsWith('reminder_') && !(await this.appointmentStillOn(tenantId, n.related_id))) { await skip('appointment no longer active'); continue; }
         const contact = n.recipient_kind === 'staff' ? await this.staffContact(tenantId, n.recipient_person_id) : (await c.query('SELECT * FROM contacts WHERE person_id = $1', [n.recipient_person_id])).rows[0];
@@ -93,6 +97,8 @@ export class DispatcherJob implements OnApplicationBootstrap, OnApplicationShutd
         await c.query(`UPDATE notifications SET status = 'SENT', sent_at = now(), attempts = attempts + 1, to_address = $2, rendered_subject = $3, rendered_body = $4, provider_message_id = $5, last_error = NULL WHERE id = $1`,
           [n.id, to, subject, body, r.providerMessageId]);
         sent++;
+        delivered.inc({ channel: n.channel, result: 'sent' });
+        lateness.set({ channel: n.channel }, Math.max(0, (Date.now() - new Date(n.send_at).getTime()) / 1000));
       } catch (e) {
         const attempts = n.attempts + 1;
         await c.query(
@@ -101,6 +107,7 @@ export class DispatcherJob implements OnApplicationBootstrap, OnApplicationShutd
              send_at = now() + make_interval(mins => power(2, $2::int)::int) WHERE id = $1`,
           [n.id, attempts, (e as Error).message.slice(0, 500), MAX_ATTEMPTS],
         );
+        delivered.inc({ channel: n.channel, result: attempts >= MAX_ATTEMPTS ? 'failed' : 'error' });
       }
     }
     return sent;

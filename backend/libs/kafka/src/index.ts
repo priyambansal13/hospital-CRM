@@ -45,7 +45,9 @@ export interface Producer {
 }
 
 export async function createProducer(clientId: string): Promise<Producer> {
-  const producer = (await createKafka(clientId)).producer({ kafkaJS: { idempotent: true, acks: -1 } });
+  // a send gives up after KAFKA_SEND_TIMEOUT_MS (default 15 s) when the broker is unreachable, instead of librdkafka's
+  // 5 minutes: the outbox relay then rolls back and retries, so its backlog stays visible during an outage (chaos tests)
+  const producer = (await createKafka(clientId)).producer({ 'message.timeout.ms': Number(process.env.KAFKA_SEND_TIMEOUT_MS ?? 15000), kafkaJS: { idempotent: true, acks: -1 } });
   await producer.connect();
   return {
     send: (topic, messages) => producer.send({ topic, messages }),

@@ -45,6 +45,11 @@ data:
   GOOGLE_CLOUD_LOCATION: {{ .Values.ai.location | quote }}
   GEMINI_CHAT_MODEL: {{ .Values.ai.chatModel | quote }}
   GEMINI_EMBED_MODEL: {{ .Values.ai.embedModel | quote }}
+  # wrapping each hospital's data key: MC_MASTER_KEY (staging) or Cloud KMS (production, Terraform prod-india keys.tf)
+  KEY_WRAPPER: {{ .Values.keys.wrapper | quote }}
+  {{- if .Values.keys.kmsKeyName }}
+  KMS_KEY_NAME: {{ .Values.keys.kmsKeyName | quote }}
+  {{- end }}
   SEARCH_INDEX_PREFIX: {{ .Values.opensearch.indexPrefix | default "mc" | quote }}
   {{- range .Values.services }}
   SVC_URL_{{ upper .schema }}: {{ printf "http://%s:%v" .name .port | quote }}

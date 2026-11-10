@@ -1,4 +1,4 @@
-# Handoff: where work stopped (2026-11-10, after the rest of SEO and ads; Phase 30 part 2 still next)
+# Handoff: where work stopped (2026-11-10, after Phase 30 part 2)
 
 ## State
 - Phases 0–27 and 29 are built; M5 (AI) is complete; M6: Phase 26 (patient memberships) and Phase 27 (custom fields, forms, workflow rules, webhooks, API keys, FHIR read API, LIS connector; new integration-service on 4416) done 2026-10-31; Phase 29 (analytics warehouse and dashboards, new analytics-service on 4417; Ops agent, morning brief, care-gap reminders, no-show outreach) done 2026-11-01. Phase 28 (video) is the only M6 phase left and is skipped for now (user decision 2026-11-01). UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
@@ -18,6 +18,10 @@
   - and **hospital-site SEO is built** (SEO-AND-ADS §2.1, `mc test seo`, 36 checks). See "SEO notes" below.
 - **2026-11-10, the rest of SEO and ads** (user request "rest of seo and ads first"): the marketing site (features, segments, security, guides, demo form, pricing FAQ), the growth funnel (attribution with consent, leads, conversions, Meta Conversions API and a Google Ads file, console Growth page), and hospitals' Search and ads page (description, branch areas, profile checks, campaign links with bookings by campaign, Google Business Profile and ad-rules checklists), old branch addresses, doctor photos, sharing cards. `mc test growth` (40 checks) and Playwright `p30-seo-ads`. See "Growth notes" below.
   - Also fixed: the notification dispatcher's retry update failed (`power(integer, text)`), so after any failed send it stopped sending for that hospital; MediCare's own staff e-mails had been stuck since 2026-11-09.
+- **2026-11-10, Phase 30 part 2** (user said yes): load test, failure tests, objectives and alerts, runbooks, status page, production Terraform. See [OPERATIONS.md](OPERATIONS.md) and "Operations notes" below.
+  - **Verification at hand-off:**
+    - Passed: unit tests, typechecks and lint everywhere; `mc test chaos` (all 17, before the last relay change), `status` (16), `growth`, `onboarding`, `wave3` (with the new hours check), `seo`, `gaps`, `console`, `queue`, `race`, `analytics`, `payments` (run alone, 45); `mc k8s check production`.
+    - **Still to rerun on a quiet machine** (they failed only while the laptop was overloaded, load average 20–50): `servers`, `wave4`, `wave5`, `search`, `backups`, `chaos` (after the relay change that only stops a pass on Kafka send errors), and the leak test `tenancy` (it has fixtures for the two new routes).
 - The flow review is in [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md). See §8 "Fix log" for details.
   - Wave 1 (15 gaps): fixed 2026-10-25.
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
@@ -56,6 +60,36 @@
 - **robots.txt and sitemap.xml** are route handlers in zone-shell (`app/robots.txt`, `app/sitemap.xml`), built per host. A new public section needs an `Allow` line and sitemap entries.
 - **Tests:** `mc test seo` creates 3 test doctors in citycare (left unpublished) and a `seoNNNNNN` hospital (marked DELETED at the end).
 
+## Operations notes worth knowing (2026-11-10, Phase 30 part 2)
+- **Load test:**
+  - `mc load prepare` (the loadtest hospital, `platform/load/.data/loadtest.json` with patients' refresh tokens, not committed);
+  - `mc load run --profile local|rush [--base --host]` (k6 via Docker).
+  - Each run writes the rotated refresh tokens back, so the next run needs no new sign-ins. If they are lost, prepare signs patients in again (OTP cap 500 per hospital per hour).
+  - Refresh answers **201**, not 200.
+  - Hours for the load doctors: deleting old hours took ages and failed (500) until the fix below.
+- **Failure tests:** `mc test chaos` stops `redpanda`, `redis` and `opensearch` (this project's compose only) and starts them again in `finally`. `CHAOS_ONLY=kafka,redis,payments,search` runs a subset. A payment outage is `POST /internal/simulator/outage {seconds}` on billing-service (dev only).
+- **Behaviour changes worth knowing:**
+  - `/health/ready` fails only on the control database; Redis down shows `status: degraded`.
+  - Redis commands time out after `REDIS_COMMAND_TIMEOUT_MS` (1 s), and Redis errors are 503 `DEPENDENCY_UNAVAILABLE`.
+  - The capabilities cache in entitlement-service is optional.
+  - Kafka sends give up after `KAFKA_SEND_TIMEOUT_MS` (15 s).
+  - Removing hours closes the times that have appointment history instead of deleting them.
+- **Alerts:**
+  - `platform/deploy/helm/medicare-platform/files/prometheus-rules.yaml` plus its `.test.yaml`; edit both, then run `mc k8s check <env>`, which also runs promtool and `terraform validate`.
+  - Alert summaries use `$labels` and `$value` (plain rule format; the template wraps the file with `.Files.Get`).
+- **Status page:**
+  - tenant-service `src/status` (components → services map in `status.service.ts`);
+  - the console page `/platform/status`;
+  - the public `/status`;
+  - `mc status publish` (`scripts/status-page.mjs`);
+  - `mc test status`.
+  - The new permission `status:manage:tenant` (PLATFORM_SUPPORT) needs an entitlement-service restart to load, as any module YAML change does.
+- **Test hospitals pile up and slow everything locally.** Every active hospital adds work to every service's outbox relay (all databases, twice a second) and to jobs such as hold expiry. On 2026-11-10, 22 `move…`/`vip…` hospitals left active by `mc test servers` runs made suites that wait on events fail under load (payments, wave4, wave5, servers). They were soft-deleted (status DELETED; nothing purged), and `mc test servers` now marks its two hospitals DELETED at the end. After restarting `mc dev`, give it a few minutes: services run per-hospital start-up work across about 100 databases. Judge flaky suites only once the load average is below about 15.
+- **Production:**
+  - `deploy/terraform/prod-india` (validate locally with `terraform init -backend=false`; the gcs backend needs `-backend-config=bucket=…`);
+  - `deploy/environments/production/values.yaml` (placeholders `<…>` from `terraform output`);
+  - Argo CD `applicationset-production.yaml`.
+
 ## Growth notes worth knowing (2026-11-10)
 - **Where things live:**
   - marketing words: `frontend/apps/zone-shell/src/lib/marketing.ts` (must stay true of the product);
@@ -89,7 +123,7 @@
 
 ## Resume here (ask first)
 Choose one:
-1. **Phase 30 part 2** (ask first): k6 load test at the platform target, chaos tests (Kafka, Redis and payment-provider outages), SLOs and alerts (including backup age and failed drills from `internal/backups/summary`), on-call runbooks (move, restore, failed migration ring), a public status page, and production Terraform (India, Cloud SQL servers as SHARED/DEDICATED, written and validated, not applied). Phase 28 (video consultations) is skipped for now (user decision 2026-11-01); when it returns it would also exercise the members' free video allowance.
+1. **Phase 30 is done** (part 2 on 2026-11-10). What's left of it needs a GCP project: apply the Terraform, run the CronJobs, a DR test, and `mc load run --profile rush` on staging. Code items left: backup keys in KMS, `mc backup restore`, Redis TLS and Kafka SASL in the clients, a Grafana dashboard. Next phase by the plan: **Phase 31 (security and compliance)**, ask first. Phase 28 (video consultations) is skipped for now (user decision 2026-11-01).
 2. **Real-provider runs**, once the user provides keys or accounts:
    - Gemini: a valid key, then `LLM_PROVIDER=gemini` and `mc test assistant`, `mc test concierge` `mc test copilot` and `mc test scribe` against the real model, plus the Ops agent, the morning brief and a Batch Mode job (prompt tuning; set `GEMINI_COPILOT_MODEL` / `GEMINI_TRANSCRIBE_MODEL` if the defaults are not available), and a real recorded consultation;
    - WhatsApp: a WhatsApp Business account (Meta Cloud API): `WHATSAPP_PROVIDER=meta`, `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_APP_SECRET`, `WHATSAPP_VERIFY_TOKEN`, the webhook URL registered with Meta, `mc whatsapp link <slug> <phoneNumberId> <number>`;

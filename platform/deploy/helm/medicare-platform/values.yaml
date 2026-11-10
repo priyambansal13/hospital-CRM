@@ -23,6 +23,8 @@ clamav: { image: clamav/clamav:stable, memory: 2Gi }
 # in-cluster OpenSearch for search-service (indexes are rebuilt from the services, so small disk, no backups)
 # Gemini for ai-assistant-service: Vertex AI (no key) in the cluster's project and region; model ids are config
 ai: { project: "<gcp-project>", location: asia-south1, chatModel: gemini-3.8-flash, embedModel: gemini-embedding-2 }
+# data-key wrapping (records-service): local = MC_MASTER_KEY secret; gcp-kms = the Cloud KMS key below
+keys: { wrapper: local, kmsKeyName: "" }
 opensearch: { image: opensearchproject/opensearch:2.19.1, memory: 1536Mi, javaOpts: "-Xms768m -Xmx768m", storage: 10Gi }
 ingress:
   className: gce
@@ -43,6 +45,8 @@ backups:
   schedule: "0 2 * * *"               # nightly, every hospital
   drillSchedule: "0 4 * * 0"          # weekly restore drill
   drillSample: 3                      # hospitals drilled each week (plus every dedicated-server hospital)
+# the static copy of the status page (needs the ops image, backups.image, and the status bucket from Terraform)
+statusPage: { enabled: false, bucket: "" }
 seedDemo: false                       # create citycare + sunrise with synthetic data after install
 # Filled by `mc k8s render <env>` from service metadata (generated.yaml):
 services: []                          # [{ name, port, schema, route, control, tenant }]

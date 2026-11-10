@@ -1,0 +1,18 @@
+{{- if .Values.monitoring.enabled }}
+# Scrapes /metrics on the metrics port (never through the gateway). The SLO and alert rules (medicare-platform chart,
+# files/prometheus-rules.yaml) select series by job="<service name>".
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Values.name }}
+  labels: {{- include "svc.labels" . | nindent 4 }}{{- with .Values.monitoring.labels }}{{ toYaml . | nindent 4 }}{{ end }}
+spec:
+  selector:
+    matchLabels: { app.kubernetes.io/name: {{ .Values.name }} }
+  podMetricsEndpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.monitoring.interval }}
+      relabelings:
+        - { targetLabel: job, replacement: {{ .Values.name }} }
+{{- end }}

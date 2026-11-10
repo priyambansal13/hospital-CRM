@@ -1,0 +1,38 @@
+# Production (GKE Autopilot, asia-south1, Terraform deploy/terraform/prod-india). Hand-written settings; the
+# service/zone lists are in generated.yaml (`mc k8s render production`). Values marked <…> come from `terraform output`.
+environment: production
+domain: <domain>
+image:
+  registry: asia-south1-docker.pkg.dev/<gcp-project>/medicare
+  tag: "1.0.0"                     # the release to run (immutable tags: a release is always the same image)
+postgres:
+  host: <postgres_servers.pg-1.private_ip>
+  port: 5432
+  adminUser: postgres
+kafka:
+  brokers: <managed kafka bootstrap address>:9092
+keycloak:
+  publicUrl: https://auth.<domain>
+  internalUrl: http://keycloak-http.medicare-infra.svc.cluster.local
+gateway:
+  url: http://kong-kong-proxy.medicare-infra.svc.cluster.local
+objectStore: { endpoint: https://storage.googleapis.com, region: asia-south1, bucketPrefix: medicare-prod-t- }
+externalSecrets:
+  enabled: true
+  store: gcp-secret-manager
+  prefix: medicare-production
+serviceAccount:
+  annotations:
+    iam.gke.io/gcp-service-account: medicare-workload@<gcp-project>.iam.gserviceaccount.com
+# Gemini on Vertex AI in Mumbai (confirm the models are offered in asia-south1 before go-live)
+ai: { project: "<gcp-project>", location: asia-south1, chatModel: gemini-3.8-flash, embedModel: gemini-embedding-2 }
+keys: { wrapper: gcp-kms, kmsKeyName: "<kms_keys.data-key-wrapper>" }
+opensearch: { image: opensearchproject/opensearch:2.19.1, memory: 4Gi, javaOpts: "-Xms2g -Xmx2g", storage: 50Gi }
+monitoring: { enabled: true, alertLabels: { release: kube-prometheus-stack } }
+backups:
+  enabled: true
+  image: asia-south1-docker.pkg.dev/<gcp-project>/medicare/ops:1.0.0
+  bucket: <buckets.backups>
+  serviceAccount: <service_accounts.ops>
+statusPage: { enabled: true, bucket: <buckets.status> }
+seedDemo: false

@@ -27,7 +27,7 @@ export async function MarketingFrame({ path, wide = true, children }: { path: st
         <div><h3>Who it is for</h3><ul>{SEGMENTS.map((s) => <li key={s.slug}><a href={`/for/${s.slug}`}>{s.name}</a></li>)}</ul></div>
         <div><h3>Guides</h3><ul>{ARTICLES.map((a) => <li key={a.slug}><a href={`/resources/${a.slug}`}>{a.title.split(':')[0]}</a></li>)}<li><a href="/resources">All guides</a></li></ul></div>
         <div><h3>MediCare</h3><ul>
-          <li><a href="/pricing">Plans and prices</a></li><li><a href="/security">Security and privacy</a></li>
+          <li><a href="/pricing">Plans and prices</a></li><li><a href="/security">Security and privacy</a></li><li><a href="/status">System status</a></li>
           <li><a href="/demo">Book a demo</a></li><li><a href="/signup">Start a free trial</a></li><li><CookieSettings /></li>
         </ul></div>
       </nav>

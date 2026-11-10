@@ -20,5 +20,7 @@ describe('ProblemFilter (RFC 7807)', () => {
     expect(render(new TenantNotFoundError('x'))).toMatchObject({ status: 404, body: { code: 'TENANT_NOT_FOUND' } });
     expect(render(new HttpException('nope', 404))).toMatchObject({ status: 404, body: { code: 'NOT_FOUND' } });
     expect(render(new Error('boom'))).toMatchObject({ status: 500, body: { code: 'INTERNAL', detail: 'unexpected error' } });
+    expect(render(new Error('Command timed out'))).toMatchObject({ status: 503, body: { code: 'DEPENDENCY_UNAVAILABLE' } });
+    expect(render(Object.assign(new Error('Reached the max retries per request limit (which is 1).'), { name: 'MaxRetriesPerRequestError' }))).toMatchObject({ status: 503 });
   });
 });

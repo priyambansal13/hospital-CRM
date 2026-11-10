@@ -152,5 +152,13 @@ const rx = await call('POST', `/api/records/v1/encounters/${enc}/prescriptions`,
 check(rx.http === 201, 'prescription with a follow-up date');
 check(!!(await waitFor(async () => psql(`SELECT count(*) FROM notification.notifications WHERE related_id = '${rx.id}' AND template_key = 'follow_up_reminder' AND status = 'SCHEDULED'`) !== '0', 20000, 1000)), '4.G a follow-up reminder is scheduled for the day before');
 
+// ======== found by the load test (Phase 30): removing hours whose times have appointment history ========
+// the first booking above was moved, so its old time is referenced by a RESCHEDULED appointment; removing the hours
+// used to fail with a foreign-key error (500)
+const sched = await call('GET', `/api/scheduling/v1/doctors/${doc.id}/schedule`, admin);
+const removed = await Promise.all((sched.hours ?? []).map((h) => call('DELETE', `/api/scheduling/v1/doctors/${doc.id}/availability/${h.id}`, admin)));
+check(removed.length > 0 && removed.every((r) => r.http === 200), `removing hours with booking history works (${removed.map((r) => r.http).join(',')})`);
+check((await call('GET', `/api/scheduling/v1/appointments/${moved.id}`, desk)).status === 'CONFIRMED', 'the booked appointment on those hours is kept');
+
 console.log(failures ? `\n\x1b[31m${failures} check(s) failed\x1b[0m` : '\n\x1b[32mwave 3: all checks passed\x1b[0m');
 process.exit(failures ? 1 : 0);

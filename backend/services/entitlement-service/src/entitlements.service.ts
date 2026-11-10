@@ -318,7 +318,8 @@ export class EntitlementsService implements OnModuleInit {
     const pool = await this.db.current();
     const version = Number((await pool.query('SELECT version FROM caps_version')).rows[0]?.version ?? 0);
     const cacheKey = `cap:${t.id}:${actor.id}:${version}:${this.catalogHash}`;
-    const cached = opts.previewRole ? null : await this.redis.get(cacheKey);
+    // the cache is only a cache: with Redis down, work it out from the database (chaos tests, Phase 30)
+    const cached = opts.previewRole ? null : await this.redis.get(cacheKey).catch(() => null);
     if (cached) return JSON.parse(cached);
 
     const states = await this.moduleStates(pool);
@@ -390,7 +391,7 @@ export class EntitlementsService implements OnModuleInit {
       home: primary?.home ?? '/',
       version,
     };
-    if (!opts.previewRole) await this.redis.set(cacheKey, JSON.stringify(caps), 'EX', CAP_TTL_S);
+    if (!opts.previewRole) void this.redis.set(cacheKey, JSON.stringify(caps), 'EX', CAP_TTL_S).catch(() => undefined);
     return caps;
   }
 }

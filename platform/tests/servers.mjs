@@ -168,5 +168,12 @@ const cross = (await call('GET', `/api/tenant/v1/branches/${br.id}`, dedAdmin, u
 const wrongHost = (await call('GET', '/api/tenant/v1/branches', admin, undefined, `${DED}.localhost`)).http;
 check(cross === 404 && [401, 403].includes(wrongHost), `hospitals stay apart across servers: another hospital's branch id → ${cross}, a token on the wrong hospital → ${wrongHost}`);
 
+// the two test hospitals are test data: mark them DELETED (data kept, never purged) so they don't add to every
+// service's background work on later runs
+for (const s of [SLUG, DED]) {
+  const t = (await internal('/internal/tenants')).find((x) => x.slug === s);
+  if (t) await fetch(`http://localhost:4401/internal/tenants/${t.id}/status`, { method: 'PATCH', headers: { 'x-internal-token': env.INTERNAL_API_TOKEN, 'content-type': 'application/json' }, body: JSON.stringify({ status: 'DELETED' }) });
+}
+
 console.log(failures ? `\n\x1b[31m${failures} check(s) failed\x1b[0m` : '\n\x1b[32mall checks passed\x1b[0m');
 process.exit(failures ? 1 : 0);

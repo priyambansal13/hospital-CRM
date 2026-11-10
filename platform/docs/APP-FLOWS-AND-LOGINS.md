@@ -109,11 +109,12 @@ Legend: **[module]** is the sellable module the screen belongs to; the screen is
 1. `/`: product home with live published plans and "who it is for".
 2. `/features` and `/features/<feature>` (online booking, front desk, records, lab, home collection, AI assistant, billing, analytics), each saying which live plans include it; `/for/clinics`, `/for/diagnostic-centres`, `/for/hospitals`, `/for/chains`; `/security`; `/resources` (three guides).
 3. `/pricing`: plans built from the console (Clinic Starter ₹4,999/month up to Hospital Enterprise ₹59,999/month), with a FAQ.
-4. `/demo`: **Book a demo** → a lead on the console's Growth page and an e-mail to MediCare support.
-5. A **cookie banner**: "Only necessary" or "Accept ad cookies". Campaign tags in the address (`?utm_source=google&utm_campaign=…`) are remembered and show against the signup or demo request on the console; ad click ids only with "Accept".
-6. `/signup`: a hospital owner picks an address (`<slug>`), plan and e-mail. The address is held for 24 h and a confirmation e-mail goes out (Mailpit).
-7. `/signup/verify` → `/signup/status`: the confirmation link starts provisioning: its own database, login realm, modules, trial and file storage. Five readiness checks tick green. An owner e-mail says "your hospital is ready".
-8. The owner signs in and lands on the **setup wizard** (see 3.10).
+4. `/status`: whether MediCare is working, with incidents and planned maintenance.
+5. `/demo`: **Book a demo** → a lead on the console's Growth page and an e-mail to MediCare support.
+6. A **cookie banner**: "Only necessary" or "Accept ad cookies". Campaign tags in the address (`?utm_source=google&utm_campaign=…`) are remembered and show against the signup or demo request on the console; ad click ids only with "Accept".
+7. `/signup`: a hospital owner picks an address (`<slug>`), plan and e-mail. The address is held for 24 h and a confirmation e-mail goes out (Mailpit).
+8. `/signup/verify` → `/signup/status`: the confirmation link starts provisioning: its own database, login realm, modules, trial and file storage. Five readiness checks tick green. An owner e-mail says "your hospital is ready".
+9. The owner signs in and lands on the **setup wizard** (see 3.10).
 
 **On a hospital's site (aarogya.localhost:3400)**
 1. Home page in the hospital's colours and logo: search, next available doctors, specialties, packages, branches.
@@ -278,8 +279,9 @@ Try: `product@medicare.test`, `approver@medicare.test`, `support@medicare.test`,
 | `/platform/registry` | all | The module registry: every module, its features, settings and dependencies (read-only; built by developers) |
 | `/platform/audit` | all | Who changed which plan, price or contract |
 | `/platform/growth` | all read; support updates | **Growth**: demo requests and signups by campaign down to paying hospitals; each demo request with where it came from, a status and a note; the Google Ads conversion file; whether Meta's Conversions API is set up |
+| `/platform/status` | all read; support posts | **Status page**: each component's state from the services' health checks; post an incident or planned maintenance, its updates and its resolution. Hospitals' staff see a banner while one is open; everyone sees it at `/status` |
 
-**Operations (CLI, MediCare engineers)**: `mc search reindex <slug>|--all`, `mc tenant create|move|ring|export`, `mc migrate --max-ring`, `mc backup run|list|drill|status`, `mc server add`, `mc keys rotate`, `mc events dlq|replay`. See [MULTI-TENANCY.md](MULTI-TENANCY.md) §3.4–3.5.
+**Operations (CLI, MediCare engineers)**: `mc load prepare|run`, `mc status publish`, `mc test chaos`, `mc search reindex <slug>|--all`, `mc tenant create|move|ring|export`, `mc migrate --max-ring`, `mc backup run|list|drill|status`, `mc server add`, `mc keys rotate`, `mc events dlq|replay`. See [MULTI-TENANCY.md](MULTI-TENANCY.md) §3.4–3.5, [OPERATIONS.md](OPERATIONS.md) and the [runbooks](runbooks/README.md).
 
 ---
 
