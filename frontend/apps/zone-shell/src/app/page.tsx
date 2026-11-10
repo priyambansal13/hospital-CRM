@@ -7,6 +7,8 @@ import { PlatformHome } from './platform-home';
 import { redirect } from 'next/navigation';
 import type { Metadata } from 'next';
 import { describe, pageMeta } from '@mc/features/seo';
+import { CampaignCookie } from '@/lib/campaign';
+import { MarketingFrame } from '@/lib/marketing-frame';
 import { publicBranches } from '@/lib/public-site';
 import { PLATFORM_SLUG } from '@/lib/site';
 import { ZONE_BASES, ZONES } from '@/lib/zones';
@@ -23,9 +25,11 @@ export async function generateMetadata(): Promise<Metadata> {
     });
   }
   const cities = [...new Set((await publicBranches().catch(() => [])).map((x) => x.city))].join(', ');
+  // the hospital's own words (Admin → Search and ads) when it wrote them
+  const own = b.branding.description;
   return pageMeta({
     title: `${b.name}${cities ? `, ${cities}` : ''} · Book doctors and lab tests online`,
-    description: describe(`Book a doctor or a lab test at ${b.name}${cities ? ` in ${cities}` : ''}. See each doctor's next free time, pay online and get your reports on your phone.`),
+    description: describe(own ?? `Book a doctor or a lab test at ${b.name}${cities ? ` in ${cities}` : ''}. See each doctor's next free time, pay online and get your reports on your phone.`),
     path: '/',
   });
 }
@@ -37,9 +41,9 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ d
     const b = await getBranding();
     // MediCare's own site (what hospitals buy) or the hospital's site (what patients need first)
     return (
-      <ZoneFrame zone="shell" path="/" zones={ZONES} requireAuth={false} wide>
-        {b.slug === PLATFORM_SLUG ? <PlatformHome /> : <HospitalHome name={b.name} />}
-      </ZoneFrame>
+      b.slug === PLATFORM_SLUG
+        ? <MarketingFrame path="/"><PlatformHome /></MarketingFrame>
+        : <ZoneFrame zone="shell" path="/" zones={ZONES} requireAuth={false} wide><HospitalHome name={b.name} /><CampaignCookie /></ZoneFrame>
     );
   }
   const caps = await getCapabilities('/');

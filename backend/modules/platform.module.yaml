@@ -20,6 +20,7 @@ nav:
   - { key: console-pricebook, label: Prices, zone: platform, href: /platform/pricebook, permissions: [platform_console:access:tenant, catalog:read:tenant], audience: staff }
   - { key: console-editions, label: Editions, zone: platform, href: /platform/editions, permissions: [platform_console:access:tenant, catalog:read:tenant], audience: staff }
   - { key: console-registry, label: Modules, zone: platform, href: /platform/registry, permissions: [platform_console:access:tenant, catalog:read:tenant], audience: staff }
+  - { key: console-growth, label: Growth, zone: platform, href: /platform/growth, permissions: [platform_console:access:tenant, customer:read:tenant], audience: staff }
   - { key: console-audit, label: Audit, zone: platform, href: /platform/audit, permissions: [platform_console:access:tenant, customer:read:tenant], audience: staff }
 defaultRoleGrants:
   PLATFORM_PRODUCT: [platform_console:access:tenant, catalog:read:tenant, catalog:edit:tenant, customer:read:tenant]

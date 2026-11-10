@@ -96,8 +96,9 @@ export class DispatcherJob implements OnApplicationBootstrap, OnApplicationShutd
       } catch (e) {
         const attempts = n.attempts + 1;
         await c.query(
-          `UPDATE notifications SET attempts = $2, last_error = $3, status = CASE WHEN $2 >= $4 THEN 'FAILED' ELSE 'SCHEDULED' END,
-             send_at = now() + make_interval(mins => power(2, $2)::int) WHERE id = $1`,
+          // $2 typed once: Postgres can't deduce one type for it from attempts, a comparison and power() (it chose text)
+          `UPDATE notifications SET attempts = $2::int, last_error = $3, status = CASE WHEN $2::int >= $4::int THEN 'FAILED' ELSE 'SCHEDULED' END,
+             send_at = now() + make_interval(mins => power(2, $2::int)::int) WHERE id = $1`,
           [n.id, attempts, (e as Error).message.slice(0, 500), MAX_ATTEMPTS],
         );
       }

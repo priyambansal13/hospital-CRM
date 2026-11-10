@@ -9,7 +9,9 @@ There are **two audiences** and they need different plans:
 | **A. MediCare itself** (B2B) | Hospital owners, clinic doctors, lab owners, operations managers | "clinic management software", "hospital software India", "lab report software" | A trial signup or a demo request |
 | **B. Each hospital's own site** (a product feature we sell) | Patients | "cardiologist in Gurugram", "CBC test near me", "Dr. Ananya Sharma" | A booking on the hospital's site |
 
-Plan B is also a selling point: **"your doctors and tests show up on Google, and the click books on your own site, not a marketplace's"**. The basics are built (see §2.1).
+Plan B is also a selling point: **"your doctors and tests show up on Google, and the click books on your own site, not a marketplace's"**.
+
+**Built so far:** hospital-site SEO (2026-11-09, §2.1); the marketing site, demo requests, the funnel with consent and conversions, and hospitals' own search settings and campaign links (2026-11-10, §1.2, §3.5, §2.1, §4). Checked by `mc test seo` (36 checks), `mc test growth` (40 checks) and the browser test `p30-seo-ads`. What still needs accounts or people is in §5.
 
 Budgets, volumes and rates below are **planning assumptions to check**, not measured data.
 
@@ -34,7 +36,16 @@ Group the keywords by intent and give each group one page to rank for it.
 
 Check volumes and difficulty in Google Keyword Planner and Search Console before writing. Start with **segment** and **job-to-be-done** pages: competition is lower and the intent is closer to buying.
 
-### 1.2 Site pages to build (marketing site, zone-shell)
+### 1.2 Site pages (marketing site, zone-shell)
+
+**Built 2026-11-10** on MediCare's host only (a hospital's host answers 404): `/features` and a page per feature (8: online booking, front desk, records, lab, home collection, AI assistant, billing, analytics); `/for/clinics`, `/for/diagnostic-centres`, `/for/hospitals`, `/for/chains`; `/security`; `/resources` with three guides; `/demo` (creates a lead, §3.5) and `/demo/thanks`; `/pricing` gained a FAQ. Words are in `frontend/apps/zone-shell/src/lib/marketing.ts`; every claim there must be true of the built product. Which plans include a feature, and prices, come from the live plans. Every page links to every other through a footer of link columns.
+
+**Not built, on purpose:**
+- `/compare/<competitor>`: needs dated, sourced facts about competitors; write them by hand and have them reviewed.
+- `/for/dental` and `/for/eye-care`: the product has nothing specific to them yet (no dental charting or eye records); a page would over-promise.
+- `/compliance` and the DPDP and ABDM guides: legal content needs a lawyer's review, and ABDM isn't integrated.
+
+The plan as written:
 
 | Page | Content | Call to action |
 |---|---|---|
@@ -59,7 +70,7 @@ Each article links to the matching feature page. A doctor or hospital operations
 
 ### 1.3 Technical SEO for the marketing site
 
-**Built 2026-11-09:** titles, descriptions and canonical addresses for the home, pricing and signup pages; `Organization` and `SoftwareApplication` structured data; `sitemap.xml` and `robots.txt` for MediCare's host. Still to do: the feature, segment and resource pages, `FAQPage`, and Search Console.
+**Built 2026-11-09 and 2026-11-10:** titles, descriptions and canonical addresses on every marketing page; `Organization` and `SoftwareApplication` on the home page, `FAQPage` on pricing, `Article` on guides, `BreadcrumbList` everywhere; every page in `sitemap.xml` and allowed in `robots.txt` (the thank-you page, sign-in, signup progress and the console are not); a generated sharing card (`/og.png`, 1200×630). Still to do: Search Console and Bing Webmaster Tools (need the real domain).
 
 - A unique `title` and `description` on every page, plus Open Graph and Twitter cards for sharing on WhatsApp and LinkedIn.
 - `sitemap.xml` and `robots.txt`.
@@ -102,19 +113,22 @@ Built from the list below and checked by `mc test seo` (36 checks).
 
 **Operations.** After deploying: run `mc migrate` (provider migration `0003_doctor_slugs` gives every existing doctor an address) and `mc search reindex --all`, so search results link to the readable addresses. Until the re-index, search results without a `slug` link by id and are redirected.
 
-### 2.2 Still to do
+### 2.2 Built 2026-11-10, and what is left
 
-1. **Admin SEO settings** (`/admin/settings` → Search):
-   - a hospital description and the area for each branch;
-   - checks on each doctor's profile, such as "bio too short" or "no photo".
-2. **Google Business Profile checklist:** link each branch's profile to its branch page with UTM tags, and show bookings by source in `/admin/analytics`.
-3. **Plan gating of extras:**
-   - the basics above are on for every plan with public pages;
-   - custom-domain canonical addresses come with Enterprise;
-   - a reviewed SEO content pack could be sold as an add-on.
-4. **Branch renames:** a branch's address comes from its name, so renaming a branch changes the address and the old one stops working. Keep old branch addresses, as doctors' are kept, if renames turn out to be common.
-5. **Hindi pages**, and `hreflang` once a Hindi interface exists.
-6. **Images:** doctor photos (the `photoUrl` field exists) and a branded social-sharing image per hospital.
+Built (checked by `mc test growth` and `p30-seo-ads`):
+
+| Item | State |
+|---|---|
+| **Admin → Search and ads** (`/admin/seo`, hospital admins) | ✅ The hospital's description (home page, search results, `MedicalOrganization.description`); the **area** each branch serves (in the branch title and `areaServed`); a **profile check** per doctor (not published, short "about", no photo, no qualifications, no experience, one language); a **campaign-link builder**; bookings by campaign link for the last 30 days; the Google Business Profile checklist; India's rules on medical advertising. |
+| Google Business Profile | ✅ A checklist with a ready link per branch (`/care/branches/<slug>?utm_source=google-business&utm_campaign=<slug>`). Creating and verifying the profiles is the hospital's job. |
+| Branch renames | ✅ The old address is kept (`branch_slugs`, tenant migration `0002_branch_seo`) and redirects (308) to the current one; renaming back makes the original current again. |
+| Images | ✅ A doctor's photo (`photoUrl`, an http(s) link set on the doctor's profile in Admin) on the profile, in the doctor cards, in `Physician.image` and as the sharing image; every other page shares the hospital's generated card (`/og.png`: its name in its own colours). |
+
+Left:
+1. **Plan gating of extras:** today every plan with public pages gets all of the above (custom-domain canonical addresses already come with Enterprise through custom domains). A reviewed SEO content pack could be sold as an add-on later.
+2. **Hindi pages** and `hreflang`, once a Hindi interface exists.
+3. **Photo upload:** photos are links for now; uploading to the hospital's storage would be friendlier.
+4. Lab-test bookings don't record campaigns yet (appointments do).
 
 **Tests (in `mc test seo`):**
 - every public page has its own title and is its own canonical;
@@ -209,10 +223,14 @@ Run Search first (weeks 1–4). Add Meta and remarketing once the landing pages 
 ### 3.5 Measuring it (and staying out of patient data)
 
 - **The funnel:** ad click → landing page → `/signup` or `/demo` → signup confirmed → hospital READY → first booking → paid subscription.
-- **What to build:**
-  - UTM parameters saved with the signup (`tenant.signups`: source, medium, campaign, term);
-  - a `lead` record for `/demo`;
-  - conversions sent to Google Ads and Meta from the server (Enhanced Conversions, the Conversions API) using **only the signup e-mail, hashed**.
+- **Built 2026-11-10:**
+  - **Attribution.** The marketing site keeps the visit's UTM tags and landing page in a first-party cookie (`mc_attr`, 30 days). Ad click ids (`gclid`, `fbclid`) are kept **only after the visitor accepts ad cookies**. The server drops them again without consent, and drops any value that doesn't fit rather than refusing the signup. They are stored with the signup (`signups.attribution`) and the demo request (`leads`).
+  - **Leads.** `/demo` → `POST /v1/leads` (tenant-service, rate-limited per e-mail and network) → MediCare support gets an e-mail and in-app notice.
+  - **Funnel.** Console → **Growth** (`/platform/growth`): demo requests, signups started, confirmed, ready and paying, by source / medium / campaign (30, 90 or 365 days). Support updates each request's status (new, contacted, demo done, won, lost) and adds a note; the product team can read.
+  - **Conversions.** `conversions` records LEAD, SIGNUP (e-mail confirmed), READY and PAID (first paid invoice, found by a job every 10 minutes) once each, with a **SHA-256 of the e-mail** and nothing else about the person.
+    - **Meta** Conversions API from the server, consented rows only, once `META_PIXEL_ID` and `META_CAPI_TOKEN` are set (`META_TEST_EVENT_CODE` for Meta's test view).
+    - **Google Ads**: a download on the Growth page in Google's offline-conversion format (click id, hashed e-mail, conversion name, India time, value). Upload it under Goals → Conversions → Uploads, after creating conversion actions named "MediCare demo request", "MediCare signup confirmed", "MediCare hospital ready" and "MediCare first payment".
+  - **Consent banner** on the marketing site: "Only necessary" or "Accept ad cookies", reopened from "Cookie settings" in the footer. Ad tags (Google `GOOGLE_ADS_TAG_ID`, Meta `META_PIXEL_ID`) load only after "Accept", for remarketing; conversions go from the server, not the browser.
 - **Hard rule: tracking pixels go only on the marketing site** (`localhost:3400` in dev; medicare.in or similar in production).
   - **Never** on a hospital's patient site, `/care`, the patient app or any staff zone.
   - Pixels on health pages would send patients' health information to ad platforms. That breaks the DPDP Act's purpose limits and the ad platforms' own health-data policies, and it would destroy the trust story in SALES-STORY §7.
@@ -224,10 +242,10 @@ Run Search first (weeks 1–4). Add Meta and remarketing once the landing pages 
 ## 4. Ads that hospitals run (optional feature, later)
 
 Hospitals on MediCare will want to advertise to patients too ("cardiac check-up package ₹1,999"). Help them without risking patient data:
-- **Shareable package and doctor links with UTM tags** from `/admin`. Bookings from them show by source in `/admin/analytics`.
+- ✅ **Shareable links with campaign tags** (built 2026-11-10): Admin → Search and ads makes a link to any public page (home, doctors, a branch, a doctor, lab tests, a package). On the hospital's site a link with `utm_source` leaves a first-party cookie (`mc_src`, 30 days, "source / campaign" only). An online appointment booked meanwhile records it (`appointments.campaign`), and analytics has a **Campaign link** dimension. No pixels, no third parties.
 - **Landing pages** for a package or a health camp, built from the catalogue.
 - **No ad pixels on patient pages, and no customer-list uploads.** Retargeting by health condition is exactly what the law and the ad platforms forbid.
-- A **checklist in the admin** for India's rules on medical advertising:
+- ✅ A **checklist in the admin** (Search and ads) for India's rules on medical advertising:
   - the Drugs and Magic Remedies (Objectionable Advertisements) Act;
   - the NMC professional-conduct rules on what individual doctors may advertise;
   - Google's and Meta's healthcare ad policies.
@@ -238,8 +256,8 @@ Hospitals on MediCare will want to advertise to patients too ("cardiac check-up 
 ## 5. Before spending
 
 1. **The name.** "MediCare" clashes with the US Medicare programme and with existing Indian healthcare brands. Run a trademark check (India class 9, 42 and 44) and look at what the search results show before buying brand ads or a domain. A distinct name would make SEO and ads much cheaper.
-2. **The domain**, Google Search Console, Google Ads and Meta Business accounts, plus a consent banner.
-3. **Landing pages** (§1.2) and the funnel tracking (§3.5) built and tested.
+2. **The domain**, Google Search Console, Google Ads and Meta Business accounts. Then set `GOOGLE_ADS_TAG_ID`, `META_PIXEL_ID` and `META_CAPI_TOKEN` (the consent banner is built).
+3. ✅ **Landing pages** (§1.2) and the funnel tracking (§3.5) are built and tested. Have someone who sells to hospitals read the pages' words before ads point at them.
 4. **A real demo environment** in the cloud, not localhost, so the "Book a demo" and trial links work. This needs the GCP project.
 5. **Proof:** at least one pilot hospital, so ads can quote real numbers.
 
@@ -248,6 +266,7 @@ Hospitals on MediCare will want to advertise to patients too ("cardiac check-up 
 | Item | Where | Size |
 |---|---|---|
 | ~~Hospital-site SEO: metadata, readable addresses, sitemap and robots per host, structured data, branch pages, `noindex` on staff zones, tests~~ | ✅ done 2026-11-09 (§2.1); the rest is in §2.2 | — |
-| Marketing site pages: features, segments, security, compare, resources, demo form with lead capture | zone-shell, tenant-service (`leads`) | about 1–2 weeks plus content writing |
-| Funnel tracking: UTM on signups and leads, server-side conversions (hashed e-mail), consent banner, pixels only on the marketing host | zone-shell, tenant-service | about 1 week |
-| Hospital campaign links and source analytics | admin, analytics | a few days |
+| ~~Marketing site pages: features, segments, security, resources, demo form with lead capture~~ | ✅ done 2026-11-10 (§1.2); compare pages and legal guides wait for reviewed content | — |
+| ~~Funnel tracking: UTM on signups and leads, server-side conversions (hashed e-mail), consent banner, pixels only on the marketing host~~ | ✅ done 2026-11-10 (§3.5) | — |
+| ~~Hospital campaign links and source analytics; admin SEO settings~~ | ✅ done 2026-11-10 (§2.2, §4) | — |
+| Lab-test bookings with campaigns; photo upload; Hindi pages | diagnostics, records, all zones | later |

@@ -16,7 +16,7 @@ export interface DoctorResults { items: PublicDoctor[]; nextCursor: string | nul
 export const getSpecialties = () => api<PublicSpecialty[]>('/api/provider/v1/public/specialties');
 export const getBranches = () => api<{ id: string; name: string }[]>('/api/provider/v1/public/branches');
 /** Active branches with their web address, city and address (tenant-service; for branch pages and structured data). */
-export interface PublicBranch { id: string; slug: string; name: string; city: string; address: { line1: string | null; pincode: string | null }; timezone: string }
+export interface PublicBranch { id: string; slug: string; name: string; city: string; area: string | null; address: { line1: string | null; pincode: string | null }; timezone: string; oldSlugs?: string[] }
 export const getPublicBranches = () => api<PublicBranch[]>('/api/tenant/v1/public/branches');
 
 const SEARCH_TIMEOUT_MS = Number(process.env.SEARCH_TIMEOUT_MS ?? 1500);

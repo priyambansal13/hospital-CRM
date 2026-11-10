@@ -2,7 +2,7 @@ import 'server-only';
 import { api } from '@mc/bff';
 
 /** What a hospital's public site is built from (no sign-in; the hospital comes from the host). */
-export interface PublicBranch { id: string; slug: string; name: string; city: string; address: { line1: string | null; pincode: string | null }; timezone: string }
+export interface PublicBranch { id: string; slug: string; name: string; city: string; area?: string | null; address: { line1: string | null; pincode: string | null }; timezone: string }
 export const publicBranches = () => api<PublicBranch[]>('/api/tenant/v1/public/branches');
 export const publicModules = () => api<{ modules: string[]; readOnly: string[] }>('/api/entitlement/v1/public/modules');
 export interface PublicSpecialty { code: string; name: string; doctorCount: number }

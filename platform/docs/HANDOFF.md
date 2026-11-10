@@ -1,4 +1,4 @@
-# Handoff: where work stopped (2026-11-09, after hospital-site SEO; Phase 30 part 2 still next)
+# Handoff: where work stopped (2026-11-10, after the rest of SEO and ads; Phase 30 part 2 still next)
 
 ## State
 - Phases 0–27 and 29 are built; M5 (AI) is complete; M6: Phase 26 (patient memberships) and Phase 27 (custom fields, forms, workflow rules, webhooks, API keys, FHIR read API, LIS connector; new integration-service on 4416) done 2026-10-31; Phase 29 (analytics warehouse and dashboards, new analytics-service on 4417; Ops agent, morning brief, care-gap reminders, no-show outreach) done 2026-11-01. Phase 28 (video) is the only M6 phase left and is skipped for now (user decision 2026-11-01). UI v2 (design system, staff sidebar, live-data home pages, dashboards) on 2026-10-31. Phase 22: AI foundation and the knowledge-only concierge (`ai-assistant-service` on 4415). On 2026-10-31: Phase 23 (concierge booking tools with Confirm cards), Phase 24 (lab report explainer, doctor pre-visit summary), Phase 25 (AI scribe, deterministic prescription safety, the concierge on WhatsApp). All AI work ran on the offline dev model only.
@@ -16,6 +16,8 @@
   - [SALES-STORY.md](SALES-STORY.md): the sales story;
   - [SEO-AND-ADS.md](SEO-AND-ADS.md): the SEO and ads plan;
   - and **hospital-site SEO is built** (SEO-AND-ADS §2.1, `mc test seo`, 36 checks). See "SEO notes" below.
+- **2026-11-10, the rest of SEO and ads** (user request "rest of seo and ads first"): the marketing site (features, segments, security, guides, demo form, pricing FAQ), the growth funnel (attribution with consent, leads, conversions, Meta Conversions API and a Google Ads file, console Growth page), and hospitals' Search and ads page (description, branch areas, profile checks, campaign links with bookings by campaign, Google Business Profile and ad-rules checklists), old branch addresses, doctor photos, sharing cards. `mc test growth` (40 checks) and Playwright `p30-seo-ads`. See "Growth notes" below.
+  - Also fixed: the notification dispatcher's retry update failed (`power(integer, text)`), so after any failed send it stopped sending for that hospital; MediCare's own staff e-mails had been stuck since 2026-11-09.
 - The flow review is in [ROLE-FLOWS-AND-GAPS.md](ROLE-FLOWS-AND-GAPS.md). See §8 "Fix log" for details.
   - Wave 1 (15 gaps): fixed 2026-10-25.
   - Wave 2 (access control and staff lifecycle): fixed 2026-10-30.
@@ -53,6 +55,29 @@
 - **Indexing:** every zone layout is `noindex`, and public pages opt in. A new public page must call `pageMeta()`, or it stays out of search.
 - **robots.txt and sitemap.xml** are route handlers in zone-shell (`app/robots.txt`, `app/sitemap.xml`), built per host. A new public section needs an `Allow` line and sitemap entries.
 - **Tests:** `mc test seo` creates 3 test doctors in citycare (left unpublished) and a `seoNNNNNN` hospital (marked DELETED at the end).
+
+## Growth notes worth knowing (2026-11-10)
+- **Where things live:**
+  - marketing words: `frontend/apps/zone-shell/src/lib/marketing.ts` (must stay true of the product);
+  - pages under zone-shell `app/features`, `app/for`, `app/security`, `app/resources`, `app/demo`, each calling `marketingOnly()` (404 on a hospital's host) and wrapped in `MarketingFrame`. On a hospital's host the frame renders no tracking and no marketing links.
+- **Data (control DB, tenant-service migration `0005_growth`):**
+  - `signups.attribution` and `ads_consent`;
+  - `leads`;
+  - `conversions` (LEAD, SIGNUP, READY, PAID; once each; hashed e-mail).
+  - `GrowthJob` (every 10 minutes, `GROWTH_JOB_MS`): records PAID from subscription-service invoices, then sends to Meta when `META_PIXEL_ID` and `META_CAPI_TOKEN` are set. It also runs on `POST /internal/growth/run`.
+- **Cookies:**
+  - marketing host: `mc_attr` (UTM tags, landing page; click ids only with consent) and `mc_consent` (`ads` or `essential`);
+  - hospital hosts: only `mc_src` ("source / campaign", from the hospital's own links).
+  - Never add an ad tag outside `MarketingFrame`.
+- **Hospital side:**
+  - tenant migration `0002_branch_seo` (`branches.area`, `branch_slugs`; a rename stores the old slug);
+  - scheduling `0010_campaign` (`appointments.campaign`, online bookings only);
+  - analytics `0002_campaign` (`fact_appointments.campaign`, dimension `campaign`);
+  - provider: `photoUrl` is editable on the doctor profile;
+  - branding `description` (saving it alone doesn't tick the setup wizard's branding step).
+- **Sharing card:** zone-shell `app/og.png` (next/og); `pageMeta` uses it unless a page passes `image`.
+- **Tests:** `mc test growth` deletes its own demo requests at the end. It renames Aarogya's Noida branch and puts it back, and sets and clears Dr. Asha Rao's photo. The browser test `p30-seo-ads` leaves one "E2E Clinic" demo request.
+- **Local data note:** the console browser test (p18) publishes a new `DIAG_CENTER_PRO_E*` plan on every run, so `/pricing` lists many copies locally. Marketing pages show each plan name once (`distinctPlans`), but `/pricing` still lists them all.
 
 ## Phase 29 notes worth knowing (2026-11-01)
 - analytics-service is the 17th service (port 4417, schema `analytics`, tenant only, consumer group `analytics.warehouse`). Same new-service steps as Phase 27 (configure, build, db bootstrap, migrate, gateway sync, PgBouncer restart, `mc dev` restart). ai-assistant-service now publishes `assistant.events` (relay on): `mc db bootstrap` creates the topic.

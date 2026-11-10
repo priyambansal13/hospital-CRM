@@ -1,8 +1,9 @@
 import { branchLd, breadcrumbLd, describe, JsonLd, NO_INDEX, pageMeta, site } from '@mc/features/seo';
 import { ZoneFrame } from '@mc/features';
+import { origin } from '@mc/bff';
 import { Card, PageHeader } from '@mc/ui';
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
+import { notFound, permanentRedirect } from 'next/navigation';
 import { cache } from 'react';
 import { DoctorCard } from '@/lib/doctor-card';
 import { getPublicBranches, searchDoctors } from '@/lib/directory';
@@ -11,7 +12,12 @@ import { ZONES } from '@/lib/zones';
 
 export const dynamic = 'force-dynamic';
 
-const load = cache(async (slug: string) => (await getPublicBranches()).find((b) => b.slug === slug) ?? null);
+/** By its current address, or one it had before a rename (the page then redirects). */
+const load = cache(async (slug: string) => {
+  const all = await getPublicBranches();
+  return all.find((b) => b.slug === slug) ?? all.find((b) => b.oldSlugs?.includes(slug)) ?? null;
+});
+const place = (b: { area: string | null; city: string }) => (b.area && !b.area.toLowerCase().includes(b.city.toLowerCase()) ? `${b.area}, ${b.city}` : b.area ?? b.city);
 
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
@@ -19,9 +25,9 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   if (!b) return NO_INDEX;
   const s = await site();
   return pageMeta({
-    title: `${s.name}, ${b.name} · Doctors, lab tests and timings`,
-    description: describe(`${s.name} at ${[b.address.line1, b.city].filter(Boolean).join(', ')}${b.address.pincode ? ` ${b.address.pincode}` : ''}.`, 'See the doctors and lab tests at this branch and book online.'),
-    path: `/care/branches/${slug}`,
+    title: `${s.name}, ${b.name}${b.area ? ` (${place(b)})` : ''} · Doctors, lab tests and timings`,
+    description: describe(`${s.name} at ${[b.address.line1, b.area ? place(b) : b.city].filter(Boolean).join(', ')}${b.address.pincode ? ` ${b.address.pincode}` : ''}.`, 'See the doctors and lab tests at this branch and book online.'),
+    path: `/care/branches/${b.slug}`,
   });
 }
 
@@ -30,14 +36,16 @@ export default async function Branch({ params }: { params: Promise<{ slug: strin
   const { slug } = await params;
   const b = await load(slug);
   if (!b) notFound();
+  // absolute: a path here would get the zone's basePath (/care) twice
+  if (b.slug !== slug) permanentRedirect(`${await origin()}/care/branches/${b.slug}`);
   const [s, offered] = await Promise.all([site(), publicModules()]);
   const directory = offered.modules.includes('directory');
   const doctors = directory ? await searchDoctors(new URLSearchParams({ branch: b.id, limit: '50' })) : { items: [], nextCursor: null };
   const labOnly = !directory && offered.modules.includes('diagnostics');
-  const address = [b.address.line1, b.city, b.address.pincode].filter(Boolean).join(', ');
+  const address = [b.address.line1, b.area && !b.address.line1?.includes(b.area) ? b.area : null, b.city, b.address.pincode].filter(Boolean).join(', ');
   return (
     <ZoneFrame zone="patient" path="/care/doctors" zones={ZONES} requireAuth={false}>
-      <JsonLd data={[branchLd(s, b, labOnly), breadcrumbLd(s, [{ name: s.name, path: '/' }, { name: b.name, path: `/care/branches/${slug}` }])]} />
+      <JsonLd data={[branchLd(s, b, labOnly), breadcrumbLd(s, [{ name: s.name, path: '/' }, { name: b.name, path: `/care/branches/${b.slug}` }])]} />
       <PageHeader title={`${s.name}, ${b.name}`} subtitle={address} />
       <Card title="Visit us">
         <p style={{ marginTop: 0 }}>{address}</p>

@@ -5,7 +5,7 @@ export function DoctorCard({ d }: { d: PublicDoctor }) {
   const primary = d.specialties.find((s) => s.primary) ?? d.specialties[0];
   return (
     <article className="mc-card mc-doctor">
-      <div className="mc-avatar" aria-hidden>{initials(d.name)}</div>
+      {d.photoUrl ? <img className="mc-avatar" src={d.photoUrl} alt="" width={56} height={56} loading="lazy" style={{ objectFit: 'cover' }} /> : <div className="mc-avatar" aria-hidden>{initials(d.name)}</div>}
       <div>
         <h3><a href={doctorPath(d)}>{d.name}</a></h3>
         <p className="mc-meta">

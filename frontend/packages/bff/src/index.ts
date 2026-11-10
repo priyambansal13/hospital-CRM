@@ -113,7 +113,7 @@ export interface Branding {
   tenantId: string;
   slug: string;
   name: string;
-  branding: { primaryColor?: string; accentColor?: string; logoUrl?: string | null };
+  branding: { primaryColor?: string; accentColor?: string; logoUrl?: string | null; description?: string | null };
   /** ACTIVE, or why the hospital isn't open (search engines are kept away then) */
   status?: string;
   /** the address pages call canonical: a verified custom domain first, else the platform subdomain */

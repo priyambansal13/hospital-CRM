@@ -20,6 +20,8 @@ const Profile = {
   experienceYears: z.number().int().min(0).max(70).nullable(),
   languages: z.array(Lang).max(10),
   bio: z.string().trim().max(2000).nullable(),
+  /** a public https image (the hospital's own site or CDN), shown on the profile and in shared links */
+  photoUrl: z.url({ protocol: /^https?$/ }).max(500).nullable(),
   consultModes: z.array(Mode).min(1),
   specialties: z.array(SpecialtyRef).min(1).max(5),
   branches: z.array(BranchFee).min(1).max(50),
@@ -33,6 +35,7 @@ export const CreateDoctor = z.object({
   experienceYears: Profile.experienceYears.default(null),
   languages: Profile.languages.default(['en']),
   bio: Profile.bio.default(null),
+  photoUrl: Profile.photoUrl.default(null),
   consultModes: Profile.consultModes.default(['IN_PERSON']),
 });
 /** No defaults on update: only the fields sent change. */
@@ -81,9 +84,9 @@ export class DoctorsController {
     try {
       await this.db.tx(async (c) => {
         await c.query(
-          `INSERT INTO doctors (id, user_id, email, full_name, gender, registration_no, qualifications, experience_years, languages, bio, consult_modes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-          [id, userId, input.email, input.name, input.gender, input.registrationNo, input.qualifications, input.experienceYears, input.languages, input.bio, input.consultModes],
+          `INSERT INTO doctors (id, user_id, email, full_name, gender, registration_no, qualifications, experience_years, languages, bio, consult_modes, photo_url)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+          [id, userId, input.email, input.name, input.gender, input.registrationNo, input.qualifications, input.experienceYears, input.languages, input.bio, input.consultModes, input.photoUrl],
         );
         await this.writeLinks(c, id, specialtyIds, input.branches);
         await this.repo.assignSlug(c, id);
@@ -111,10 +114,10 @@ export class DoctorsController {
         `UPDATE doctors SET full_name = coalesce($3, full_name), gender = CASE WHEN $4::boolean THEN $5 ELSE gender END,
            qualifications = coalesce($6, qualifications), experience_years = CASE WHEN $7::boolean THEN $8 ELSE experience_years END,
            languages = coalesce($9, languages), bio = CASE WHEN $10::boolean THEN $11 ELSE bio END, consult_modes = coalesce($12, consult_modes),
-           version = version + 1, updated_at = now()
+           photo_url = CASE WHEN $13::boolean THEN $14 ELSE photo_url END, version = version + 1, updated_at = now()
          WHERE id = $1 AND version = $2`,
         [id, input.version, input.name ?? null, 'gender' in input, input.gender ?? null, input.qualifications ?? null,
-          'experienceYears' in input, input.experienceYears ?? null, input.languages ?? null, 'bio' in input, input.bio ?? null, input.consultModes ?? null],
+          'experienceYears' in input, input.experienceYears ?? null, input.languages ?? null, 'bio' in input, input.bio ?? null, input.consultModes ?? null, 'photoUrl' in input, input.photoUrl ?? null],
       );
       if (!rowCount) throw conflict('VERSION_CONFLICT', 'doctor was changed by someone else; reload and retry');
       if (specialtyIds || input.branches) {

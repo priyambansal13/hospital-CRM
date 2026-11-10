@@ -55,7 +55,7 @@ export async function HospitalHome({ name }: { name: string }) {
           <div>
             <span className="mc-eyebrow"><i aria-hidden />{today ? `${today} doctor${today === 1 ? '' : 's'} with free times today` : 'Book online in a minute'}</span>
             <h1>Care at <em>{name}</em>, booked in a minute.</h1>
-            <p className="mc-lead">Find the right doctor by symptom or name, see their next free time, book and pay online. Lab tests, reports and a 24×7 assistant, all in one place.</p>
+            <p className="mc-lead">{seo.branding.branding.description ?? 'Find the right doctor by symptom or name, see their next free time, book and pay online. Lab tests, reports and a 24×7 assistant, all in one place.'}</p>
             <form className="mc-search" action="/care/doctors" role="search">
               <Icon name="search" size={20} />
               <input name="q" placeholder="Try “skin rash”, “child fever” or a doctor's name" aria-label="Symptom, specialty or doctor" />

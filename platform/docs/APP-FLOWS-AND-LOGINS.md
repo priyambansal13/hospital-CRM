@@ -106,11 +106,14 @@ Legend: **[module]** is the sellable module the screen belongs to; the screen is
 ### 3.1 Visitor and prospect (no login)
 
 **On the MediCare site (localhost:3400)**
-1. `/`: product home with live published plans.
-2. `/pricing`: plans built from the console (Clinic Starter ₹4,999/month up to Hospital Enterprise ₹59,999/month).
-3. `/signup`: a hospital owner picks an address (`<slug>`), plan and e-mail. The address is held for 24 h and a confirmation e-mail goes out (Mailpit).
-4. `/signup/verify` → `/signup/status`: the confirmation link starts provisioning: its own database, login realm, modules, trial and file storage. Five readiness checks tick green. An owner e-mail says "your hospital is ready".
-5. The owner signs in and lands on the **setup wizard** (see 3.10).
+1. `/`: product home with live published plans and "who it is for".
+2. `/features` and `/features/<feature>` (online booking, front desk, records, lab, home collection, AI assistant, billing, analytics), each saying which live plans include it; `/for/clinics`, `/for/diagnostic-centres`, `/for/hospitals`, `/for/chains`; `/security`; `/resources` (three guides).
+3. `/pricing`: plans built from the console (Clinic Starter ₹4,999/month up to Hospital Enterprise ₹59,999/month), with a FAQ.
+4. `/demo`: **Book a demo** → a lead on the console's Growth page and an e-mail to MediCare support.
+5. A **cookie banner**: "Only necessary" or "Accept ad cookies". Campaign tags in the address (`?utm_source=google&utm_campaign=…`) are remembered and show against the signup or demo request on the console; ad click ids only with "Accept".
+6. `/signup`: a hospital owner picks an address (`<slug>`), plan and e-mail. The address is held for 24 h and a confirmation e-mail goes out (Mailpit).
+7. `/signup/verify` → `/signup/status`: the confirmation link starts provisioning: its own database, login realm, modules, trial and file storage. Five readiness checks tick green. An owner e-mail says "your hospital is ready".
+8. The owner signs in and lands on the **setup wizard** (see 3.10).
 
 **On a hospital's site (aarogya.localhost:3400)**
 1. Home page in the hospital's colours and logo: search, next available doctors, specialties, packages, branches.
@@ -121,7 +124,9 @@ Legend: **[module]** is the sellable module the screen belongs to; the screen is
    - `/care/branches/noida-sector-62`: address, map link and the doctors there;
    - `/care/tests/hba1c` and `/care/packages/full-body`: price, sample, fasting, report time and a Book button;
    - doctor profiles at readable addresses such as `/care/doctors/ananya-sharma-cardiology`.
-   - Each hospital has its own `sitemap.xml` and `robots.txt`.
+   - Each hospital has its own `sitemap.xml` and `robots.txt`, and a sharing card at `/og.png`.
+   - A branch renamed in Admin keeps its old address working (it redirects).
+   - A link with `?utm_source=…&utm_campaign=…` (made in Admin → Search and ads) is remembered for 30 days, and an online booking records it.
 5. `/care/verify/<code>`: anyone can scan the QR code on a lab report and see that it is genuine.
 6. Picking a slot asks the visitor to sign in, then brings them back to the same slot.
 
@@ -232,7 +237,7 @@ Try: `admin@aarogya.test`. Home: `/admin`.
 | `/admin/analytics` | **Dashboards** from the hospital's own warehouse: revenue, visits, no-shows, lab turnaround, by branch and doctor **[analytics]** |
 | `/admin/ops` | **Ops agent**: ask "which branch had the most no-shows last week?" in plain English; **morning brief** e-mail; approve **care-gap** reminder wording before any patient gets it **[ai_ops]** |
 | `/admin/branches` | Branches, addresses, timings, deactivate (future bookings are cancelled and the patients told) |
-| `/admin/doctors`, `/admin/specialties`, `/admin/schedules` | The doctor directory, publishing profiles, fees, hours |
+| `/admin/doctors`, `/admin/specialties`, `/admin/schedules` | The doctor directory, publishing profiles (with a photo link), fees, hours |
 | `/admin/staff`, `/admin/staff/[user]` | Invite staff with a role and branch; deactivate, re-invite, reset sign-in |
 | `/admin/roles` | Edit role permissions or create **custom roles** (nobody can grant a permission they don't hold) |
 | `/admin/billing`, `/admin/billing/[id]` | Invoices, payments, refunds, the **payout account** (changing it needs a step-up code; payouts are held for a while after a change) |
@@ -244,6 +249,7 @@ Try: `admin@aarogya.test`. Home: `/admin`.
 | `/admin/custom-fields`, `/admin/workflows` | **Custom fields** on patients and visits, **pre-visit forms** per specialty, **workflow rules** ("when a lab result is critical, then…") **[workflows]** |
 | `/admin/integrations` | **Webhooks**, **API keys**, the read-only **FHIR API**, the **LIS connector** for lab machines **[integrations]** |
 | `/admin/settings` | Cancellation cut-off and refund rules, reschedule limit, booking horizon, reminders (within the ranges the plan allows) |
+| `/admin/seo` | **Search and ads**: the hospital's description for its home page and Google; the area each branch serves; what each doctor's public profile is missing (photo, "about", qualifications…); **campaign links** to any public page and the bookings each brought; the Google Business Profile checklist with a link per branch; India's rules on medical advertising |
 | `/admin/audit` | Every admin change and every record access |
 | `/admin/plan` | The hospital's MediCare plan and what it includes |
 
@@ -271,6 +277,7 @@ Try: `product@medicare.test`, `approver@medicare.test`, `support@medicare.test`,
 | `/platform/editions` | product | Ready-made bundles: Clinic, Diagnostic Center, Hospital, Telehealth, Specialty chain |
 | `/platform/registry` | all | The module registry: every module, its features, settings and dependencies (read-only; built by developers) |
 | `/platform/audit` | all | Who changed which plan, price or contract |
+| `/platform/growth` | all read; support updates | **Growth**: demo requests and signups by campaign down to paying hospitals; each demo request with where it came from, a status and a note; the Google Ads conversion file; whether Meta's Conversions API is set up |
 
 **Operations (CLI, MediCare engineers)**: `mc search reindex <slug>|--all`, `mc tenant create|move|ring|export`, `mc migrate --max-ring`, `mc backup run|list|drill|status`, `mc server add`, `mc keys rotate`, `mc events dlq|replay`. See [MULTI-TENANCY.md](MULTI-TENANCY.md) §3.4–3.5.
 

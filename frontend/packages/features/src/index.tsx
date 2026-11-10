@@ -162,7 +162,7 @@ function billingBanner(caps: Capabilities, base: string): ReactNode {
 /** What a visitor (not signed in) can open: the hospital's public pages, or MediCare's own on the platform host. */
 async function visitorNav(slug: string, base: string, path: string): Promise<{ key: string; label: string; href: string; active?: boolean }[]> {
   const items = slug === (process.env.PLATFORM_TENANT_SLUG ?? 'medicare')
-    ? [{ key: 'pricing', label: 'Pricing', href: '/pricing' }, { key: 'signup', label: 'Start a trial', href: '/signup' }]
+    ? [{ key: 'features', label: 'Features', href: '/features' }, { key: 'pricing', label: 'Pricing', href: '/pricing' }, { key: 'security', label: 'Security', href: '/security' }, { key: 'demo', label: 'Book a demo', href: '/demo' }, { key: 'signup', label: 'Start a trial', href: '/signup' }]
     : await api<{ modules: string[] }>('/api/entitlement/v1/public/modules').then((m) => [
       ...(m.modules.includes('directory') ? [{ key: 'find-doctor', label: 'Find a doctor', href: '/care/doctors' }] : []),
       ...(m.modules.includes('diagnostics') ? [{ key: 'lab-tests', label: 'Lab tests', href: '/care/tests' }] : []),

@@ -14,3 +14,11 @@ export interface SignupStatus {
   id: string; status: 'PENDING' | 'PROVISIONING' | 'READY' | 'FAILED' | 'EXPIRED'; slug: string; hospitalName: string; email: string; plan: string;
   error: string | null; steps: { key: string; label: string; done: boolean }[]; url: string; loginUrl: string | null;
 }
+
+/** One plan per name, the cheapest (marketing pages list plans, not every published variant of one). */
+export const distinctPlans = (plans: PublicPlan[]) =>
+  [...plans].sort((a, b) => a.listPrice - b.listPrice).filter((p, i, all) => all.findIndex((x) => x.name.replace(/\s*[–-]\s*/g, ' ') === p.name.replace(/\s*[–-]\s*/g, ' ')) === i);
+
+/** The live plans that include every one of these modules, cheapest first. */
+export const plansWith = (plans: PublicPlan[], modules: string[]) =>
+  distinctPlans(plans.filter((p) => modules.every((m) => p.modules.some((x) => x.key === m))));

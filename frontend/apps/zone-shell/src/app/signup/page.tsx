@@ -1,11 +1,10 @@
-import { ZoneFrame } from '@mc/features';
 import { getBranding } from '@mc/bff';
 import { pageMeta } from '@mc/features/seo';
 import type { Metadata } from 'next';
 import { Alert, Button, Card, Field, PageHeader } from '@mc/ui';
 import { signup } from '@/lib/signup-actions';
 import { inr, PLATFORM_SLUG, publicPlans } from '@/lib/site';
-import { ZONES } from '@/lib/zones';
+import { MarketingFrame } from '@/lib/marketing-frame';
 
 export const dynamic = 'force-dynamic';
 
@@ -22,7 +21,7 @@ export default async function Signup({ searchParams }: { searchParams: Promise<Q
   const sp = await searchParams;
   const plans = (await publicPlans()).filter((p) => p.trialDays > 0);
   return (
-    <ZoneFrame zone="shell" path="/signup" zones={ZONES} requireAuth={false}>
+    <MarketingFrame path="/signup" wide={false}>
       <PageHeader title="Start your free trial" subtitle="Your own MediCare in a few minutes: online booking, records and more. No card needed." />
       {sp.error ? <Alert tone="error">{sp.error}</Alert> : null}
       <Card>
@@ -41,6 +40,6 @@ export default async function Signup({ searchParams }: { searchParams: Promise<Q
         </form>
         <p className="mc-meta" style={{ marginBottom: 0 }}><a href="/pricing">Compare plans</a></p>
       </Card>
-    </ZoneFrame>
+    </MarketingFrame>
   );
 }

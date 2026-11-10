@@ -19,6 +19,8 @@ const Branding = z.object({
   primaryColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   accentColor: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
   logoUrl: z.url().nullable().optional(),
+  /** a sentence or two about the hospital for its home page and search engines (Search and ads) */
+  description: z.string().trim().max(300).nullable().optional(),
 });
 
 /** Control-plane API used by the platform CLI/console and by other services (placements, host resolution). */
@@ -99,8 +101,9 @@ export class BrandingController {
   async update(@Body() body: unknown) {
     const id = TenantContext.require().id;
     const { name, ...branding } = parse(Branding, body);
-    // setupBranding: the setup guide's "branding" step is done once the owner saved it
-    await this.provisioning.updateBranding(id, { ...branding, setupBranding: true }, name);
+    // setupBranding: the setup guide's "branding" step is done once the owner saved it (not by the SEO description alone)
+    const looks = name !== undefined || Object.keys(branding).some((k) => k !== 'description');
+    await this.provisioning.updateBranding(id, { ...branding, ...(looks ? { setupBranding: true } : {}) }, name);
     return this.branding();
   }
 }

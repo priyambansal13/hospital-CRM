@@ -39,6 +39,7 @@ nav:
   - { key: audit-admin, label: Audit log, zone: admin, href: /admin/audit, permissions: [audit:read:tenant, admin:access:tenant] }
   - { key: setup-admin, label: Setup, zone: admin, href: /admin/setup, permissions: [settings:manage:tenant, admin:access:tenant] }
   - { key: settings-admin, label: Settings, zone: admin, href: /admin/settings, permissions: [settings:manage:tenant, admin:access:tenant] }
+  - { key: seo-admin, label: Search and ads, zone: admin, href: /admin/seo, permissions: [settings:manage:tenant, admin:access:tenant] }
   - { key: roles-admin, label: Roles, zone: admin, href: /admin/roles, permissions: [role:read:tenant, admin:access:tenant] }
   - { key: plan-admin, label: Plan, zone: admin, href: /admin/plan, permissions: [plan:read:tenant, admin:access:tenant] }
   - { key: account-home, label: Subscription, zone: account, href: /account, permissions: [subscription:manage:tenant], audience: staff }

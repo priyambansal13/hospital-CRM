@@ -52,6 +52,7 @@
 //   test servers                      database servers, moving a hospital between them, release rings (Phase 30)
 //   test backups                      encrypted per-hospital backups, restore drills, tampering detected (Phase 30)
 //   test seo                          hospital sites for search engines: titles, canonical, sitemap, robots, structured data, doctor addresses
+//   test growth                       marketing site, demo requests and the funnel, consent, hospitals' search settings and campaign links
 //   test console                      platform console: plan builder, two-person approval, impact, move hospitals, audit
 //   k8s render <env>                  write deploy/environments/<env>/{generated.yaml,apps.json} from service/zone metadata
 //   k8s check <env>                   helm lint + render every app + kubeconform schema check (needs helm, docker)
@@ -831,6 +832,7 @@ const main = async () => {
       if (sub === 'servers') return run(`node ${join(PLATFORM, 'tests/servers.mjs')}`, PLATFORM);
       if (sub === 'backups') return run(`node ${join(PLATFORM, 'tests/backups.mjs')}`, PLATFORM);
       if (sub === 'seo') return run(`node ${join(PLATFORM, 'tests/seo.mjs')}`, PLATFORM);
+      if (sub === 'growth') return run(`node ${join(PLATFORM, 'tests/growth.mjs')}`, PLATFORM);
       return fail('test tenancy|race|reminders|queue|payments|records|documents|lab|results|home|plans|console|billing|onboarding|search|assistant|gaps|wave2|wave3|wave4|wave5|concierge|copilot|scribe|whatsapp');
     case 'seed':
       if (sub === 'showcase') return run(`node ${join(PLATFORM, 'scripts/seed-showcase.mjs')}`, PLATFORM);

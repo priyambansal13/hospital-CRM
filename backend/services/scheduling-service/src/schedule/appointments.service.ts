@@ -63,6 +63,8 @@ export interface Booking {
   paymentMode?: 'ONLINE' | 'AT_CLINIC';
   /** booked from the AI assistant's Confirm card (Phase 23) */
   via?: 'ASSISTANT' | null;
+  /** the hospital's campaign link the patient came by ("source / campaign"), online bookings only */
+  campaign?: string | null;
   /** membership rules for a patient's own booking (Phase 26); the front desk is not limited by them */
   rules?: MemberRules;
 }
@@ -96,7 +98,7 @@ export class AppointmentsService {
   }
 
   /** Book a slot (pay at clinic). docs/LLD.md §5.2: conditional UPDATE + partial unique index. */
-  async book(actor: Actor, input: { slotId: string; patientId: string; reason: string | null; paymentMode: 'ONLINE' | 'AT_CLINIC' }, via: 'ASSISTANT' | null = null) {
+  async book(actor: Actor, input: { slotId: string; patientId: string; reason: string | null; paymentMode: 'ONLINE' | 'AT_CLINIC'; campaign?: string | null }, via: 'ASSISTANT' | null = null) {
     if (actor.kind !== 'patient') throw forbidden('PATIENTS_ONLY', 'staff book through the front desk');
     const tenant = TenantContext.require();
     const caps = await this.entitlements.capabilities(tenant.id, actor);
@@ -112,7 +114,7 @@ export class AppointmentsService {
       if (f) throw new DomainError(422, 'PREPAYMENT_REQUIRED', `please pay online to book${f.reason ? ` (${f.reason})` : ''}; the front desk can help`, { reason: f.reason });
     }
     const rules = await this.membership.rulesFor(tenant.id, caps, patient.accountPersonId);
-    const appt = await this.bookingTx((c) => this.bookSlot(c, actor, input.slotId, { patient, reason: input.reason, source: 'ONLINE', paymentMode: input.paymentMode, via, rules }));
+    const appt = await this.bookingTx((c) => this.bookSlot(c, actor, input.slotId, { patient, reason: input.reason, source: 'ONLINE', paymentMode: input.paymentMode, via, rules, campaign: input.campaign ?? null }));
     if (appt.status !== 'PENDING_PAYMENT') return appt;
     // after commit (never across a network call): open the invoice + gateway order; if billing is down, give the slot back
     let payment: OnlineCheckout;
@@ -225,10 +227,10 @@ export class AppointmentsService {
     const pending = !!v.holdUntil;
     const { rows: no } = await c.query(`SELECT 'APT-' || to_char(now(), 'YYYY') || '-' || lpad(nextval('appointment_seq')::text, 6, '0') AS no`);
     await c.query(
-      `INSERT INTO appointments (id, appointment_no, slot_id, patient_id, patient_name, patient_mrn, account_person_id, booked_by, doctor_id, branch_id, starts_at, ends_at, mode, status, reason, fee, source, payment_mode, payment_status, hold_expires_at, booked_via, member_benefit)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
+      `INSERT INTO appointments (id, appointment_no, slot_id, patient_id, patient_name, patient_mrn, account_person_id, booked_by, doctor_id, branch_id, starts_at, ends_at, mode, status, reason, fee, source, payment_mode, payment_status, hold_expires_at, booked_via, member_benefit, campaign)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)`,
       [id, no[0].no, v.slotId, b.patient.id, b.patient.fullName, b.patient.mrn, b.patient.accountPersonId, actor.id, v.doctorId, v.branchId, v.startsAt, v.endsAt, v.mode,
-        pending ? 'PENDING_PAYMENT' : 'CONFIRMED', b.reason, v.fee, v.source, pending ? 'ONLINE' : 'AT_CLINIC', v.fee && v.fee > 0 ? 'UNPAID' : 'NOT_DUE', v.holdUntil ?? null, b.via ?? null, v.benefit ?? null],
+        pending ? 'PENDING_PAYMENT' : 'CONFIRMED', b.reason, v.fee, v.source, pending ? 'ONLINE' : 'AT_CLINIC', v.fee && v.fee > 0 ? 'UNPAID' : 'NOT_DUE', v.holdUntil ?? null, b.via ?? null, v.benefit ?? null, b.source === 'ONLINE' ? (b.campaign ?? null) : null],
     );
     const appt = await this.find(c, id);
     // a pending online booking is announced as booked only once paid (notifications confirm on "booked")
@@ -493,7 +495,7 @@ export class AppointmentsService {
       doctorId: a.doctor_id, branchId: a.branch_id, startsAt: new Date(a.starts_at).toISOString(), status: a.status, reason: a.cancel_reason,
       patientName: a.patient_name, patientMrn: a.patient_mrn, doctorName: a.doctor_name, branchName: a.branch_name, localDate: a.local_date, localTime: a.local_time,
       mode: a.mode, fee: a.fee == null ? null : Number(a.fee), rescheduledFrom: a.rescheduled_from,
-      tokenNo: a.token_no ?? null, source: a.source, bookedVia: a.booked_via ?? undefined,
+      tokenNo: a.token_no ?? null, source: a.source, bookedVia: a.booked_via ?? undefined, campaign: a.campaign ?? undefined,
       paymentMode: a.payment_mode, paymentStatus: a.payment_status, invoiceId: a.invoice_id ?? null, doctorUserId: a.doctor_user_id ?? null,
       ...extra,
     };

@@ -1,5 +1,6 @@
 import { JsonLd, site } from '@mc/features/seo';
 import { Icon } from '@mc/ui';
+import { SEGMENTS } from '@/lib/marketing';
 import { inr, type PublicPlan, publicPlans } from '@/lib/site';
 
 /** MediCare's own home page (the platform account's host): what hospitals buy, with the live plan catalogue. */
@@ -37,7 +38,7 @@ export async function PlatformHome() {
             <p className="mc-lead">Booking, front desk, records, lab, billing and AI assistance in one subscription, with your own secure database. Live in an afternoon.</p>
             <div className="mc-actions">
               <a className="mc-btn mc-btn-primary mc-btn-lg" href="/signup">Start a free trial</a>
-              <a className="mc-btn mc-btn-ghost mc-btn-lg" href="/pricing">Plans and prices</a>
+              <a className="mc-btn mc-btn-ghost mc-btn-lg" href="/demo">Book a demo</a>
             </div>
             <div className="mc-hero-tags"><span>No card needed for the trial · Cancel any time · Data export included</span></div>
           </div>
@@ -67,6 +68,13 @@ export async function PlatformHome() {
               <p>{f.text}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section className="mc-section" aria-label="Who it is for">
+        <div className="mc-section-head"><div><span className="mc-kicker">Who it is for</span><h2>Made for your kind of practice</h2></div><a className="mc-btn mc-btn-ghost" href="/features">All features</a></div>
+        <div className="mc-tiles">
+          {SEGMENTS.map((g) => <a key={g.slug} className="mc-tile" href={`/for/${g.slug}`}><strong>{g.name}</strong><span>{g.intro}</span></a>)}
         </div>
       </section>
 

@@ -1,6 +1,7 @@
 'use server';
 import { actionSession } from '@mc/auth';
 import { api, ApiError, origin } from '@mc/bff';
+import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { errorText, myPatients } from './booking';
 
@@ -25,7 +26,8 @@ export async function bookAppointment(f: FormData) {
   try {
     appt = await api('/api/scheduling/v1/appointments', {
       token, idempotencyKey: String(f.get('idempotencyKey')),
-      body: { slotId, patientId: f.get('patientId'), reason: String(f.get('reason') ?? '').trim() || null, paymentMode },
+      // the hospital's campaign link the patient arrived by, if any (scheduling drops a value that doesn't fit)
+      body: { slotId, patientId: f.get('patientId'), reason: String(f.get('reason') ?? '').trim() || null, paymentMode, campaign: (await cookies()).get('mc_src')?.value ?? null },
     });
   } catch (e) {
     if (e instanceof ApiError && e.code === 'SLOT_UNAVAILABLE') return go(`/care/doctors/${f.get('doctorId')}`, { error: 'Sorry, that time was just booked by someone else. Please pick another time.' });

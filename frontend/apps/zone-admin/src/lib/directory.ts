@@ -5,8 +5,8 @@ export interface Specialty { id: string; code: string; name: string; description
 export interface Branch { id: string; name: string; active: boolean }
 export interface Doctor {
   id: string; userId: string | null; email: string; name: string; gender: string | null; registrationNo: string;
-  qualifications: string[]; experienceYears: number | null; languages: string[]; bio: string | null; consultModes: string[];
-  status: 'DRAFT' | 'ACTIVE' | 'INACTIVE'; version: number;
+  qualifications: string[]; experienceYears: number | null; languages: string[]; bio: string | null; photoUrl?: string | null; consultModes: string[];
+  status: 'DRAFT' | 'ACTIVE' | 'INACTIVE'; version: number; slug?: string | null;
   specialties: { code: string; name: string; primary: boolean }[];
   branches: { id: string; name: string | null; fee: number; followupFee: number | null }[];
 }
@@ -30,6 +30,7 @@ export function doctorBody(form: FormData, branches: Branch[]) {
     experienceYears: form.get('experienceYears') ? Number(form.get('experienceYears')) : null,
     languages: list(form.get('languages')).map((l) => l.toLowerCase()),
     bio: String(form.get('bio') ?? '').trim() || null,
+    photoUrl: String(form.get('photoUrl') ?? '').trim() || null,
     consultModes: form.getAll('mode').map(String),
     specialties: specialties.map((code) => ({ code, primary: code === primary })),
     branches: branches

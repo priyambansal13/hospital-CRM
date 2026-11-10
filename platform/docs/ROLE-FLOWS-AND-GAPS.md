@@ -609,6 +609,17 @@ Still open: Ops agent actions with approval, the brief on Slack, editable care-g
 
 Still open: a console page for servers, moves and backups; the CronJobs and a DR test in a real cluster.
 
+### New flows after the review: SEO and ads (2026-11-09 and 2026-11-10)
+
+Details in [SEO-AND-ADS.md](SEO-AND-ADS.md); tests `mc test seo` (36), `mc test growth` (40), Playwright `p30-seo-ads`.
+- **Visitor (MediCare's site):** feature, segment, security and guide pages; **Book a demo**; a cookie banner (ad cookies only after "Accept"); campaign tags remembered with the signup or demo request.
+- **Patient (a hospital's site):** readable addresses for doctors, specialties, branches, tests and packages; a renamed doctor or branch keeps its old address (redirect); doctor photos; a campaign link from the hospital is remembered for 30 days and recorded with an online booking. No ad pixels or third-party cookies on any patient page.
+- **Hospital admin:** **Search and ads** (`/admin/seo`): description, branch areas, doctor-profile checks, campaign links and bookings by campaign, Google Business Profile and medical-advertising checklists; a photo link on each doctor's profile; a **Campaign link** dimension in analytics.
+- **MediCare support and product:** console **Growth** (`/platform/growth`): the funnel by campaign, demo requests (support sets status and note; product reads), the Google Ads conversion file, Meta Conversions API status. Support is e-mailed about each demo request.
+- **Fixed on the way:** the notification dispatcher stopped sending for a hospital after any failed send (its retry update failed on `power(integer, text)`).
+
+Still open: lab-test bookings don't record campaigns; photos are links, not uploads; Hindi pages; compare pages and legal guides wait for reviewed content; Search Console and ad accounts need the real domain.
+
 ---
 
 ## 7. What works well (keep it)

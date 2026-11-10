@@ -2,6 +2,7 @@ import { Body, Controller, Get, HttpCode, Post, Query, Req } from '@nestjs/commo
 import { clientIp, parse, Public } from '@mc/nest-common';
 import { PhoneNumber } from '@mc/contracts';
 import { z } from 'zod';
+import { Attribution } from '../growth/attribution.js';
 import { SignupService } from './signup.service.js';
 
 const Start = z.object({
@@ -11,6 +12,7 @@ const Start = z.object({
   adminEmail: z.email().max(160),
   phone: PhoneNumber.nullable().default(null),
   plan: z.string().regex(/^[A-Z][A-Z0-9_]{2,39}$/),
+  attribution: Attribution,
 });
 const Token = z.object({ token: z.string().max(80) });
 

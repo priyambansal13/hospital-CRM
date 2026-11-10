@@ -19,4 +19,11 @@ describe('publicBranches', () => {
     expect(slug('bbbb')).toBe('noida-sector-62-bbbbbb');
     expect(out[0].address).toEqual({ line1: 'C-56', pincode: '201309' });
   });
+  it('lists the addresses a branch had before a rename, unless another branch uses that address now', () => {
+    const a = 'aaaaaaaa-0000-4000-8000-000000000000';
+    const b = 'bbbbbbbb-0000-4000-8000-000000000000';
+    const out = publicBranches([row(a, 'Noida Sector 62', 1), row(b, 'Gurugram', 2)], [{ slug: 'noida', branch_id: a }, { slug: 'gurugram', branch_id: a }]);
+    expect(out.find((x) => x.id === a)?.oldSlugs).toEqual(['noida']);
+    expect(out.find((x) => x.id === b)?.oldSlugs).toEqual([]);
+  });
 });

@@ -1,4 +1,5 @@
 import { site, specialtySlug, testSlug } from '@mc/features/seo';
+import { MARKETING_PATHS } from '@/lib/marketing';
 import { PLATFORM_SLUG } from '@/lib/site';
 import { publicBranches, publicCatalog, publicDoctorPaths, publicModules, publicSpecialties } from '@/lib/public-site';
 
@@ -8,7 +9,7 @@ const xml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replac
 const soft = <T,>(p: Promise<T>, fallback: T) => p.catch(() => fallback);
 
 /**
- * The public pages of the site this host serves, from live data: MediCare's own pages on the platform host; on a
+ * The public pages of the site this host serves, from live data: MediCare's marketing pages on the platform host; on a
  * hospital's host its home, branches, and (by plan) published doctors, specialties with doctors, tests and packages.
  * Never anything that needs sign-in. Empty for a hospital that isn't open; not found where no hospital answers.
  */
@@ -17,7 +18,7 @@ export async function GET() {
   if (!s) return new Response('Not found\n', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
   const paths: string[] = [];
   if (s.indexable) {
-    if (s.branding.slug === PLATFORM_SLUG) paths.push('/', '/pricing', '/signup');
+    if (s.branding.slug === PLATFORM_SLUG) paths.push(...MARKETING_PATHS);
     else {
       const { modules } = await soft(publicModules(), { modules: [] as string[], readOnly: [] });
       const [branches, specialties, doctors, catalog] = await Promise.all([

@@ -1,6 +1,7 @@
 'use server';
 import { api, ApiError, origin } from '@mc/bff';
 import { redirect } from 'next/navigation';
+import { attribution } from './attribution';
 
 const str = (f: FormData, k: string) => String(f.get(k) ?? '').trim();
 
@@ -8,7 +9,7 @@ const str = (f: FormData, k: string) => String(f.get(k) ?? '').trim();
 export async function signup(f: FormData) {
   const fields = { hospitalName: str(f, 'hospitalName'), slug: str(f, 'slug').toLowerCase(), adminName: str(f, 'adminName'), adminEmail: str(f, 'adminEmail'), phone: str(f, 'phone') || null, plan: str(f, 'plan') };
   try {
-    await api('/api/tenant/v1/signup', { body: fields });
+    await api('/api/tenant/v1/signup', { body: { ...fields, attribution: await attribution() } });
   } catch (e) {
     const msg = e instanceof ApiError ? (e.problem.errors?.map((x) => `${x.path}: ${x.message}`).join('; ') || e.message) : 'Something went wrong';
     const keep = new URLSearchParams({ error: msg, ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v).map(([k, v]) => [k, String(v)])) });

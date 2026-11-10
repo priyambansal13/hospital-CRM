@@ -7,6 +7,8 @@ import nodemailer from 'nodemailer';
 import type pg from 'pg';
 import { CatalogRepo } from '../catalog/catalog.repo.js';
 import { ProvisioningService } from '../catalog/provisioning.service.js';
+import { type Attribution, stored } from '../growth/attribution.js';
+import { GrowthService } from '../growth/growth.service.js';
 
 /** Subdomains a hospital can never take (MediCare's own, or confusing). */
 const RESERVED = new Set(['www', 'app', 'api', 'admin', 'medicare', 'console', 'platform', 'account', 'care', 'help', 'support', 'status', 'mail', 'static', 'cdn', 'login', 'auth', 'signup', 'pricing', 'docs', 'blog', 'billing', 'security', 'internal']);
@@ -14,9 +16,9 @@ const SLUG = /^[a-z][a-z0-9-]{2,30}$/;
 const hash = (t: string) => createHash('sha256').update(t).digest('hex');
 const site = () => process.env.PUBLIC_SITE_URL ?? 'http://medicare.localhost:3400';
 
-export interface SignupInput { hospitalName: string; slug: string; adminName: string; adminEmail: string; phone: string | null; plan: string }
+export interface SignupInput { hospitalName: string; slug: string; adminName: string; adminEmail: string; phone: string | null; plan: string; attribution?: Attribution }
 type Check = { key: string; label: string; done: boolean };
-type Signup = { id: string; slug: string; hospital_name: string; admin_name: string; admin_email: string; plan_code: string; status: string; tenant_id: string | null; verified_at: string | null };
+type Signup = { id: string; slug: string; hospital_name: string; admin_name: string; admin_email: string; plan_code: string; status: string; tenant_id: string | null; verified_at: string | null; attribution: Record<string, string>; ads_consent: boolean };
 const STUCK_MS = 10 * 60_000;
 const urls = (slug: string) => {
   const port = new URL(site()).port;
@@ -34,7 +36,7 @@ export class SignupService {
   private readonly log = new Logger('Signup');
   private readonly mail = nodemailer.createTransport(smtpOptions());
 
-  constructor(@Inject(CONTROL_DB) private readonly db: pg.Pool, @Inject(REDIS) private readonly redis: Redis, private readonly catalog: CatalogRepo, private readonly provisioning: ProvisioningService) {}
+  constructor(@Inject(CONTROL_DB) private readonly db: pg.Pool, @Inject(REDIS) private readonly redis: Redis, private readonly catalog: CatalogRepo, private readonly provisioning: ProvisioningService, private readonly growth: GrowthService) {}
 
   async available(slug: string): Promise<{ slug: string; available: boolean; reason: string | null }> {
     const s = slug.toLowerCase();
@@ -71,8 +73,9 @@ export class SignupService {
     const id = randomUUID();
     // an unconfirmed signup that expired gives its subdomain back
     await this.db.query(`UPDATE signups SET status = 'EXPIRED' WHERE slug = $1 AND status = 'PENDING' AND expires_at <= now()`, [slug.slug]);
-    await this.db.query(`INSERT INTO signups (id, token_hash, slug, hospital_name, admin_name, admin_email, phone, plan_code, status, ip, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'PENDING',$9, now() + interval '24 hours')`,
-      [id, hash(token), slug.slug, input.hospitalName, input.adminName, input.adminEmail.toLowerCase(), input.phone, plan.code, ip]);
+    const { attribution, adsConsent } = stored(input.attribution ?? { consent: false });
+    await this.db.query(`INSERT INTO signups (id, token_hash, slug, hospital_name, admin_name, admin_email, phone, plan_code, status, ip, expires_at, attribution, ads_consent) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'PENDING',$9, now() + interval '24 hours', $10, $11)`,
+      [id, hash(token), slug.slug, input.hospitalName, input.adminName, input.adminEmail.toLowerCase(), input.phone, plan.code, ip, JSON.stringify(attribution), adsConsent]);
     const link = `${site()}/signup/verify?token=${token}`;
     await this.mail.sendMail({
       from: 'MediCare <hello@medicare.example>', to: input.adminEmail, subject: `Confirm ${input.hospitalName} on MediCare`,
@@ -98,7 +101,10 @@ export class SignupService {
         throw new DomainError(410, 'SIGNUP_EXPIRED', 'this link has expired: please sign up again');
       }
       const { rowCount } = await this.db.query(`UPDATE signups SET status = 'PROVISIONING', verified_at = now() WHERE id = $1 AND status = 'PENDING'`, [s.id]);
-      if (rowCount) void this.provision(s);
+      if (rowCount) {
+        await this.growth.record(this.db, 'SIGNUP', s.id, s.admin_email, s.attribution, s.ads_consent).catch((e) => this.log.warn(`signup ${s.slug}: conversion not recorded: ${(e as Error).message}`));
+        void this.provision(s);
+      }
     }
     return this.status(token);
   }
@@ -158,6 +164,7 @@ export class SignupService {
       const { rowCount } = await this.db.query(`UPDATE signups SET status = 'READY', ready_at = now() WHERE id = $1 AND status = 'PROVISIONING'`, [s.id]);
       if (!rowCount) return { status: 'READY', steps };
       this.log.log(`signup ${s.slug} ready in ${Math.round(age / 1000)} s`);
+      await this.growth.record(this.db, 'READY', s.id, s.admin_email, s.attribution ?? {}, s.ads_consent ?? false).catch((e) => this.log.warn(`signup ${s.slug}: conversion not recorded: ${(e as Error).message}`));
       const { base, login } = urls(s.slug);
       await this.mail.sendMail({
         from: 'MediCare <hello@medicare.example>', to: s.admin_email, subject: `${s.hospital_name} is ready on MediCare`,

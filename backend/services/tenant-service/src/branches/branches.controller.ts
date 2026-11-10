@@ -12,12 +12,14 @@ const BranchFields = {
   address: z.object({ line1: z.string().max(200).optional(), pincode: z.string().max(10).optional() }),
   // an IANA zone the runtime knows (slot times and "today" at the branch depend on it), E-4
   timezone: z.string().refine((tz) => tz === 'UTC' || Intl.supportedValuesOf('timeZone').includes(tz), 'a time zone like Asia/Kolkata'),
+  /** the area it serves, for the public site and search engines ("Sector 62, Noida") */
+  area: z.string().trim().max(80).nullable(),
 };
-export const CreateBranch = z.object({ ...BranchFields, address: BranchFields.address.default({}), timezone: BranchFields.timezone.default('Asia/Kolkata') });
+export const CreateBranch = z.object({ ...BranchFields, address: BranchFields.address.default({}), timezone: BranchFields.timezone.default('Asia/Kolkata'), area: BranchFields.area.default(null) });
 /** No defaults on update: a PATCH only changes the fields it sends. */
 export const UpdateBranch = z.object(BranchFields).partial().extend({ active: z.boolean().optional(), version: z.number().int() });
 
-const toDto = (r: any) => ({ id: r.id, name: r.name, city: r.city, address: r.address, timezone: r.timezone, active: r.active, version: r.version, createdAt: r.created_at });
+const toDto = (r: any) => ({ id: r.id, name: r.name, city: r.city, area: r.area ?? null, address: r.address, timezone: r.timezone, active: r.active, version: r.version, createdAt: r.created_at });
 const UNIQUE_VIOLATION = '23505';
 
 /**
@@ -25,14 +27,33 @@ const UNIQUE_VIOLATION = '23505';
  * Each gets a readable address from its name ("noida-sector-62"); names are unique per hospital, and the rare two that
  * read the same once punctuation is dropped are told apart by the later one's id.
  */
-export function publicBranches(rows: { id: string; name: string; city: string; address: Record<string, string>; timezone: string; created_at: Date }[]) {
+type BranchRow = { id: string; name: string; city: string; area?: string | null; address: Record<string, string>; timezone: string; created_at: Date };
+
+/** The current address of each branch (id → slug). */
+export function branchSlugs(rows: Pick<BranchRow, 'id' | 'name' | 'created_at'>[]) {
   const seen = new Set<string>();
-  return [...rows].sort((a, b) => +a.created_at - +b.created_at || a.id.localeCompare(b.id)).map((r) => {
+  const out = new Map<string, string>();
+  for (const r of [...rows].sort((a, b) => +a.created_at - +b.created_at || a.id.localeCompare(b.id))) {
     let slug = slugify(r.name) || 'branch';
     if (seen.has(slug)) slug = `${slug}-${r.id.slice(0, 6)}`;
     seen.add(slug);
-    return { id: r.id, slug, name: r.name, city: r.city, address: { line1: r.address?.line1 ?? null, pincode: r.address?.pincode ?? null }, timezone: r.timezone };
-  }).sort((a, b) => a.name.localeCompare(b.name));
+    out.set(r.id, slug);
+  }
+  return out;
+}
+
+/**
+ * Also lists the addresses a branch had before a rename (oldSlugs), so the site can redirect them; an old address that
+ * another branch now uses belongs to that branch.
+ */
+export function publicBranches(rows: BranchRow[], retired: { slug: string; branch_id: string }[] = []) {
+  const slugs = branchSlugs(rows);
+  const current = new Set(slugs.values());
+  return rows.map((r) => ({
+    id: r.id, slug: slugs.get(r.id)!, name: r.name, city: r.city, area: r.area ?? null,
+    address: { line1: r.address?.line1 ?? null, pincode: r.address?.pincode ?? null }, timezone: r.timezone,
+    oldSlugs: retired.filter((x) => x.branch_id === r.id && !current.has(x.slug)).map((x) => x.slug),
+  })).sort((a, b) => a.name.localeCompare(b.name));
 }
 
 @Controller('v1/public')
@@ -43,8 +64,11 @@ export class PublicBranchesController {
   @Get('branches')
   @TenantPublic()
   async list() {
-    const { rows } = await this.db.query('SELECT id, name, city, address, timezone, created_at FROM branches WHERE active');
-    return publicBranches(rows);
+    const [{ rows }, { rows: retired }] = await Promise.all([
+      this.db.query('SELECT id, name, city, area, address, timezone, created_at FROM branches WHERE active'),
+      this.db.query('SELECT slug, branch_id FROM branch_slugs'),
+    ]);
+    return publicBranches(rows, retired);
   }
 }
 
@@ -84,8 +108,8 @@ export class BranchesController {
         await c.query(`SELECT pg_advisory_xact_lock(hashtext('branch-limit'))`);
         assertWithinLimit(caps, 'core.branches', Number((await c.query('SELECT count(*) n FROM branches WHERE active')).rows[0].n));
         const { rows } = await c.query(
-          'INSERT INTO branches (id, name, city, address, timezone) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-          [randomUUID(), input.name, input.city, input.address, input.timezone],
+          'INSERT INTO branches (id, name, city, address, timezone, area) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+          [randomUUID(), input.name, input.city, input.address, input.timezone, input.area],
         );
         const b = rows[0];
         await addToOutbox(c, Topics.tenant, b.id, envelope(EventTypes.branchCreated, { branchId: b.id, name: b.name, active: b.active, timezone: b.timezone }, { tenantId, subject: b.id }));
@@ -105,17 +129,28 @@ export class BranchesController {
     const input = parse(UpdateBranch, body);
     const tenantId = TenantContext.require().id;
     return this.db.tx(async (c) => {
+      // a rename changes the branch's web address: remember the old one so links to it still work
+      const slugsBefore = input.name ? branchSlugs((await c.query('SELECT id, name, created_at FROM branches WHERE active OR id = $1', [id])).rows) : null;
       const { rows } = await c.query(
         `UPDATE branches SET name = coalesce($3, name), city = coalesce($4, city), address = coalesce($5, address),
-           timezone = coalesce($6, timezone), active = coalesce($7, active), version = version + 1, updated_at = now()
+           timezone = coalesce($6, timezone), active = coalesce($7, active), area = CASE WHEN $8::boolean THEN $9 ELSE area END,
+           version = version + 1, updated_at = now()
          WHERE id = $1 AND version = $2 RETURNING *`,
-        [id, input.version, input.name ?? null, input.city ?? null, input.address ?? null, input.timezone ?? null, input.active ?? null],
+        [id, input.version, input.name ?? null, input.city ?? null, input.address ?? null, input.timezone ?? null, input.active ?? null, input.area !== undefined, input.area ?? null],
       );
       if (!rows[0]) {
         const exists = await c.query('SELECT 1 FROM branches WHERE id = $1', [id]);
         throw exists.rowCount ? conflict('VERSION_CONFLICT', 'branch was changed by someone else; reload and retry') : notFound('branch');
       }
       const b = rows[0];
+      const was = slugsBefore?.get(id);
+      if (was) {
+        const now = branchSlugs((await c.query('SELECT id, name, created_at FROM branches WHERE active OR id = $1', [id])).rows).get(id);
+        if (now && now !== was) {
+          await c.query(`INSERT INTO branch_slugs (slug, branch_id) VALUES ($1, $2) ON CONFLICT (slug) DO UPDATE SET branch_id = excluded.branch_id, retired_at = now()`, [was, id]);
+          await c.query('DELETE FROM branch_slugs WHERE slug = $1', [now]);
+        }
+      }
       await addToOutbox(c, Topics.tenant, b.id, envelope(EventTypes.branchUpdated, { branchId: b.id, name: b.name, active: b.active, timezone: b.timezone }, { tenantId, subject: b.id }));
       return toDto(b);
     });

@@ -15,10 +15,10 @@ export async function GET() {
   const lines = ['User-agent: *'];
   if (!s.indexable) lines.push('Disallow: /');
   else if (s.branding.slug === PLATFORM_SLUG) {
-    lines.push('Allow: /$', 'Allow: /pricing', 'Allow: /signup$', 'Disallow: /');
+    lines.push('Allow: /$', 'Allow: /og.png', 'Allow: /pricing', 'Allow: /signup$', 'Allow: /demo$', 'Allow: /features', 'Allow: /for/', 'Allow: /security', 'Allow: /resources', 'Disallow: /');
   } else {
     lines.push(
-      'Allow: /$',
+      'Allow: /$', 'Allow: /og.png',
       'Allow: /care/doctors', 'Allow: /care/specialties/', 'Allow: /care/branches/', 'Allow: /care/tests', 'Allow: /care/packages/',
       'Disallow: /care/tests/book',
       'Disallow: /',

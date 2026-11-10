@@ -58,11 +58,11 @@ export default async function DoctorProfile({ params, searchParams }: { params: 
   return (
     <ZoneFrame zone="patient" path="/care/doctors" zones={ZONES} requireAuth={false}>
       <JsonLd data={[
-        physicianLd(s, { name: d.name, path: `/care/doctors/${here}`, specialties: d.specialties.map((x) => x.name), languages: d.languages.map(languageName), qualifications: d.qualifications, branches: d.branches.map((b) => b.name ?? '').filter(Boolean) }),
+        physicianLd(s, { name: d.name, image: d.photoUrl, path: `/care/doctors/${here}`, specialties: d.specialties.map((x) => x.name), languages: d.languages.map(languageName), qualifications: d.qualifications, branches: d.branches.map((b) => b.name ?? '').filter(Boolean) }),
         breadcrumbLd(s, [{ name: s.name, path: '/' }, { name: 'Doctors', path: '/care/doctors' }, ...(primary ? [{ name: primary.name, path: `/care/specialties/${specialtySlug(primary.code)}` }] : []), { name: d.name, path: `/care/doctors/${here}` }]),
       ]} />
       <div className="mc-card mc-doctor">
-        <div className="mc-avatar" aria-hidden>{initials(d.name)}</div>
+        {d.photoUrl ? <img className="mc-avatar" src={d.photoUrl} alt={d.name} width={72} height={72} style={{ objectFit: 'cover' }} /> : <div className="mc-avatar" aria-hidden>{initials(d.name)}</div>}
         <div>
           <h1 style={{ fontSize: '1.4rem' }}>{d.name}</h1>
           <p className="mc-meta">{d.specialties.map((x, i) => <span key={x.code}>{i ? ', ' : ''}<a href={`/care/specialties/${specialtySlug(x.code)}`}>{x.name}</a></span>)}</p>

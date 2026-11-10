@@ -182,6 +182,8 @@ export const AppointmentChanged = z.object({
   source: z.enum(['ONLINE', 'DESK', 'WALK_IN']).optional(),
   /** who made an ONLINE booking: the patient's own screens, or the AI assistant (ASSISTANT) */
   bookedVia: z.string().nullable().optional(),
+  /** the hospital's campaign link an online booking came by ("source / campaign") */
+  campaign: z.string().nullable().optional(),
   // payments (Phase 11)
   paymentMode: z.enum(['ONLINE', 'AT_CLINIC']).optional(),
   paymentStatus: z.string().optional(),

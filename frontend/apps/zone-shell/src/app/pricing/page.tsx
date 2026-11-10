@@ -1,10 +1,10 @@
-import { ZoneFrame } from '@mc/features';
 import { getBranding } from '@mc/bff';
-import { pageMeta } from '@mc/features/seo';
+import { JsonLd, pageMeta } from '@mc/features/seo';
 import type { Metadata } from 'next';
 import { Badge, Card, PageHeader } from '@mc/ui';
 import { inr, PLATFORM_SLUG, publicPlans } from '@/lib/site';
-import { ZONES } from '@/lib/zones';
+import { PRICING_FAQ } from '@/lib/marketing';
+import { MarketingFrame } from '@/lib/marketing-frame';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +21,7 @@ export default async function Pricing() {
   const plans = await publicPlans();
   const editions = [...new Set(plans.map((p) => p.edition))];
   return (
-    <ZoneFrame zone="shell" path="/pricing" zones={ZONES} requireAuth={false}>
+    <MarketingFrame path="/pricing" wide={false}>
       <PageHeader title="Plans and prices" subtitle="Per month, before GST (18%). Every self-serve plan starts with a free trial; no card needed to start." />
       {editions.map((ed) => (
         <section key={ed} aria-label={ed}>
@@ -45,6 +45,11 @@ export default async function Pricing() {
         </section>
       ))}
       <p className="mc-meta">Extra doctors, branches and SMS beyond a plan&apos;s allowance are priced on the subscription page once you are signed up.</p>
-    </ZoneFrame>
+      <section aria-label="Questions">
+        <h2 className="mc-section-title">Questions</h2>
+        <JsonLd data={{ '@context': 'https://schema.org', '@type': 'FAQPage', mainEntity: PRICING_FAQ.map((x) => ({ '@type': 'Question', name: x.q, acceptedAnswer: { '@type': 'Answer', text: x.a } })) }} />
+        <div className="mc-faq">{PRICING_FAQ.map((x) => <details key={x.q}><summary>{x.q}</summary><p>{x.a}</p></details>)}</div>
+      </section>
+    </MarketingFrame>
   );
 }

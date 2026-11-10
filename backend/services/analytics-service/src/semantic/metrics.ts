@@ -6,14 +6,14 @@ import { z } from 'zod';
  * model) writes SQL. Every fragment below is a constant: the request only picks names and passes values as parameters.
  */
 export type Unit = 'count' | 'percent' | 'inr' | 'hours' | 'days';
-export const DIMENSIONS = ['day', 'week', 'month', 'weekday', 'hour', 'branch', 'doctor', 'specialty', 'mode', 'source', 'channel', 'paid_for', 'collection', 'age_band', 'gender'] as const;
+export const DIMENSIONS = ['day', 'week', 'month', 'weekday', 'hour', 'branch', 'doctor', 'specialty', 'mode', 'source', 'channel', 'paid_for', 'collection', 'age_band', 'gender', 'campaign'] as const;
 export type Dimension = (typeof DIMENSIONS)[number];
 export const TIME_DIMS: Dimension[] = ['day', 'week', 'month', 'weekday', 'hour'];
 
 export const DIMENSION_LABELS: Record<Dimension, string> = {
   day: 'Day', week: 'Week', month: 'Month', weekday: 'Day of the week', hour: 'Hour of the day', branch: 'Branch', doctor: 'Doctor',
   specialty: 'Department (specialty)', mode: 'Visit type', source: 'Booking channel', channel: 'Payment channel', paid_for: 'Paid for',
-  collection: 'Sample collection', age_band: 'Age group', gender: 'Gender',
+  collection: 'Sample collection', age_band: 'Age group', gender: 'Gender', campaign: 'Campaign link',
 };
 
 interface Fact {
@@ -33,7 +33,9 @@ export const FACTS = {
   appointments: {
     from: 'fact_appointments f', date: 'f.local_date', branch: 'f.branch_id',
     dims: { ...time('f.local_date'), hour: `lpad(f.hour::text, 2, '0')`, branch: 'f.branch_id::text', doctor: 'f.doctor_id::text', specialty: 'f.specialty_code',
-      mode: 'f.mode', source: `CASE WHEN f.booked_via = 'ASSISTANT' THEN 'ASSISTANT' ELSE f.source END` },
+      mode: 'f.mode', source: `CASE WHEN f.booked_via = 'ASSISTANT' THEN 'ASSISTANT' ELSE f.source END`,
+      // the hospital's own campaign links (online bookings); everything else is "(none)"
+      campaign: `coalesce(f.campaign, '(none)')` },
   },
   lab: {
     from: 'fact_lab_orders f', date: 'f.local_date', branch: 'f.branch_id',

@@ -28,6 +28,7 @@ export function DoctorFields({ specialties, branches, doctor }: { specialties: S
         </div>
       </fieldset>
       <TextArea label="About the doctor" name="bio" defaultValue={doctor?.bio ?? undefined} maxLength={2000} placeholder="Shown on the doctor's public profile" />
+      <Field label="Photo address (optional)" name="photoUrl" type="url" defaultValue={doctor?.photoUrl ?? undefined} hint="An https link to a square photo on your website; shown on the profile and when the page is shared" />
     </>
   );
 }

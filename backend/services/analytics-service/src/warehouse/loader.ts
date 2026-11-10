@@ -7,7 +7,7 @@ import { createHmac, randomBytes } from 'node:crypto';
 export interface AppointmentFact {
   id: string; patientId: string; doctorId: string; branchId: string; startsAt: string; localDate?: string | null; status: string;
   mode?: string | null; source?: string | null; bookedVia?: string | null; paymentMode?: string | null; fee?: number | null;
-  bookedAt: string; rescheduledFrom?: string | null;
+  bookedAt: string; rescheduledFrom?: string | null; campaign?: string | null;
 }
 export interface LabOrderFact {
   id: string; patientId: string; branchId: string | null; status: string; total: number; collectionType?: string | null; testCount: number;
@@ -75,16 +75,16 @@ export class WarehouseLoader {
   async appointment(c: Queryable, a: AppointmentFact, eventAt: string) {
     const key = await this.patientKey(c, a.patientId);
     await c.query(
-      `INSERT INTO fact_appointments (appointment_id, patient_key, doctor_id, branch_id, specialty_code, local_date, hour, starts_at, mode, source, booked_via, payment_mode, status, fee, booked_at, lead_days, first_visit, event_at)
+      `INSERT INTO fact_appointments (appointment_id, patient_key, doctor_id, branch_id, specialty_code, local_date, hour, starts_at, mode, source, booked_via, payment_mode, status, fee, booked_at, lead_days, first_visit, event_at, campaign)
        VALUES ($1, $2, $3, $4, (SELECT specialty_codes[1] FROM dim_doctors WHERE id = $3),
                coalesce($6::date, ${LOCAL('$5', '$4')}::date), extract(hour FROM ${LOCAL('$5', '$4')})::smallint, $5,
                $7, $8, $9, $10, $11, $12, $13, greatest(0, floor(extract(epoch FROM ($5::timestamptz - $13::timestamptz)) / 86400))::int,
                NOT EXISTS (SELECT 1 FROM fact_appointments p WHERE p.patient_key = $2 AND p.starts_at < $5 AND p.appointment_id <> $1 AND p.status IN ('COMPLETED','CHECKED_IN','IN_PROGRESS')),
-               $14)
+               $14, $15)
        ON CONFLICT (appointment_id) DO UPDATE SET status = excluded.status, mode = excluded.mode, payment_mode = excluded.payment_mode, fee = excluded.fee,
-         booked_via = coalesce(excluded.booked_via, fact_appointments.booked_via), source = coalesce(excluded.source, fact_appointments.source), event_at = excluded.event_at
+         booked_via = coalesce(excluded.booked_via, fact_appointments.booked_via), campaign = coalesce(excluded.campaign, fact_appointments.campaign), source = coalesce(excluded.source, fact_appointments.source), event_at = excluded.event_at
        WHERE fact_appointments.event_at <= excluded.event_at`,
-      [a.id, key, a.doctorId, a.branchId, a.startsAt, a.localDate ?? null, a.mode ?? null, a.source ?? null, a.bookedVia ?? null, a.paymentMode ?? null, a.status, a.fee ?? null, a.bookedAt, eventAt]);
+      [a.id, key, a.doctorId, a.branchId, a.startsAt, a.localDate ?? null, a.mode ?? null, a.source ?? null, a.bookedVia ?? null, a.paymentMode ?? null, a.status, a.fee ?? null, a.bookedAt, eventAt, a.campaign ?? null]);
     if (a.rescheduledFrom) await c.query(`UPDATE fact_appointments SET status = 'RESCHEDULED', event_at = greatest(event_at, $2) WHERE appointment_id = $1`, [a.rescheduledFrom, eventAt]);
   }
 
@@ -139,7 +139,7 @@ export class WarehouseLoader {
         const a = AppointmentChanged.parse(e.data);
         return this.appointment(c, {
           id: a.appointmentId, patientId: a.patientId, doctorId: a.doctorId, branchId: a.branchId, startsAt: a.startsAt, localDate: a.localDate ?? null,
-          status: a.status, mode: a.mode, source: a.source, bookedVia: a.bookedVia, paymentMode: a.paymentMode, fee: a.fee ?? null, bookedAt: at, rescheduledFrom: a.rescheduledFrom,
+          status: a.status, mode: a.mode, source: a.source, bookedVia: a.bookedVia, paymentMode: a.paymentMode, fee: a.fee ?? null, bookedAt: at, rescheduledFrom: a.rescheduledFrom, campaign: a.campaign ?? null,
         }, at);
       }
       case EventTypes.labOrderOrdered: case EventTypes.labOrderPendingPayment: case EventTypes.labOrderBooked: case EventTypes.labOrderCancelled:

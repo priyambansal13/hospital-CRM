@@ -34,15 +34,16 @@ export const NO_INDEX: Metadata = { robots: { index: false, follow: false } };
 export async function pageMeta(p: { title: string; description: string; path: string; index?: boolean; image?: string | null }): Promise<Metadata> {
   const s = await site();
   const url = s.canonicalOrigin + p.path;
-  const image = p.image ?? s.logo;
+  // a page's own image (a doctor's photo), else the hospital's generated sharing card (/og.png, zone-shell)
+  const image = p.image ?? `${s.canonicalOrigin}/og.png`;
   const index = (p.index ?? true) && s.indexable;
   return {
     title: { absolute: p.title },
     description: p.description,
     alternates: { canonical: url },
     robots: index ? { index: true, follow: true } : { index: false, follow: s.indexable },
-    openGraph: { title: p.title, description: p.description, url, siteName: s.name, type: 'website', locale: 'en_IN', ...(image ? { images: [{ url: image }] } : {}) },
-    twitter: { card: 'summary', title: p.title, description: p.description },
+    openGraph: { title: p.title, description: p.description, url, siteName: s.name, type: 'website', locale: 'en_IN', images: [p.image ? { url: image } : { url: image, width: 1200, height: 630, alt: s.name }] },
+    twitter: { card: p.image ? 'summary' : 'summary_large_image', title: p.title, description: p.description, images: [image] },
   };
 }
 
@@ -59,7 +60,7 @@ export function JsonLd({ data }: { data: object | object[] }) {
 
 // ---------- structured data ----------
 
-export interface LdBranch { slug: string; name: string; city: string; address: { line1: string | null; pincode: string | null } }
+export interface LdBranch { slug: string; name: string; city: string; area?: string | null; address: { line1: string | null; pincode: string | null } }
 
 const postal = (b: LdBranch) => ({
   '@type': 'PostalAddress', ...(b.address.line1 ? { streetAddress: b.address.line1 } : {}), addressLocality: b.city,
@@ -71,7 +72,7 @@ export function organizationLd(s: Site, branches: LdBranch[], labOnly = false) {
   const home = `${s.canonicalOrigin}/`;
   return {
     '@context': 'https://schema.org', '@type': 'MedicalOrganization', '@id': `${home}#org`, name: s.name, url: home,
-    ...(s.logo ? { logo: s.logo } : {}),
+    ...(s.logo ? { logo: s.logo } : {}), ...(s.branding.branding.description ? { description: s.branding.branding.description } : {}),
     subOrganization: branches.map((b) => branchLd(s, b, labOnly, false)),
   };
 }
@@ -80,14 +81,14 @@ export function branchLd(s: Site, b: LdBranch, labOnly = false, withContext = tr
   return {
     ...(withContext ? { '@context': 'https://schema.org' } : {}),
     '@type': labOnly ? 'DiagnosticLab' : 'MedicalClinic', name: `${s.name}, ${b.name}`, url: `${s.canonicalOrigin}/care/branches/${b.slug}`,
-    address: postal(b), parentOrganization: { '@id': `${s.canonicalOrigin}/#org` },
+    address: postal(b), ...(b.area ? { areaServed: b.area } : {}), parentOrganization: { '@id': `${s.canonicalOrigin}/#org` },
   };
 }
 
-export function physicianLd(s: Site, d: { name: string; path: string; specialties: string[]; languages: string[]; qualifications: string[]; branches: string[] }) {
+export function physicianLd(s: Site, d: { name: string; image?: string | null; path: string; specialties: string[]; languages: string[]; qualifications: string[]; branches: string[] }) {
   const url = s.canonicalOrigin + d.path;
   return {
-    '@context': 'https://schema.org', '@type': 'Physician', name: d.name, url,
+    '@context': 'https://schema.org', '@type': 'Physician', name: d.name, url, ...(d.image ? { image: d.image } : {}),
     ...(d.specialties.length ? { medicalSpecialty: d.specialties } : {}),
     ...(d.languages.length ? { knowsLanguage: d.languages } : {}),
     ...(d.qualifications.length ? { hasCredential: d.qualifications.map((q) => ({ '@type': 'EducationalOccupationalCredential', name: q })) } : {}),

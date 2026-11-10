@@ -9,7 +9,9 @@ import { MembershipRules, membersOnly } from './membership.js';
 
 const Uuid = z.uuid();
 const id = (v: string, what: string) => { if (!Uuid.safeParse(v).success) throw notFound(what); return v; };
-export const Book = z.object({ slotId: z.uuid(), patientId: z.uuid(), reason: z.string().trim().max(500).nullable().default(null), paymentMode: z.enum(['ONLINE', 'AT_CLINIC']).default('AT_CLINIC') });
+/** "source / campaign" from the hospital's own campaign link; a value that doesn't fit is dropped, never an error */
+export const Campaign = z.string().trim().toLowerCase().regex(/^[a-z0-9 ._/+:-]{1,120}$/).nullable().default(null).catch(null);
+export const Book = z.object({ slotId: z.uuid(), patientId: z.uuid(), reason: z.string().trim().max(500).nullable().default(null), paymentMode: z.enum(['ONLINE', 'AT_CLINIC']).default('AT_CLINIC'), campaign: Campaign });
 const Cancel = z.object({ reason: z.string().trim().max(300).nullable().default(null) });
 const Reschedule = z.object({ newSlotId: z.uuid() });
 const Join = z.object({ doctorId: z.uuid(), date: z.iso.date(), patientId: z.uuid() });

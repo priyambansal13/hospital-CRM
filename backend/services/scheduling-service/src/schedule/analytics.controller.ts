@@ -37,12 +37,12 @@ export class InternalAnalyticsController {
     const p = Page.parse(q);
     return this.run(t, async () => {
       const { rows } = await this.db.query(
-        `SELECT id, patient_id, doctor_id, branch_id, starts_at, to_char(local_date, 'YYYY-MM-DD') local_date, status, mode, source, booked_via, payment_mode, fee, created_at, updated_at, rescheduled_from
+        `SELECT id, patient_id, doctor_id, branch_id, starts_at, to_char(local_date, 'YYYY-MM-DD') local_date, status, mode, source, booked_via, payment_mode, fee, created_at, updated_at, rescheduled_from, campaign
          FROM appointments WHERE ($1::uuid IS NULL OR id > $1) ORDER BY id LIMIT $2`, [p.after ?? null, p.limit]);
       return rows.map((r) => ({
         id: r.id, patientId: r.patient_id, doctorId: r.doctor_id, branchId: r.branch_id, startsAt: new Date(r.starts_at).toISOString(), localDate: r.local_date,
         status: r.status, mode: r.mode, source: r.source, bookedVia: r.booked_via, paymentMode: r.payment_mode, fee: r.fee == null ? null : Number(r.fee),
-        bookedAt: new Date(r.created_at).toISOString(), updatedAt: new Date(r.updated_at).toISOString(), rescheduledFrom: r.rescheduled_from,
+        bookedAt: new Date(r.created_at).toISOString(), updatedAt: new Date(r.updated_at).toISOString(), rescheduledFrom: r.rescheduled_from, campaign: r.campaign,
       }));
     });
   }

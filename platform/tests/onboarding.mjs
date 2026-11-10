@@ -46,7 +46,8 @@ const base = { hospitalName: 'Lotus Family Clinic', slug: SLUG, adminName: 'Dr L
 check((await call('POST', '/api/tenant/v1/signup', null, { ...base, slug: 'citycare' })).code === 'SLUG_TAKEN', 'signing up for a taken address is refused');
 check((await call('POST', '/api/tenant/v1/signup', null, { ...base, plan: 'MEDICARE_HQ' })).code === 'UNKNOWN_PLAN', 'internal plans cannot be signed up for');
 const since = Date.now() - 1000;
-const s = await call('POST', '/api/tenant/v1/signup', null, base);
+// came from a LinkedIn campaign and accepted ad cookies (docs/SEO-AND-ADS.md §3.5)
+const s = await call('POST', '/api/tenant/v1/signup', null, { ...base, attribution: { source: 'linkedin', medium: 'paid', campaign: `onboarding-${SLUG}`, gclid: `CLICK${SLUG}`, consent: true } });
 check(s.http === 201 && s._body.status === 'PENDING' && !tenants().some((t) => t.slug === SLUG), 'signed up: PENDING, nothing created until the e-mail is confirmed');
 check((await avail(SLUG)).available === false, 'the address is held while the link is valid');
 const m = await waitFor(async () => (await mail(`to:${OWNER}`)).find((x) => Date.parse(x.Created) >= since), 20000, 500);
@@ -63,6 +64,9 @@ check(!!ready && ready.steps.every((x) => x.done) && ready.steps.length === 5, `
 check(ready?.loginUrl === `http://${HOST}:3400/login?next=%2Fadmin%2Fsetup`, `sign-in link to ${ready?.url}`);
 check((await call('POST', '/api/tenant/v1/signup/verify', null, { token })).http === 200 && tenants().filter((t) => t.slug === SLUG).length === 1, 'opening the link again creates nothing more');
 const tid = tenants().find((t) => t.slug === SLUG).id;
+const control = (sql) => execFileSync('docker', ['compose', '--env-file', join(PLATFORM, '.env'), '-f', join(PLATFORM, 'infra/docker-compose.yml'), 'exec', '-T', 'postgres', 'psql', '-qAt', '-U', 'postgres', '-d', 'mc_control', '-c', sql], { encoding: 'utf8' }).trim();
+const conv = control(`SELECT string_agg(c.kind || ':' || (c.attribution->>'campaign') || ':' || (c.attribution->>'gclid') || ':' || c.ads_consent, ',' ORDER BY c.occurred_at) FROM tenant.conversions c JOIN tenant.signups s ON s.id = c.ref_id WHERE s.slug = '${SLUG}'`);
+check(conv === `SIGNUP:onboarding-${SLUG}:CLICK${SLUG}:true,READY:onboarding-${SLUG}:CLICK${SLUG}:true`, `the funnel records the confirmed signup and the ready hospital with their campaign (${conv})`);
 
 // ---- 3. the owner and the setup guide
 const owner = await waitFor(() => staffToken(OWNER, SLUG).catch(() => null), 30000, 1000);
