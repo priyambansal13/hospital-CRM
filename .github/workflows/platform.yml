@@ -15,11 +15,14 @@ jobs:
       - uses: azure/setup-helm@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24 }
-      - run: node platform/scripts/mc.mjs k8s check staging          # helm lint + render + kubeconform
+      - run: node platform/scripts/mc.mjs k8s check staging          # helm lint + render + kubeconform + promtool
+      - run: node platform/scripts/mc.mjs k8s check production
       - run: git diff --exit-code platform/deploy/environments       # generated files must be committed
   terraform:
     runs-on: ubuntu-latest
-    defaults: { run: { working-directory: platform/deploy/terraform/gke-staging } }
+    strategy:
+      matrix: { root: [gke-staging, prod-india] }
+    defaults: { run: { working-directory: 'platform/deploy/terraform/${{ matrix.root }}' } }
     steps:
       - uses: actions/checkout@v4
       - uses: hashicorp/setup-terraform@v3

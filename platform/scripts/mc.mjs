@@ -794,7 +794,8 @@ function k8sCheck(envName) {
     execFileSync('docker', ['run', '--rm', '--entrypoint', 'promtool', '-v', `${rules}:/r:ro`, '-w', '/r', 'prom/prometheus:v3.1.0', ...a], { stdio: 'pipe' });
   }
   log('promtool: alert rules valid, rule tests pass');
-  // every Terraform root formats and validates (no backend, nothing applied)
+  // every Terraform root formats and validates (no backend, nothing applied); CI runs this in its own terraform job
+  try { execFileSync('terraform', ['version'], { stdio: 'pipe' }); } catch { log('terraform not installed: skipped (the CI terraform job validates it)'); return; }
   for (const dir of readdirSync(join(PLATFORM, 'deploy/terraform'))) {
     const tf = join(PLATFORM, 'deploy/terraform', dir);
     if (!existsSync(join(tf, 'versions.tf'))) continue;
